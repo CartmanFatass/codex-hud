@@ -483,7 +483,7 @@
     {
       "number": 39,
       "title": "A late answer to a question never fails a job that already reported",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -493,22 +493,66 @@
         {
           "id": 1,
           "text": "Test: question asked, report published, answer arrives afterwards -> job stays done/idle_grace with the report, and hud_land accepts it",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: a question answered before the report still resumes the turn as today",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T09:07:50.410Z",
+        "job": "jab78e23347065604",
+        "flow": "fab78e23347065604",
+        "replay_base": "8519680ac38400d2453f33fc806ac2a0260c9527",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T06:58:31.899Z",
+      "updated_at": "2026-11-27T09:07:50.410Z"
+    },
+    {
+      "number": 40,
+      "title": "The quiet-without-a-report notice uses native AGY activity too",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "Run an AGY imp that waits on a long background test run and confirm no quiet notice arrives",
+      "approved_removals": [],
+      "blocked_by": [
+        "chores/35"
+      ],
+      "what": "2026-11-27 00:49: imp jd81ee4b6c7be3132 (AGY, Gemini Neon) was set `waiting_orchestrator` with \"quiet without a report\" while its pane showed a running background command (20 parallel test runs) and recent native steps; the same happened to ticket-store/05 (j376cbaa802722eb9) and its queue run failed on it. chores/35 made Execution's stall label read native AGY activity; the CLI supervisor's quiet clock (cli-workers/09 rule) still relies on herdr's agent status and descendant processes. Use the same native AGY activity evidence there: recent AGY step-log activity or a running AGY background task keeps the job working and the quiet clock stopped. A queue item must not fail on a quiet notice that the worker later clears with a report.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: an AGY job with recent native step activity or a running background task and herdr status done is not set waiting_orchestrator",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: an AGY job with no native activity for the idle grace still gets the quiet notice",
           "done": false
         },
         {
           "id": 3,
+          "text": "Test: a queue item whose worker was quiet and then publishes a report continues instead of failing the run",
+          "done": false
+        },
+        {
+          "id": 4,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
           "done": false
         }
       ],
       "comments": [],
-      "created_at": "2026-11-27T06:58:31.899Z",
-      "updated_at": "2026-11-27T06:58:31.899Z"
+      "created_at": "2026-11-27T08:53:12.874Z",
+      "updated_at": "2026-11-27T08:53:12.874Z"
     }
   ]
 }

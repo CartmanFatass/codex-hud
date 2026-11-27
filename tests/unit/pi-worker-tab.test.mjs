@@ -29,6 +29,8 @@ import { readSelectionExcerpts, recordSelectionNote } from '../../dist/roles/sel
 import { nextQuestionNumber, publishQuestion, readQuestionAnswer } from '../../dist/worker/qa.js';
 import { waitSonic } from '../../dist/worker/tools.js';
 import { createFooterHost, piPackage } from '../fakes/pi.mjs';
+import { checkout, job as landJob } from '../helpers/thin-mcp-land.mjs';
+import { until } from '../helpers/thin-mcp-harness.mjs';
 
 const VALID_STATES = new Set([
   'queued', 'working', 'waiting_helper', 'waiting_orchestrator', 'blocked',
@@ -817,13 +819,14 @@ async function makeFullTabWorkerFixture(t, {
   profile = 'reviewer',
   mode = 'tui',
   askTimeout = '10',
+  land,
 } = {}) {
-  const root = fs.mkdtempSync(join(tmpdir(), 'hud-tab-worker-'));
-  const home = join(root, 'hud_home');
-  const jobId = 'j2222222222222222';
+  const root = land?.worktree ?? fs.mkdtempSync(join(tmpdir(), 'hud-tab-worker-'));
+  const home = land?.home ?? join(root, 'hud_home');
+  const jobId = land ? landJob : 'j2222222222222222';
   const dir = join(home, 'jobs', jobId);
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
-  fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({
+  if (!land) fs.writeFileSync(join(dir, 'job.json'), JSON.stringify({
     job: jobId, role, cwd: root, request_key: 'synthetic', created_at: new Date().toISOString(),
     dispatch_exit_code: 0, stderr_tail: '',
   }));
@@ -881,15 +884,17 @@ async function makeFullTabWorkerFixture(t, {
   const statusFile = join(dir, 'STATUS.json');
   const qa = join(dir, 'qa');
   const report = join(dir, 'report.md');
-  t.after(async () => {
+  const cleanup = async () => {
     try { await emit('session_shutdown', { reason: 'quit' }); }
     finally {
       if (prevJobDir === undefined) delete process.env.HUD_JOB_DIR; else process.env.HUD_JOB_DIR = prevJobDir;
       if (prevHome === undefined) delete process.env.HUD_HOME; else process.env.HUD_HOME = prevHome;
       if (prevAskTimeout === undefined) delete process.env.HUD_ASK_TIMEOUT; else process.env.HUD_ASK_TIMEOUT = prevAskTimeout;
-      fs.rmSync(root, { recursive: true, force: true });
+      if (!land) fs.rmSync(root, { recursive: true, force: true });
     }
-  });
+  };
+  if (land) land.onCleanup(cleanup);
+  else t.after(cleanup);
   return {
     root, home, dir, qa, report, statusFile, tools, commands, messages, entries, ctx, emit,
     setIdle: (v) => { idle = v; },
@@ -924,7 +929,7 @@ async function waitFor(predicate, timeoutMs = 4000) {
   assert.fail('timed out waiting for predicate');
 }
 
-test('async hud_ask wakes via fs.watch (< 200 ms), steers once, and settles cleanly after fresh report', async (t) => {
+test('an async answer before hud_report wakes via fs.watch (< 200 ms), steers once, and needs a fresh report', async (t) => {
   const f = await makeFullTabWorkerFixture(t);
   // R3: no legacy slash commands registered.
   assert.deepEqual([...f.commands.keys()], []);
@@ -961,6 +966,35 @@ test('async hud_ask wakes via fs.watch (< 200 ms), steers once, and settles clea
   assert.equal(f.status().state, 'closed');
   assert.equal(f.shutdowns(), 1);
   assert.equal(f.messages.length, 1);
+});
+
+test('an answer after hud_report is moot, leaves the report settled, and lets hud_land integrate it', async (t) => {
+  const land = await checkout(t, ['test "$(tail -1 tracked)" = second'], { after: [] });
+  const f = await makeFullTabWorkerFixture(t, { role: 'imp', profile: 'implementer', land, askTimeout: '60' });
+  await f.ask();
+  const text = 'Synthetic change committed; the open question no longer affects it.';
+  const report = await f.tools.get('hud_report').execute('rep', { text }, undefined, undefined, f.ctx);
+  assert.equal(report.terminate, true);
+  f.setIdle(true);
+  await f.emit('agent_settled');
+  assert.equal(f.status().state, 'waiting_orchestrator');
+
+  const answer = await land.call('hud_respond', { job: landJob, request_id: 'q1', answer: 'Option B' });
+  assert.equal(answer.written, true);
+  await waitFor(() => f.messages.length === 1);
+  assert.equal(f.messages[0].options.triggerTurn, false, 'a late answer must not start another turn');
+  assert.deepEqual(f.messages[0].message.details, { requestId: 'q1', answered: true, moot: true });
+  await immediate();
+  assert.equal(f.status().state, 'idle_grace');
+  assert.equal(f.status().error, null);
+  assert.equal(f.status().output_written, true);
+  assert.equal(fs.readFileSync(f.report, 'utf8'), text);
+
+  const { flow } = await land.call('hud_land', { job: landJob });
+  assert.ok(flow, 'hud_land accepted the same settled job');
+  await until(() => ['failed', 'completed'].includes(land.flowState(flow).state), t.signal);
+  const landed = land.flowState(flow);
+  assert.equal(landed.state, 'completed', JSON.stringify(landed));
 });
 
 test('async hud_ask answer and default timeout require ack and fresh output', async (t) => {

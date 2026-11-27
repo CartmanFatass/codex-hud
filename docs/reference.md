@@ -592,6 +592,7 @@ An explicit `message_key` deduplicates sends; if omitted, the same job and text 
 Workers ask with `hud_ask`; the question arrives through an active MCP task or the `QUESTION` notice, and `hud_respond` answers it.
 A synchronous question waits up to 20 minutes; pi can ask asynchronously and continue unrelated work.
 If an async decision goes unacknowledged for 20 seconds and pi is idle, HUD surfaces it as undelivered. The job stays waiting and can accept a late acknowledgement without resending the decision.
+If a pi tab worker successfully calls `hud_report` while still waiting for an async answer, a reply that arrives afterward is recorded as moot without starting another turn or requiring a new report.
 A blocked CLI marks the job as needing the owner; task clients can see it in `hud_read`, and other clients receive it through `changes` or their live job notices.
 `hud_respond` writes a `qN.answer.md` once (or pass `answers: [{job, request_id, answer}]` to answer several in one call, returning `answers` in input order with per-item errors). For a ticket-queue run paused at a `handback_to: "main"` step, pass `job: <flow>` (`q...`) and `answer: "<choice>[: <reason>]"` (or a newline before the reason) without `request_id`.
 `hud_close` reaps early.

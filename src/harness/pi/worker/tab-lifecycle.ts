@@ -58,6 +58,7 @@ export interface TabLifecycleOptions {
 export interface TabLifecycleController {
   canAskAsync(ctx: WorkerContext, qaDir: string): boolean;
   trackQuestion(ctx: WorkerContext, question: PublishedQuestion, timeoutMs: number): string;
+  reportPublished(ctx: WorkerContext): void;
   isSettled(): boolean;
   disable(ctx: WorkerContext): void;
 }
@@ -119,6 +120,8 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
   let failed = false;
   let outputWritten = false;
   let baseline: string | null = null;
+  let declaredReport: string | null = null;
+  let waitingToSettle = false;
   let runError: string | null = null;
   let generation = 0;
   let deadline: number | undefined;
@@ -309,6 +312,14 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     return requestId;
   }
 
+  function reportPublished(ctx: WorkerContext): void {
+    if (!active() || closing || !asyncQuestions.size) return;
+    // An answer already written can still be waiting on the fs.watch debounce. Steer it as usual.
+    cancelQuestionTimer();
+    pollQuestions(ctx);
+    declaredReport = signature(outputPath);
+  }
+
   function pollQuestions(ctx: WorkerContext): void {
     questionTimer = undefined;
     if (!active() || closing) {
@@ -330,6 +341,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
       return;
     }
     const now = timing.now();
+    const reportStands = declaredReport !== null && declaredReport !== baseline && declaredReport === signature(outputPath);
     for (const [requestId, pending] of asyncQuestions) {
       if (pending.sentAt !== undefined) {
         // Publish the undelivered decision through the normal main-session escalation, but keep the steer queued.
@@ -347,7 +359,14 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
         /* An unreadable answer is not a decision. Retry until timeout. */
       }
       if (!answer && now < qDeadline) continue;
-      pending.sentAt = now; // Never send twice, including while queued for a busy Pi.
+      if (reportStands) {
+        // The worker already declared its report. Retain the reply in Pi history, but don't
+        // start a new turn (or apply a timeout default) for a decision the report didn't need.
+        asyncQuestions.delete(requestId);
+        if (!answer) continue;
+      } else {
+        pending.sentAt = now; // Never send twice, including while queued for a busy Pi.
+      }
       if (!answer && timeoutMs > 0) {
         try {
           recordQuestionTimeout(taskDir, requestId);
@@ -356,19 +375,23 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
         }
       }
       const content = answer
-        ? `ANSWER from the orchestrator (${requestId}):\n\n${answer}`
+        ? `ANSWER from the orchestrator (${requestId}${reportStands ? ', moot: report already published' : ''}):\n\n${answer}`
         : `No answer to ${requestId} within ${timeoutMs / 1000}s. Proposed default: ${question.default.trim()}. Proceed on the default only if it is reversible and inside the brief; otherwise leave that part and name it as blocked in your report.`;
       pi.sendMessage(
         {
           customType: ASYNC_ANSWER_TYPE,
           content: `${content}\n\nQuestion (${requestId}): ${question.question.trim()}`,
           display: true,
-          details: { requestId, answered: !!answer },
+          details: { requestId, answered: !!answer, ...(reportStands && { moot: true }) },
         },
-        { triggerTurn: true, deliverAs: 'steer' }
+        { triggerTurn: !reportStands, deliverAs: 'steer' }
       );
     }
     scheduleQuestions(ctx);
+    if (reportStands && !asyncQuestions.size) {
+      if (waitingToSettle) settleTurn(ctx, false);
+      else publish(ctx);
+    }
   }
 
   function disable(ctx: WorkerContext): void {
@@ -440,11 +463,15 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     if (!active() || closing || !ownsPendingQuestions(ctx)) return;
     const cancelledQuestions = asyncQuestions.size > 0;
     if (cancelledQuestions) {
-      if (!aborted && !runError && !failed && !stopRequested()) return;
+      if (!aborted && !runError && !failed && !stopRequested()) {
+        waitingToSettle = true;
+        return;
+      }
       failed = true;
       error ??= `${aborted ? 'agent aborted' : runError ?? 'stop requested'}; unresolved HUD decisions: ${[...asyncQuestions.keys()].join(', ')}`;
       clearAsyncQuestions();
     }
+    waitingToSettle = false;
     if (!cancelledQuestions && !stopRequested()) {
       const retry = () => {
         // Keep STATUS working, without a grace deadline, until the children settle.
@@ -525,6 +552,8 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
       baseline = signature(outputPath);
       turnStarted = true;
     }
+    declaredReport = null;
+    waitingToSettle = false;
     outputWritten = false;
     settledAt = null;
     state = 'working';
@@ -569,6 +598,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     const id = (message.details as { requestId?: string } | undefined)?.requestId;
     if (!id || asyncQuestions.get(id)?.sentAt === undefined || stopRequested() || !ownsPendingQuestions(ctx)) return;
     asyncQuestions.delete(id);
+    declaredReport = null;
     if (!asyncQuestions.size) {
       cancelQuestionTimer();
       closeQaWatch();
@@ -677,5 +707,5 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     enabled = false;
   });
 
-  return { canAskAsync, trackQuestion, isSettled: () => settled || closing, disable };
+  return { canAskAsync, trackQuestion, reportPublished, isSettled: () => settled || closing, disable };
 }

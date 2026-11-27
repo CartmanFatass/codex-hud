@@ -394,7 +394,7 @@
     {
       "number": 33,
       "title": "fork: the dock behaves like a pane for focus, copy mode and zoom",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "After install, move focus into the dock and back with herdr's directional focus keys, enter copy mode in the dock and copy a line, and zoom the dock to full screen and back.",
       "approved_removals": [],
@@ -406,27 +406,33 @@
         {
           "id": 1,
           "text": "Fork test: directional focus enters and leaves the dock for each side",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Fork test: copy mode and selection in the dock produce the same clipboard text as in a pane",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Fork test: zoom fills the terminal area and restores; hidden/side unchanged",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Fork gate passes; report names the built binary",
-          "done": false
+          "done": true
         }
       ],
-      "comments": [],
+      "comments": [
+        {
+          "at": "2026-11-27T08:54:02.090Z",
+          "author": "main",
+          "text": "Landed herdr-hud 5875f564 (fork gate passed), installed 0.9.5-hud.5875f564 with live handoff. Main live try 2026-11-27: herdr pane focus right from the main pane enters the dock and left returns; pane zoom on the dock fills 120x40 and restores to 49 cols on the right; hiding the dock returns focus to the pane. Copy mode covered by the fork tests."
+        }
+      ],
       "created_at": "2026-11-27T06:39:46.019Z",
-      "updated_at": "2026-11-27T06:39:46.019Z"
+      "updated_at": "2026-11-27T08:54:02.090Z"
     },
     {
       "number": 34,

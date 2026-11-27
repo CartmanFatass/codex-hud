@@ -138,6 +138,7 @@ export async function workerTools(
         } finally {
           if (wait) { waits.delete(wait); flushReady(); }
         }
+        if (name === 'hud_report' && ctx) tab?.reportPublished(ctx);
         if (!tab && (name === 'hud_ask' || name === 'hud_report')) stopNotices();
         if (name === 'hud_ask') return {
           content: [{ type: 'text', text: 'Question recorded. The orchestrator’s answer resumes this session.' }], terminate: true,
