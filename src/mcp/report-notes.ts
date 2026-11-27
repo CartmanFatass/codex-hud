@@ -2,14 +2,18 @@
 
 export const declaresNone = (value: string) => /^none\p{P}*$/iu.test(value.trim());
 
-// Match pending-try notes (standalone or followed by detail), never mixed text
-// that also names an owner decision.
+// Match pending-try notes only affirmatively: standalone pending-try phrase or
+// followed by a single plain try instruction (reopen/run/check/look at ... [and observe]).
 const pendingTryPhrase =
   '(?:(?:only|just)\\s+)?(?:(?:a|the)\\s+)?(?:pending\\s+)?(?:owner\\s+(?:live\\s+|acceptance\\s+)?|live\\s+|acceptance\\s+)tr(?:y|ies)(?:\\s+(?:is\\s+|are\\s+)?(?:still\\s+)?(?:remain(?:s|ing)?|pending|outstanding|not\\s+(?:run|done)(?:\\s+yet)?|(?:left|yet|still)\\s+to\\s+(?:run|do)|(?:to\\s+be|needs?\\s+to\\s+be)\\s+(?:run|done)))?(?:\\s+(?:by|for)\\s+(?:the\\s+)?owner)?(?:\\s+only)?';
 
 const pendingTryExact = new RegExp(`^${pendingTryPhrase}\\s*[.!]?$`, 'i');
 const pendingTryWithDetail = new RegExp(`^${pendingTryPhrase}(?:\\s*(?::|[—–]|\\s+-\\s+)\\s*(.+)|\\s*\\(([^()]+)\\)\\s*[.!]?)$`, 'i');
-const detailNamesDecision = /\b(?:decid(?:e[ds]?|ing)|decision|approv(?:e[ds]?|ing|al)|choos(?:e[ds]?|ing)|choice|confirm(?:ation)?|block(?:ed|er|ers|ing)?|escalat(?:e[ds]?|ing|ion)|delet(?:e[ds]?|ing|ion)|remov(?:e[ds]?|ing|al)|docs\/spec\.md|spec(?:ification)?|scope|trade-?off|irreversible|needs?\s+(?:an?\s+)?owner|owner\s+(?:must|needs?|should|to\s+decide)|ask\s+(?:the\\s+)?owner|sign-?off|also|however|except)\b|[?;]/i;
+const tryActionVerb = /^(?:reopen|open|run|re-?run|launch|start|restart|check|look\s+at|inspect|view|watch|observe)\s+(.+)$/i;
+const plainObserveTail = /^(.*?)\s+and\s+(?:(?:observe|watch)(?:\s+(.+))?|(?:inspect|view|look\s+at)\s+(.+))$/i;
+const plainTryToken = /^(?:`[./~-]*[a-z0-9](?:[a-z0-9_./-]*[a-z0-9])?`|[./~-]*[a-z0-9](?:[a-z0-9_./-]*[a-z0-9])?)$/i;
+const plainTryLocPrep = /^(?:in|on|at|under)$/i;
+const plainTryClauseWord = /^(?:and|or|but|nor|yet|so|then|also|plus|however|otherwise|instead|except|vs|versus|if|whether|that|which|who|whom|whose|what|where|when|why|how|unless|until|while|whereas|although|though|because|since|before|after|to|with|for|about|of|by|from|into|over|through|against|between|during|without|should|must|shall|would|could|might|may|need|needs|needed|want|wants|wanted)$/i;
 
 const noneModifier = /^(?:(?:that\s+)?(?:requir(?:e[ds]?|ing)|need(?:s|ed|ing)?)\s+(?:an?\s+)?owner\s+(?:decision|decisions|approval|sign-?off|input|action)(?:\s+(?:before\s+(?:this\s+can\s+)?land(?:ing)?|to\s+land))?|(?:for\s+(?:the\s+)?owner|before\s+(?:this\s+can\s+)?land(?:ing)?|blocking\s+land(?:ing)?))\b/i;
 const noOwnerDecisionClause = /^no\s+(?:owner\s+(?:decision|decisions|approval|sign-?off|input|action|blocker|blockers)|blockers?)(?:\s+(?:is\s+|are\s+)?(?:needed|required|pending|before\s+(?:this\s+can\s+)?land(?:ing)?|to\s+land))?\s*[.!]?$/i;
@@ -45,12 +49,44 @@ function cleanInlineNote(raw: string): string {
   return text;
 }
 
+function isPlainTryPhrase(phrase: string, maxTokens = 8): boolean {
+  const tokens = phrase.trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length || tokens.length > maxTokens) return false;
+  if (plainTryLocPrep.test(tokens[0])) return false;
+  let seenPrep = false;
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!plainTryToken.test(tok)) return false;
+    if (plainTryLocPrep.test(tok)) {
+      if (seenPrep || i === tokens.length - 1) return false;
+      seenPrep = true;
+      continue;
+    }
+    if (plainTryClauseWord.test(tok)) return false;
+  }
+  return true;
+}
+
+function isPlainTryDetail(rawDetail: string): boolean {
+  const detail = rawDetail.trim().replace(/\.$/, '').trim();
+  const action = tryActionVerb.exec(detail);
+  if (!action) return false;
+  const rest = action[1].trim();
+  const withObserve = plainObserveTail.exec(rest);
+  if (withObserve) {
+    const target = withObserve[1].trim();
+    const observed = (withObserve[2] ?? withObserve[3] ?? '').trim();
+    return isPlainTryPhrase(target) && (!observed || isPlainTryPhrase(observed));
+  }
+  return isPlainTryPhrase(rest);
+}
+
 function isPendingTryNote(text: string): boolean {
   if (pendingTryExact.test(text)) return true;
   const match = pendingTryWithDetail.exec(text);
   if (!match) return false;
   const detail = (match[1] ?? match[2] ?? '').trim();
-  return Boolean(detail) && !detailNamesDecision.test(detail);
+  return Boolean(detail) && isPlainTryDetail(detail);
 }
 
 function classifyNoneQualifier(tail: string): { ok: true; tries: string[] } | { ok: false } {

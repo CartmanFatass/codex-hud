@@ -315,10 +315,50 @@ test('extractReportNotes parses heading/empty Blockers, qualified none, try note
     { blockers: ['none - owner must decide on deleting X'], tries: [] },
   );
 
-  // Pending-try phrase with detail is a try note; mixed decision text still blocks.
+  // Pending-try phrase with plain try detail is a try note; mixed or second-clause text still blocks.
   assert.deepEqual(
     extractReportNotes('Blockers: owner live try remains: reopen the panel\n'),
     { blockers: [], tries: ['owner live try remains: reopen the panel'] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: reopen the panel and observe\n'),
+    { blockers: [], tries: ['owner live try remains: reopen the panel and observe'] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: run ./greet and observe the output\n'),
+    { blockers: [], tries: ['owner live try remains: run ./greet and observe the output'] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: look at the status bar\n'),
+    { blockers: [], tries: ['owner live try remains: look at the status bar'] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: reopen the panel and pick which layout ships\n'),
+    { blockers: ['owner live try remains: reopen the panel and pick which layout ships'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: none (owner live try remains: reopen the panel and pick which layout ships)\n'),
+    { blockers: ['none (owner live try remains: reopen the panel and pick which layout ships)'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: reopen the panel and keep the old footer\n'),
+    { blockers: ['owner live try remains: reopen the panel and keep the old footer'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: reopen the panel; pick a layout\n'),
+    { blockers: ['owner live try remains: reopen the panel; pick a layout'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: reopen the panel; keep the old footer\n'),
+    { blockers: ['owner live try remains: reopen the panel; keep the old footer'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: check whether the old flag stays\n'),
+    { blockers: ['owner live try remains: check whether the old flag stays'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: owner live try remains: check with the owner\n'),
+    { blockers: ['owner live try remains: check with the owner'], tries: [] },
   );
   assert.deepEqual(
     extractReportNotes('Blockers: live try remains and the owner must decide on deleting X\n'),
@@ -328,6 +368,35 @@ test('extractReportNotes parses heading/empty Blockers, qualified none, try note
     extractReportNotes('Blockers: owner live try remains: owner must decide on deleting X\n'),
     { blockers: ['owner live try remains: owner must decide on deleting X'], tries: [] },
   );
+});
+
+test('mixed try-detail Blockers joined by and or semicolon go to the lead instead of landing silently', { timeout: 60_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: {
+    '01-mixed-and.md': goodTicket(1),
+    '02-mixed-semi.md': goodTicket(2, { blocked: 'none' }),
+  } });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, max_parallel: 2 });
+  const [job1, job2] = await f.jobs(flow, 2);
+
+  const andLine = 'owner live try remains: reopen the panel and pick which layout ships';
+  await f.settle(job1, { report: `Done.\nBlockers: ${andLine}\nRemoves: none\n` });
+  await until(() => f.flow(flow).active_lead?.kind === 'blocker' && f.flow(flow).active_lead.ticket === 'sample/01', 15_000);
+  const lead1 = f.flow(flow).active_lead.job;
+  assert.ok(fs.readFileSync(join(f.dir(lead1), 'brief.md'), 'utf8').includes(`Worker Blockers: lines:\n- ${andLine}`));
+  assert.equal(f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.land, undefined);
+  await f.settleLead(lead1, 'Decision: escalate\nReason: Owner must pick which layout ships.\nOwner approval: value-tradeoff\n');
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.held?.request_id === lead1, 15_000);
+
+  const semiLine = 'owner live try remains: reopen the panel; keep the old footer';
+  await f.settle(job2, { report: `Done.\nBlockers: ${semiLine}\nRemoves: none\n` });
+  await until(() => f.flow(flow).active_lead?.kind === 'blocker' && f.flow(flow).active_lead.ticket === 'sample/02', 15_000);
+  const lead2 = f.flow(flow).active_lead.job;
+  assert.ok(fs.readFileSync(join(f.dir(lead2), 'brief.md'), 'utf8').includes(`Worker Blockers: lines:\n- ${semiLine}`));
+  assert.equal(f.flow(flow).tickets.find(x => x.ticket === 'sample/02')?.land, undefined);
+  await f.settleLead(lead2, 'Decision: escalate\nReason: Second clause is not a plain observation.\nOwner approval: scope\n');
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/02')?.held?.request_id === lead2, 15_000);
+
+  await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
 });
 
 test('qualified none and try-with-detail Blockers land without a lead while recording try notes in run todo', { timeout: 60_000 }, async t => {
