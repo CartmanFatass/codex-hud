@@ -451,6 +451,42 @@
       "comments": [],
       "created_at": "2026-11-27T08:29:43.544Z",
       "updated_at": "2026-11-27T09:19:39.665Z"
+    },
+    {
+      "number": 28,
+      "title": "Gate flakes collected after test-flakes/27",
+      "kind": "flake-list",
+      "status": "needs-triage",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/panel-reload-views.test.mjs",
+          "case_name": "saving Width, Dock mode and Side configures the live dock; dock.resized persists size; reload leaves its size alone",
+          "flow": "fd0fd64f187be20c8",
+          "log": "~/.hud/flows/fd0fd64f187be20c8.json.gate-2.log",
+          "recorded_at": "2026-11-27T09:30:59.574Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T09:30:59.574Z",
+      "updated_at": "2026-11-27T09:30:59.574Z"
     }
   ]
 }

@@ -142,11 +142,11 @@ export interface ExecutionRun {
   /** Authoritative queue feature for legacy bare ticket numbers, not the display label. */
   readonly feature?: string;
   readonly unattended: boolean;
-  readonly state: TicketQueue['state'] | 'superseded';
+  readonly state: TicketQueue['state'];
   readonly createdAt: number | null;
   readonly updatedAt: number | null;
   readonly endedAt?: number;
-  readonly result?: 'failed' | 'landed' | 'not landed' | 'done' | 'stopped' | 'cancelled' | 'superseded';
+  readonly result?: 'failed' | 'landed' | 'not landed' | 'done' | 'stopped' | 'cancelled';
   readonly jobIds?: readonly string[];
   /** Standalone land's current step and worker, separate from its historical diagram nodes. */
   readonly landActivity?: {
@@ -1262,7 +1262,7 @@ const STATE_RANK: Record<ExecutionRun['state'], number> = {
 };
 
 function endedResult(state: ExecutionRun['state'], tickets: readonly ExecutionRunTicket[]): ExecutionRun['result'] {
-  if (state === 'cancelled' || state === 'superseded') return state;
+  if (state === 'cancelled') return state;
   if (tickets.some((ticket) => ticket.stage === 'failed')) return 'failed';
   if (tickets.some((ticket) => ticket.landingUnknown)) return undefined;
   return tickets.length && tickets.every((ticket) => ticket.stage === 'landed') ? 'landed' : 'not landed';

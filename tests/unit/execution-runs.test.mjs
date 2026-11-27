@@ -458,7 +458,8 @@ test('idle Execution shows only recent project rows, ordered together by end tim
   job(12, 'Foreign job title', 2, { cwd: join(root, 'foreign'), ticket: 'compile/06' });
   run(5, 'stale queue', 1441, [{ landed: true }]);
   const cancelledRun = run(6, 'archive', 24, [{ landed: true }, { landed: true }], 'cancelled');
-  const supersededRun = run(7, 'replace', 26, [{ landed: true }, { landed: true }, {}], 'superseded');
+  // A replaced attempt stays hidden even when some of its tickets landed.
+  run(7, 'replace', 26, [{ landed: true }, { landed: true }, {}], 'superseded');
 
   const execution = new PanelExecution(hud, PANE, {}, () => {});
   t.after(() => execution.dispose());
@@ -488,7 +489,6 @@ test('idle Execution shows only recent project rows, ordered together by end tim
     [jobItem(landed), 'landed', '已落地', '12m', '12分'],
     [runItem(landedRun), 'landed', '已落地', '15m', '15分'],
     [runItem(cancelledRun), 'cancelled', '已取消', '24m', '24分'],
-    [runItem(supersededRun), 'superseded', '已被取代', '26m', '26分'],
     [jobItem(unlanded), 'not landed', '未落地', '29m', '29分'],
     [jobItem(unknown), '', '', '40m', '40分'],
     [jobItem(complete), 'done', '完成', '58m', '58分'],
@@ -506,7 +506,7 @@ test('idle Execution shows only recent project rows, ordered together by end tim
     assert.deepEqual(rows.map((row) => row.item), expected.map(([item]) => item));
     for (const [i, [item, en, zh, enAge, zhAge]] of expected.entries()) {
       const line = rows[i].text.trimEnd(), [word, age] = lang === 'zh' ? [zh, zhAge] : [en, enAge];
-      const detail = width === 62 && [runItem(cancelledRun), runItem(supersededRun)].includes(item)
+      const detail = width === 62 && item === runItem(cancelledRun)
         ? (lang === 'zh' ? ' · 2 已落地' : ' · 2 landed') : '';
       assert.ok(line.endsWith(word ? ` ${word}${detail} ${age}` : ` ${age}`), `${lang} ${width}: ${line}`);
       if (!word) assert.doesNotMatch(line, /\b(?:failed|stopped|landed|done)\b|失败|已停止|落地|完成/);

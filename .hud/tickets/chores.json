@@ -418,7 +418,7 @@
     {
       "number": 37,
       "title": "Recent lists a cancelled queue run as cancelled, not landed",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "Cancel a run with a landed item and check its Recent row",
       "approved_removals": [],
@@ -428,22 +428,29 @@
         {
           "id": 1,
           "text": "Test: a cancelled run with landed items renders the cancelled state word in EN and ZH in Recent, with the landed count as a detail",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: a completed run still renders landed",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T09:36:07.641Z",
+        "job": "j97bcc53b284f2395",
+        "flow": "f97bcc53b284f2395",
+        "replay_base": "48266a43b6261edc7a3acd0ca1c84ca388a2dc22",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T06:58:31.899Z",
-      "updated_at": "2026-11-27T06:58:31.899Z"
+      "updated_at": "2026-11-27T09:36:07.641Z"
     },
     {
       "number": 38,
