@@ -7,6 +7,14 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-27
 
+- **D-2026-11-27-06** (§2.1 placement): Owner, after two features (toktrack capacity, unattended delivery) needed
+  four or more review rounds on even-pool Neon/Sol and were then handed to Astra at xhigh: repairs go straight to
+  Astra xhigh. A repair job (a repair ticket, or a repair started after its source job closed) runs on the role's
+  configured repair place ahead of fixed/even/auto placement; the role file sets it (imp: Astra, xhigh). Main kept
+  land-gate repairs and native-session resumes on the source worker: they continue the same session and are mostly
+  mechanical; a gate that still fails after two repairs pauses to main, whose repair then escalates. A blind
+  comparison of three Neon/Sol commit pairs (j9e5f406949b85070) found only a weak difference, so the rule escalates
+  the repair rather than demoting either model.
 - **D-2026-11-27-05** (§2.2 Home): Owner: one left panel as a feature integration that makes herdr's navigation
   sidebar richer, not a HUD-drawn replacement (the converged plan in `docs/design/unified-left/plan.md` was rejected
   as too mechanical: it made navigation and HUD pages exclusive and dropped sidebar functions). From oracle

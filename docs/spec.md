@@ -41,7 +41,9 @@ delegation). (new, 26.02)
   choice or failure. Only `general` takes one-job `on`/`preset`/`model`/`thinking` or borrows role instructions.
   Keep browser roles `pro` and `flow` optional, off by default. (13.01, 14.01, 18.01, 20.01, 21.04, 22.22, 22.29)
 - Keep `imp` fixed/even/auto placement, machine-wide role caps, optional overflow to `general` on the imp chain,
-  oldest-first queue and cancellation. Keep retry/repair placement rules. Auto routing and Sonic thinking have
+  oldest-first queue and cancellation. Keep retry/repair placement rules. A repair job (a repair ticket, or a repair
+  started after its source job closed) runs on the role's configured repair place ahead of fixed/even/auto placement
+  (imp: Astra at xhigh); land-gate repairs and native-session resumes keep the source worker (27.06). Auto routing and Sonic thinking have
   separate Decision API controls and fallbacks. New harness work prioritizes Claude Code, pi and Antigravity;
   keep supported Codex and Grok Build paths. (21.05, 22.22, 22.30)
 - Pass standing briefs, context files, prior reports or a scout dossier without relaying file bodies through main.
