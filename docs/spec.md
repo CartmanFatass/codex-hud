@@ -139,9 +139,14 @@ statusline drawn by herdr for every client may follow; native statuslines stay u
 - Sample outside paint. No sleep, project scan, model call or resident service to draw a line. Omit or qualify
   stale/partial readings; an absent watcher is not proof of zero. (new)
 
-**Home.** `/hud` shows or collapses the same herdr panel docked to an edge across clients (right by default, left or
-bottom as a setting; push by default so it never covers a client, overlay as a setting). Collapsing keeps the panel running; it can be resized by
-dragging and focused, copied from and zoomed like a pane. Delegation stays installed when closed. (27.01) Main sessions without the Claude mod show the first open owner
+**Home.** herdr's left sidebar keeps every navigation function and carries HUD's ambient layer: open owner requests
+and a page launcher on top, each running workflow as a miniature graph inside its agents group (a step with a live
+terminal focuses it; others open Execution). Its widths never change with runs: expanded, a 13-column rail or the
+4-column minimal rail of icons and rules (folded form a setting). `/hud`, `prefix+d` and the launcher open the HUD
+pages as one center `◆ HUD` tab across clients; focusing any workspace or agent hides it, hiding keeps it running,
+and it can be focused, copied from and zoomed like a pane. Docking the pages to an edge (push by default, overlay
+as a setting) stays a setting. Narrow terminals show the request count and run strips in herdr's header. Delegation
+stays installed when closed. (27.01, 27.04, 27.05) Main sessions without the Claude mod show the first open owner
 request, its project and the count in a one-line band. An owner request that asks for a try opens its prepared scene
 in one key and runs only preview actions the owner configured. (26.01)
 Keep keyboard and mouse navigation, Settings and Help. (11.04, 17.09, 19.03, 20.10)

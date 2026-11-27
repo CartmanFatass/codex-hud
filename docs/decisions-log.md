@@ -7,6 +7,19 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 ## 2026-11-27
 
+- **D-2026-11-27-05** (§2.2 Home): Owner: one left panel as a feature integration that makes herdr's navigation
+  sidebar richer, not a HUD-drawn replacement (the converged plan in `docs/design/unified-left/plan.md` was rejected
+  as too mechanical: it made navigation and HUD pages exclusive and dropped sidebar functions). From oracle
+  jafbaad7f019a595d's three zero-drop variants, previewed in the terminal, the owner chose C: herdr keeps drawing
+  the sidebar with every function it has; HUD adds open owner requests and a page launcher on top and each running
+  workflow as a miniature graph inside its agents group; deep pages (Home cards, Project, Execution, Control) open as
+  one center `◆ HUD` tab that focusing any workspace or agent hides again. Widths never change with runs: expanded,
+  a 13-column rail, or today's 4-column minimal rail (icons and rules only; HUD adds `?N` and a state shape on
+  folded runs), the folded form chosen in Settings, rail by default. The docked edge layout stays a setting.
+  Main settled the oracle's small questions: Execution uses the sidebar's marks (`✓ ◐ × ? ○`), and focusing a
+  workspace while Project or Execution is open selects its project. Rejected: A (a 40-column blade beside a rail
+  compacted to 13 columns) and B (one column split into a navigation deck and a HUD deck). Supersedes the right
+  dock and its collapsed workflow rail from 27.04; push stays the dock default when docked.
 - **D-2026-11-27-01** (§2.2 Home): Owner, after using the dock: it is less flexible than the old split pane (no
   collapse, width only via Settings, fixed right edge, not usable as an ordinary pane). Keep the dock (one panel per
   session, survives tab switches, overlay without reflow, no orphan panes) and add the flexibility in the fork:
