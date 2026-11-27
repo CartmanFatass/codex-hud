@@ -17,8 +17,10 @@ import {
   normalizePaneExcerpt,
   normalizeSelectionExcerpt,
   openAdvisorPopup,
+  parsePluginContext,
   retrySelectionAction,
   readAndRemoveSelectionHandoff,
+  refreshSelectionExcerpt,
   resolveSelectionTarget,
 } from '../../dist/roles/select-send.js';
 import {
@@ -1038,7 +1040,7 @@ test('investigate pane action reads visible output into handoff and handles empt
   const loaded = readAndRemoveSelectionHandoff(file);
   assert.equal(loaded.mode, 'investigate');
   assert.equal(loaded.pane_id, 'w1:p5');
-  assert.equal(loaded.default_question, DEFAULT_INVESTIGATE_LINE);
+  assert.equal('default_question' in loaded, false);
   assert.equal(loaded.selected_text, '  FAIL test/auth.test.mjs\n  Expected 200, got 500');
 
   // Empty visible output shows a toast and makes no handoff file.
@@ -1338,7 +1340,6 @@ test('investigate composer renderer keeps exact columns, NO_COLOR, EN/ZH, picker
       targetAgent: 'claude',
       jobs: [job],
       excerpt: normalizePaneExcerpt('\n  FAIL line 1\n  FAIL line 2\n\n'),
-      initialQuestion: DEFAULT_INVESTIGATE_LINE,
     });
     assert.equal(state.picker, 0);
     assert.equal(state.question, DEFAULT_INVESTIGATE_LINE);
@@ -1395,4 +1396,129 @@ test('investigate composer renderer keeps exact columns, NO_COLOR, EN/ZH, picker
   } finally {
     setLanguage(prevLang);
   }
+});
+
+test('investigate mode refuses visible-read error or timeout without falling back to recent scrollback', { timeout: 10_000 }, async (t) => {
+  const calls = [];
+  let visibleMode = 'error';
+  const f = await fakeFork(t, (method, params) => {
+    calls.push({ method, params });
+    if (method === 'pane.read') {
+      if (params.source === 'visible') {
+        if (visibleMode === 'timeout') return undefined;
+        return { error: { code: 'pane_read_failed', message: 'viewport unavailable' } };
+      }
+      return { result: { type: 'pane_read', read: { text: 'OFF_SCREEN_SCROLLBACK_TAIL' } } };
+    }
+    if (method === 'notification.show') return { result: { type: 'notification_show', shown: true, reason: 'shown' } };
+    if (method === 'plugin.pane.open') return { result: { type: 'ok' } };
+    return guardedPong;
+  });
+
+  for (const [language, title] of [
+    ['en', "Could not read the pane's visible region; nothing sent."],
+    ['zh', '无法读取窗格可见区域；未发送。'],
+  ]) {
+    calls.length = 0;
+    fs.writeFileSync(f.env.HUD_SETTINGS_PATH, JSON.stringify({ language }));
+    const action = spawn(process.execPath, [join(root, 'integrations/herdr/plugin/investigate.mjs')], {
+      env: { ...f.env, LC_ALL: 'C', HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_id: 'w1:p5' }) },
+    });
+    let stderr = '';
+    action.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    assert.deepEqual(await once(action, 'close'), [1, null]);
+    assert.deepEqual(calls.map((c) => c.method), ['pane.read', 'notification.show']);
+    assert.equal(calls[0].params.source, 'visible');
+    assert.deepEqual(calls[1].params, { title });
+    assert.ok(stderr.includes(title));
+  }
+  assert.equal(fs.existsSync(join(f.home, 'select-send')), false);
+  assert.equal(fs.existsSync(join(f.home, 'selection-excerpts.json')), false);
+
+  // Refresh in investigate mode also never widens to recent scrollback when visible read fails.
+  calls.length = 0;
+  const visibleExcerpt = normalizePaneExcerpt('VISIBLE_VIEWPORT_LINE');
+  const invRefreshed = await refreshSelectionExcerpt(
+    { mode: 'investigate', pane_id: 'w1:p5', selected_text: visibleExcerpt.text },
+    visibleExcerpt,
+    { screenText: 'OLDER_VIEWPORT_LINE', startLine: 0, endLine: 1, lineCount: 1 },
+    f.env
+  );
+  assert.deepEqual(calls.map((c) => [c.method, c.params.source]), [['pane.read', 'visible']]);
+  assert.equal(invRefreshed.changed, false);
+  assert.equal(invRefreshed.excerpt.text, 'VISIBLE_VIEWPORT_LINE');
+
+  // Selection-mode refresh keeps its separate fallback when visible read fails.
+  calls.length = 0;
+  const selRefreshed = await refreshSelectionExcerpt(
+    { focused_pane_id: 'w1:p5', selected_text: 'STALE_SELECTION', stale_content: true },
+    normalizeSelectionExcerpt('STALE_SELECTION'),
+    null,
+    f.env
+  );
+  assert.deepEqual(calls.map((c) => [c.method, c.params.source]), [['pane.read', 'visible'], ['pane.read', 'recent']]);
+  assert.equal(selRefreshed.changed, true);
+  assert.equal(selRefreshed.excerpt.text, 'OFF_SCREEN_SCROLLBACK_TAIL');
+
+  // Timeout on visible read refuses Investigate and sends nothing; no recent fallback is attempted.
+  visibleMode = 'timeout';
+  calls.length = 0;
+  const timedOut = await handleInvestigatePaneAction(f.home, {
+    ...f.env,
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_id: 'w1:p5' }),
+  });
+  assert.deepEqual(timedOut, { opened: false, reason: 'pane_read_failed' });
+  assert.deepEqual(calls.map((c) => [c.method, c.params.source]), [['pane.read', 'visible']]);
+  assert.equal(fs.existsSync(join(f.home, 'select-send')), false);
+
+  calls.length = 0;
+  const { stdin, stdout } = fakeTtyStreams(80, 18);
+  const directTimeout = await runComposerSession({
+    context: { mode: 'investigate', focused_pane_id: 'w1:p5' },
+    hudHome: f.home,
+    env: f.env,
+    stdin,
+    stdout,
+  });
+  assert.deepEqual(directTimeout, { code: 1, sent: false });
+  assert.deepEqual(calls.map((c) => [c.method, c.params.source]), [['pane.read', 'visible']]);
+});
+
+test('investigate owner line defaults to Investigate this without a default_question handoff field', async (t) => {
+  const parsed = parsePluginContext({
+    HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({
+      mode: 'investigate',
+      pane_id: 'w1:p5',
+      default_question: 'Injected override',
+    }),
+  });
+  assert.equal(parsed.mode, 'investigate');
+  assert.equal('default_question' in parsed, false);
+
+  const f = await fakeFork(t, (method) => {
+    if (method === 'pane.list') return { result: { panes: [] } };
+    if (method === 'pane.read') return { result: { type: 'pane_read', read: { text: 'FAIL line' } } };
+    return guardedPong;
+  });
+  const { stdin, stdout } = fakeTtyStreams(80, 18);
+  const frames = [];
+  const session = runComposerSession({
+    context: {
+      mode: 'investigate',
+      focused_pane_id: 'w1:p5',
+      selected_text: 'FAIL line',
+      default_question: 'Ignored legacy field',
+    },
+    hudHome: f.home,
+    env: f.env,
+    stdin,
+    stdout,
+    onFrame: (lines, state) => frames.push({ lines, state }),
+  });
+  await until(() => frames.length > 0);
+  assert.equal(frames[0].state.question, DEFAULT_INVESTIGATE_LINE);
+  assert.ok(frames[0].lines.join('\n').includes('Question: Investigate this'));
+  stdin.write('\x1b');
+  const outcome = await session;
+  assert.equal(outcome.sent, false);
 });

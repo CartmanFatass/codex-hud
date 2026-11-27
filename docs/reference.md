@@ -1127,7 +1127,9 @@ For a working pi tab worker, choose its **Note for next turn** entry in the same
 
 Direct sends, notes and advisor conversations share a limit of 64 private cards in `$HUD_HOME/selection-excerpts.json`, independently of their source panes. A pending note that can still be delivered is not evicted to make room for a new card.
 
-The same plugin also defines the pane action `hud.select-send.investigate` (**Investigate this**, `contexts = ["pane"]`). It reads the pane's visible output (`pane.read`, falling back to `recent`), opens the composer on the project's working-job picker (working jobs only; closed targets are refused and never fall back to main), pre-fills the owner line with `Investigate this`, and delivers through the same excerpt-record and reply path.
+### Investigate a pane's visible output
+
+Separate from mouse-selected text, the `hud.select-send` plugin also defines the pane action `hud.select-send.investigate` (**Investigate this**, `contexts = ["pane"]`). It captures only the pane's current visible viewport via `pane.read` with `source: "visible"` (outer blank rows trimmed, tail-truncated to 8,000 characters). If the visible region cannot be read (error or timeout), the action refuses with a notification and sends nothing—it never falls back to `recent` scrollback. When capture succeeds, it opens the composer on the project's working-job picker (working tab jobs only; closed targets are refused and never fall back to main), initializes the editable owner line to `Investigate this`, and delivers through the same excerpt-record and reply path.
 
 ### Discuss a pane selection with an advisor
 

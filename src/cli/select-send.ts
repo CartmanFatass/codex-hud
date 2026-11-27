@@ -19,7 +19,6 @@ import {
 import {
   captureSelectionBaseline,
   contextPaneId,
-  DEFAULT_INVESTIGATE_LINE,
   deliverSelection,
   formatSelectionMessage,
   handleInvestigatePaneAction,
@@ -168,10 +167,9 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
     const paneId = contextPaneId(ctx);
     if (paneId) {
       const rawText = await readPaneVisibleText(paneId, opts.env);
-      if (rawText !== null) {
-        excerpt = normalizePaneExcerpt(rawText);
-        ctx = { ...ctx, pane_id: paneId, selected_text: excerpt.text, stale_content: false, selection: undefined };
-      }
+      if (rawText === null) return { code: 1, sent: false };
+      excerpt = normalizePaneExcerpt(rawText);
+      ctx = { ...ctx, pane_id: paneId, selected_text: excerpt.text, stale_content: false, selection: undefined };
     }
   } else if (stale || (excerpt.empty && ctx.selection)) {
     const refreshed = await refreshSelectionExcerpt(ctx, excerpt, null, opts.env);
@@ -198,7 +196,6 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
     targetAgent: resolved.targetAgent,
     jobs: resolved.jobs,
     excerpt,
-    initialQuestion: investigate ? (ctx.default_question ?? DEFAULT_INVESTIGATE_LINE) : '',
     stale,
     error: investigate
       ? (resolved.jobs.length ? null : t('No working jobs found for this project.'))
@@ -480,7 +477,9 @@ export async function runInvestigatePaneAction(env: NodeJS.ProcessEnv = process.
     ? t('No visible pane output to send.')
     : result.reason === 'no_pane'
       ? t('No pane found to investigate.')
-      : t('Could not open the investigate composer.');
+      : result.reason === 'pane_read_failed'
+        ? t("Could not read the pane's visible region; nothing sent.")
+        : t('Could not open the investigate composer.');
   const body = !soft && result.reason && result.reason !== 'popup_open_failed' && result.reason !== 'pane_read_failed'
     ? monitorText(result.reason)
     : '';

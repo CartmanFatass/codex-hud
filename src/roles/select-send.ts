@@ -69,7 +69,6 @@ export interface PluginSelectionContext {
   stale_content?: boolean;
   selection?: SelectionCoords;
   mode?: SelectSendMode;
-  default_question?: string;
   invocation_source?: string;
   correlation_id?: string;
 }
@@ -269,7 +268,6 @@ export function parsePluginContext(env: NodeJS.ProcessEnv = process.env): Plugin
   const selection = parseSelectionCoords(raw.selection);
   const pane_id = herdrId(raw.pane_id) ? raw.pane_id : undefined;
   const mode = raw.mode === 'investigate' ? 'investigate' : undefined;
-  const default_question = typeof raw.default_question === 'string' ? raw.default_question : undefined;
   return {
     workspace_id: str('workspace_id') ?? (herdrId(env.HERDR_WORKSPACE_ID) ? env.HERDR_WORKSPACE_ID : undefined),
     workspace_label: str('workspace_label'),
@@ -286,7 +284,6 @@ export function parsePluginContext(env: NodeJS.ProcessEnv = process.env): Plugin
     stale_content: raw.stale_content === true,
     ...(selection ? { selection } : {}),
     ...(mode ? { mode } : {}),
-    ...(default_question !== undefined ? { default_question } : {}),
     invocation_source: str('invocation_source'),
     correlation_id: str('correlation_id'),
   };
@@ -535,30 +532,34 @@ export async function resolveSelectionTarget(
   return projectMain ? result(source, projectMain) : { ...result(source), reason: 'No main session found for this project' };
 }
 
-export async function readPaneVisibleText(paneId: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+async function readPaneSource(
+  paneId: string,
+  source: 'visible' | 'recent',
+  env: NodeJS.ProcessEnv = process.env
+): Promise<string | null> {
   if (herdrEndpoint(env)) {
-    for (const source of ['visible', 'recent'] as const) {
-      const reply = await herdrRequest(
-        'pane.read',
-        { pane_id: paneId, source, format: 'text', strip_ansi: true },
-        { env, timeoutMs: 800 }
-      ).catch(() => null);
-      const text = reply?.result?.read?.text ?? reply?.result?.text;
-      if (!reply?.error && typeof text === 'string') return text.replace(/\r\n?/g, '\n');
-    }
-    return null;
+    const reply = await herdrRequest(
+      'pane.read',
+      { pane_id: paneId, source, format: 'text', strip_ansi: true },
+      { env, timeoutMs: 800 }
+    ).catch(() => null);
+    const text = reply?.result?.read?.text ?? reply?.result?.text;
+    return !reply?.error && typeof text === 'string' ? text.replace(/\r\n?/g, '\n') : null;
   }
-  for (const source of ['visible', 'recent'] as const) {
-    const cli = await runHerdr(['pane', 'read', paneId, '--source', source], env, { budgetMs: 2000 }).catch(() => null);
-    if (!cli?.ok) continue;
-    const result = herdrResult(cli.stdout);
-    const read = isRecord(result?.read) ? result.read : result;
-    if (typeof read?.text === 'string') return read.text.replace(/\r\n?/g, '\n');
-  }
-  return null;
+  const cli = await runHerdr(['pane', 'read', paneId, '--source', source], env, { budgetMs: 2000 }).catch(() => null);
+  if (!cli?.ok) return null;
+  const result = herdrResult(cli.stdout);
+  const read = isRecord(result?.read) ? result.read : result;
+  return typeof read?.text === 'string' ? read.text.replace(/\r\n?/g, '\n') : null;
 }
 
-const paneReadText = readPaneVisibleText;
+export async function readPaneVisibleText(paneId: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  return readPaneSource(paneId, 'visible', env);
+}
+
+async function readPaneSelectionScreen(paneId: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  return (await readPaneSource(paneId, 'visible', env)) ?? (await readPaneSource(paneId, 'recent', env));
+}
 
 function locateExcerptSpan(screenText: string, excerptText: string): { startLine: number; endLine: number } | null {
   const screenLines = screenText.split('\n');
@@ -595,7 +596,9 @@ export async function captureSelectionBaseline(
 ): Promise<SelectionBaseline | null> {
   const paneId = contextPaneId(ctx);
   if (!paneId || excerpt.empty) return null;
-  const screenText = await paneReadText(paneId, env);
+  const screenText = ctx.mode === 'investigate'
+    ? await readPaneVisibleText(paneId, env)
+    : await readPaneSelectionScreen(paneId, env);
   if (screenText === null) return null;
   const lineCount = excerpt.text.split('\n').length;
   const span = locateExcerptSpan(screenText, excerpt.text);
@@ -655,7 +658,9 @@ export async function refreshSelectionExcerpt(
     return { stale: Boolean(ctx.stale_content), changed: false, excerpt: current, baseline };
   }
 
-  const screenText = await paneReadText(paneId, env);
+  const screenText = ctx.mode === 'investigate'
+    ? await readPaneVisibleText(paneId, env)
+    : await readPaneSelectionScreen(paneId, env);
   if (screenText === null) return { stale: Boolean(ctx.stale_content), changed: false, excerpt: current, baseline };
 
   const lineCount = Math.max(1, baseline?.lineCount ?? current.text.split('\n').length);
@@ -948,7 +953,6 @@ export async function handleInvestigatePaneAction(
     stale_content: false,
     selection: undefined,
     mode: 'investigate',
-    default_question: DEFAULT_INVESTIGATE_LINE,
   };
   const handoffFile = writeSelectionHandoff(hudHome, contextToStore);
   const opened = await openComposerPopup(handoffFile, env);

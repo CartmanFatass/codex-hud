@@ -4,7 +4,7 @@
  * t() EN/ZH labels, theme roles (zero ANSI under theme=none / NO_COLOR), whole footer hints.
  */
 import type { SelectionExcerpt } from '../roles/selection-excerpts.js';
-import type { NormalizedExcerpt, SelectSendMode, SelectionJobTarget, SelectionSource } from '../roles/select-send.js';
+import { DEFAULT_INVESTIGATE_LINE, type NormalizedExcerpt, type SelectSendMode, type SelectionJobTarget, type SelectionSource } from '../roles/select-send.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { t } from './i18n.js';
 import { fit, monitorText, pair } from './monitor-text.js';
@@ -57,7 +57,7 @@ export function createComposerState(input: {
 }): ComposerState {
   const mode = input.mode ?? 'selection';
   const jobs = input.jobs ?? [];
-  const question = input.initialQuestion ?? '';
+  const question = input.initialQuestion ?? (mode === 'investigate' ? DEFAULT_INVESTIGATE_LINE : '');
   return {
     mode,
     source: input.source,

@@ -886,6 +886,7 @@ const ZH: Record<string, string> = {
   'No selection to send — select text with the mouse first.': '没有可发送的选中内容，请先用鼠标选中文本。',
   'No visible pane output to send.': '窗格没有可发送的可见输出。',
   'No pane found to investigate.': '未找到可排查的窗格。',
+  "Could not read the pane's visible region; nothing sent.": '无法读取窗格可见区域；未发送。',
   'Could not open the selection composer.': '无法打开选中内容的发送窗口。',
   'Could not open the investigate composer.': '无法打开窗格排查窗口。',
   'No main session found for this project.': '未找到该项目的主会话。',
