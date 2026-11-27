@@ -17,7 +17,7 @@ import { theme, truncateAnsi, visualLength } from './colors.js';
 import { displayConfig } from './hud-config.js';
 import { t } from './i18n.js';
 import { roleIcon } from './model-glyphs.js';
-import type { MetroStationTarget, MonitorRow } from './monitor.js';
+import type { MetroEdgeTarget, MetroStationTarget, MonitorRow } from './monitor.js';
 import type { MetroStationInspect } from './monitor-state.js';
 import { fit, monitorText } from './monitor-text.js';
 import { PROJECT_STRIP_MORE } from './project-strip.js';
@@ -75,8 +75,6 @@ export interface MetroStation {
   readonly title?: string;
   readonly label?: string;
   readonly role?: string;
-  /** Optional lane hint (0..2) from an upstream lane reducer. */
-  readonly lane?: number;
   readonly deps?: readonly string[];
   readonly blockers?: readonly string[];
   readonly waits?: string;
@@ -114,8 +112,6 @@ export interface MetroFlow {
   readonly batch?: WorkBatch;
   readonly stations: readonly MetroStation[];
   readonly edges?: readonly MetroEdge[];
-  /** Optional explicit lane count (1..3) when stations carry pre-assigned lanes. */
-  readonly lanes?: number;
   /** Optional explicit station ID that changed last (overrides `changedAt` inference). */
   readonly lastChangedId?: string;
 }
@@ -217,7 +213,7 @@ function poolParts(counts?: MetroPoolCounts): Array<[MetroStationState, number]>
       if (n && n > 0) out.push([state, n]);
     }
   }
-  return out.length ? out : [['waiting', 0]];
+  return out;
 }
 
 /* ───────────────────────── cell canvas ───────────────────────── */
@@ -383,7 +379,9 @@ function repairStationId(hostId: string, repair: MetroRepair, index: number): st
 function nodeWidth(node: Pick<MetroStation, 'kind' | 'counts' | 'count' | 'gate'> & { compact?: boolean }, ascii: boolean): number {
   if (node.kind === 'group') return visualLength(`●${ascii ? '' : '×'}${node.count ?? 0}`);
   if (node.kind === 'pool') {
-    return 2 + poolParts(node.counts).reduce((sum, [, c], i) =>
+    const parts = poolParts(node.counts);
+    if (!parts.length) return 3;
+    return 2 + parts.reduce((sum, [, c], i) =>
       sum + (i ? 1 : 0) + 1 + (ascii ? 0 : 1) + String(c).length, 0);
   }
   if (node.gate) return gateSegments(node.gate).length + (node.compact ? 0 : 2);
@@ -928,13 +926,18 @@ function drawStation(cv: Canvas, rows: Cell[][], node: WorkNode, ascii: boolean,
     const bg: BgRole = selected ? 'selected' : 'title';
     const edgeFg: FgRole = selected ? 'selectedEdge' : 'titleEdge';
     const plain = noColour || ascii;
+    const parts = poolParts(node.counts);
     x = cv.put(r, x, plain ? '(' : '▐', plain ? {} : { fg: edgeFg });
-    poolParts(node.counts).forEach(([state, n], i) => {
-      if (i) x = cv.put(r, x, ' ', { bg });
-      const own = stateStyle(state);
-      x = cv.put(r, x, stationChar('worker', state, ascii), { bg, ...own });
-      x = cv.text(r, x, `${ascii ? '' : '×'}${n}`, { bg, fg: state === 'waiting' ? 'muted' : 'text' });
-    });
+    if (!parts.length) {
+      x = cv.put(r, x, stationChar('worker', 'unknown', ascii), { bg, ...stateStyle('unknown') });
+    } else {
+      parts.forEach(([state, n], i) => {
+        if (i) x = cv.put(r, x, ' ', { bg });
+        const own = stateStyle(state);
+        x = cv.put(r, x, stationChar('worker', state, ascii), { bg, ...own });
+        x = cv.text(r, x, `${ascii ? '' : '×'}${n}`, { bg, fg: state === 'waiting' ? 'muted' : 'text' });
+      });
+    }
     cv.put(r, x, plain ? ')' : '▌', plain ? {} : { fg: edgeFg });
   } else if (node.gate) {
     if (!node.compact) x = cv.put(r, x, ascii ? '{' : '‹', { fg: 'muted' });
@@ -1131,43 +1134,8 @@ export function renderMetroFlow(flow: MetroFlow, selected: string | undefined, w
   const m = layoutMetroFlow(flow, width, ascii);
   if (!m.lanes) return [header];
 
-  const cv = new Canvas(width);
-  const rows = Array.from({ length: m.lanes }, () => cv.row());
-  drawHairlineLines(cv, rows, m, ascii);
-
   const stations: WorkNode[] = [...m.nodes, ...m.spurs.flatMap((s) => s.nodes)];
   const cursorStation = stations.find((n) => metroStationItem(flow.flow, n.id) === selected);
-  for (const n of stations) drawStation(cv, rows, n, ascii, noColour, n === cursorStation);
-
-  // Without colour (and in ASCII), a repair line marks itself before its station(s).
-  if (noColour || ascii) {
-    for (const s of m.spurs) {
-      const first = s.nodes[0];
-      if (!first) continue;
-      const at = first.x - (cursorStation === first ? 2 : 1);
-      if (at > s.a && at < width) cv.put(rows[first.lane]!, at, ascii ? '%' : '↻', { fg: 'stalled' });
-    }
-    for (const n of m.nodes) {
-      if (!n.inlineRepair) continue;
-      const at = n.x - (cursorStation === n ? 2 : 1);
-      if (at >= 0 && at < width) cv.put(rows[n.lane]!, at, ascii ? '%' : '↻', { fg: 'stalled' });
-    }
-  }
-
-  if (cursorStation) {
-    const r = rows[cursorStation.lane]!;
-    if (noColour) {
-      if (cursorStation.x - 1 >= 0) cv.put(r, cursorStation.x - 1, ascii ? '>' : '▸');
-      if (cursorStation.x + cursorStation.w < width) cv.put(r, cursorStation.x + cursorStation.w, ascii ? '<' : '◂');
-    } else if (cursorStation.kind !== 'pool') {
-      const from = Math.max(0, cursorStation.x - 1);
-      const to = Math.min(width - 1, cursorStation.x + cursorStation.w);
-      for (let cx = from; cx <= to; cx++) {
-        if (!r[cx]!.bg) r[cx] = { ...r[cx]!, bg: 'selected' };
-      }
-    }
-  }
-
   const allLogical = allLogicalStations(flow);
   const fallbackDetail = defaultDetailStation(flow, allLogical);
   const detailNode = cursorStation ?? fallbackDetail;
@@ -1175,17 +1143,111 @@ export function renderMetroFlow(flow: MetroFlow, selected: string | undefined, w
     ? fallbackDetail.id
     : stations.find((s) => s.state !== 'done' && s.state !== 'waiting')?.id ?? stations[0]?.id;
 
+  // When folds cannot fit the whole map in `width`, pan a horizontal viewport following the cursor/default station.
+  const overflow = m.width > width && width > 0;
+  const anchor = cursorStation ?? stations.find((s) => s.id === defaultLayoutId) ?? stations[0];
+  let scrollX = 0;
+  if (overflow && anchor) {
+    const maxScroll = Math.max(0, m.width - width);
+    if (anchor.w + 4 > width) {
+      scrollX = Math.max(0, Math.min(maxScroll, anchor.x - (width >= 6 ? 2 : 1)));
+    } else {
+      const anchorCenter = anchor.x + Math.floor(anchor.w / 2);
+      scrollX = Math.max(0, Math.min(maxScroll, anchorCenter - Math.floor(width / 2)));
+    }
+  }
+  const hasLeft = overflow && stations.some((n) => n.x - scrollX < 1);
+  const hasRight = overflow && stations.some((n) => n.x + n.w - scrollX > width - 1);
+  const leftLimit = hasLeft ? (width >= 6 ? 2 : 1) : 0;
+  const rightLimit = Math.max(leftLimit, width - (hasRight ? (width >= 6 ? 2 : 1) : 0));
+
+  const offscreenByNode = new Map<WorkNode, 'left' | 'right' | undefined>();
+  for (const n of stations) {
+    if (!overflow) {
+      offscreenByNode.set(n, undefined);
+      continue;
+    }
+    const sx = n.x - scrollX;
+    if (n === anchor && sx < rightLimit && sx + n.w > leftLimit) {
+      offscreenByNode.set(n, undefined);
+    } else if (sx < leftLimit) {
+      offscreenByNode.set(n, 'left');
+    } else if (sx + n.w > rightLimit) {
+      offscreenByNode.set(n, 'right');
+    } else {
+      offscreenByNode.set(n, undefined);
+    }
+  }
+
+  const fullWidth = Math.max(width, m.width);
+  const fullCv = new Canvas(fullWidth);
+  const fullRows = Array.from({ length: m.lanes }, () => fullCv.row());
+  drawHairlineLines(fullCv, fullRows, m, ascii);
+
+  for (const n of stations) {
+    if (!offscreenByNode.get(n)) drawStation(fullCv, fullRows, n, ascii, noColour, n === cursorStation);
+  }
+
+  // Without colour (and in ASCII), a repair line marks itself before its station(s).
+  if (noColour || ascii) {
+    for (const s of m.spurs) {
+      const first = s.nodes[0];
+      if (!first || offscreenByNode.get(first)) continue;
+      const at = first.x - (cursorStation === first ? 2 : 1);
+      if (at > s.a && at - scrollX >= leftLimit && at - scrollX < rightLimit) {
+        fullCv.put(fullRows[first.lane]!, at, ascii ? '%' : '↻', { fg: 'stalled' });
+      }
+    }
+    for (const n of m.nodes) {
+      if (!n.inlineRepair || offscreenByNode.get(n)) continue;
+      const at = n.x - (cursorStation === n ? 2 : 1);
+      if (at >= 0 && at - scrollX >= leftLimit && at - scrollX < rightLimit) {
+        fullCv.put(fullRows[n.lane]!, at, ascii ? '%' : '↻', { fg: 'stalled' });
+      }
+    }
+  }
+
+  if (cursorStation && !offscreenByNode.get(cursorStation)) {
+    const r = fullRows[cursorStation.lane]!;
+    if (noColour) {
+      const leftBracket = cursorStation.x - 1;
+      const rightBracket = cursorStation.x + cursorStation.w;
+      if (leftBracket >= 0 && (!hasLeft || leftBracket - scrollX >= 1)) fullCv.put(r, leftBracket, ascii ? '>' : '▸');
+      if (rightBracket < fullWidth && (!hasRight || rightBracket - scrollX < width - 1)) fullCv.put(r, rightBracket, ascii ? '<' : '◂');
+    } else if (cursorStation.kind !== 'pool') {
+      const from = Math.max(hasLeft ? scrollX + 1 : 0, cursorStation.x - 1);
+      const to = Math.min(hasRight ? scrollX + width - 2 : fullWidth - 1, cursorStation.x + cursorStation.w);
+      for (let cx = from; cx <= to; cx++) {
+        if (!r[cx]!.bg) r[cx] = { ...r[cx]!, bg: 'selected' };
+      }
+    }
+  }
+
+  const cv = new Canvas(width);
+  const rows = Array.from({ length: m.lanes }, (_, lane) => {
+    const out = cv.row();
+    const src = fullRows[lane]!;
+    for (let sx = 0; sx < width; sx++) {
+      const lx = sx + scrollX;
+      if (lx >= 0 && lx < fullWidth) out[sx] = src[lx]!;
+    }
+    return out;
+  });
+
   const byLane: MetroStationTarget[][] = Array.from({ length: m.lanes }, () => []);
   for (const n of stations) {
-    if (n.x >= width) continue;
+    const off = offscreenByNode.get(n);
+    const sx = n.x - scrollX;
+    const targetWidth = off ? n.w : Math.max(1, Math.min(n.w, rightLimit - sx));
     byLane[n.lane]!.push({
       item: metroStationItem(flow.flow, n.id),
       flow: flow.flow,
       stationId: n.id,
-      x: n.x,
-      width: Math.min(n.w, width - n.x),
+      x: sx,
+      width: targetWidth,
       lane: n.lane,
       col: n.col,
+      ...(off ? { offscreen: off } : {}),
       ...(n.id === defaultLayoutId ? { defaultEntry: true as const } : {}),
       ...(n.execJob ? { execJob: n.execJob } : {}),
       inspect: stationInspectOf(n, flow),
@@ -1193,9 +1255,45 @@ export function renderMetroFlow(flow: MetroFlow, selected: string | undefined, w
   }
   for (const lane of byLane) lane.sort((a, b) => a.x - b.x);
 
+  const allTargets = byLane.flat();
+  const leftOffAll = allTargets.filter((target) => target.offscreen === 'left');
+  const rightOffAll = allTargets.filter((target) => target.offscreen === 'right');
+  const edgesByLane: MetroEdgeTarget[][] = Array.from({ length: m.lanes }, () => []);
+  if (hasLeft && leftOffAll.length && width >= 2) {
+    const markLanes = new Set<number>();
+    for (let l = 0; l < m.lanes; l++) {
+      if (byLane[l]!.some((target) => target.offscreen === 'left') || rows[l]![0]!.ch !== ' ') markLanes.add(l);
+    }
+    if (!markLanes.size) markLanes.add(Math.floor(m.lanes / 2));
+    for (const l of markLanes) {
+      const laneOff = byLane[l]!.filter((target) => target.offscreen === 'left');
+      const pool = laneOff.length ? laneOff : leftOffAll;
+      const target = [...pool].sort((a, b) => b.x - a.x || Math.abs(a.lane - l) - Math.abs(b.lane - l))[0];
+      if (!target) continue;
+      cv.put(rows[l]!, 0, ascii ? '<' : '«', { fg: 'muted', bold: true });
+      edgesByLane[l]!.push({ side: 'left', x: 0, width: 1, target });
+    }
+  }
+  if (hasRight && rightOffAll.length && width >= 2) {
+    const markLanes = new Set<number>();
+    for (let l = 0; l < m.lanes; l++) {
+      if (byLane[l]!.some((target) => target.offscreen === 'right') || rows[l]![width - 1]!.ch !== ' ') markLanes.add(l);
+    }
+    if (!markLanes.size) markLanes.add(Math.floor(m.lanes / 2));
+    for (const l of markLanes) {
+      const laneOff = byLane[l]!.filter((target) => target.offscreen === 'right');
+      const pool = laneOff.length ? laneOff : rightOffAll;
+      const target = [...pool].sort((a, b) => a.x - b.x || Math.abs(a.lane - l) - Math.abs(b.lane - l))[0];
+      if (!target) continue;
+      cv.put(rows[l]!, width - 1, ascii ? '>' : '»', { fg: 'muted', bold: true });
+      edgesByLane[l]!.push({ side: 'right', x: width - 1, width: 1, target });
+    }
+  }
+
   const mapRows: MonitorRow[] = rows.map((r, lane) => ({
     text: fit(paintRow(r, noColour), width),
     metroStations: byLane[lane]!,
+    ...(edgesByLane[lane]!.length ? { metroEdges: edgesByLane[lane]! } : {}),
   }));
   const detail = renderDetailRow(flow, detailNode, width, now, ascii, noColour);
   return [header, ...mapRows, detail];
@@ -1230,7 +1328,7 @@ export function renderMetroLegend(
     [has((n) => n.state === 'lease' || n.gate?.state === 'lease'), ascii ? '~' : '◷', { fg: 'text' }, t('lease')],
     [has((n) => n.state === 'stalled'), ascii ? 'z' : '◍', { fg: 'stalled' }, t('stalled')],
     [has((n) => n.state === 'stopped'), ascii ? '/' : '⊘', { fg: 'muted' }, t('stopped')],
-    [has((n) => n.state === 'unknown'), ascii ? 'u' : '◌', { fg: 'muted' }, t('unknown')],
+    [has((n) => n.state === 'unknown' || (n.kind === 'pool' && !poolParts(n.counts).length)), ascii ? 'u' : '◌', { fg: 'muted' }, t('unknown')],
     [has((n) => n.kind === 'review'), ascii ? 'r R' : '◇◈◆', { fg: 'muted' }, t('review')],
     [has((n) => n.kind === 'accept' || n.kind === 'synth'), ascii ? 'a A' : '☆✪★', { fg: 'muted' }, acceptWord],
     [all || ascii, ascii ? '@' : '◉', { fg: 'active', bold: true }, t('metro: working')],
@@ -1282,7 +1380,10 @@ function collectorStationTitle(run: ExecutionRun, s: CollectorMetroStation): str
   }
   if (run.kind === 'batch') {
     if (s.id === 'pilot') return s.label ? `${t('Pilot')} ${monitorText(s.label)}` : t('Pilot');
-    if (s.kind === 'pool') return t('Pool of {n}', { n: s.count ?? run.batch?.count ?? 0 });
+    if (s.kind === 'pool') {
+      const count = s.count ?? run.batch?.count;
+      return count !== undefined ? t('Pool of {n}', { n: count }) : t('Pool');
+    }
     if (s.kind === 'summary') return t('metro: summary');
   }
   if (run.kind === 'land') {
@@ -1522,7 +1623,10 @@ export function metroFlowFromRun(run: ExecutionRun): MetroFlow {
 /* ───────────────────────── station lookup & keyboard navigation ───────────────────────── */
 
 export function metroStationAt(row: MonitorRow | undefined, col: number): MetroStationTarget | undefined {
-  return row?.metroStations?.find((s) => col >= s.x && col < s.x + s.width);
+  if (!row) return undefined;
+  const edge = row.metroEdges?.find((e) => col >= e.x && col < e.x + e.width);
+  if (edge) return edge.target;
+  return row.metroStations?.find((s) => !s.offscreen && col >= s.x && col < s.x + s.width);
 }
 
 export function findMetroStation(rows: readonly MonitorRow[], item: string | undefined): MetroStationTarget | undefined {

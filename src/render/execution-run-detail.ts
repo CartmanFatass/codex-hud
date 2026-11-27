@@ -249,17 +249,18 @@ export function stationDetailRows(
   const plain = (text: string) => boardRow(fit(text, width));
   const live = findLiveStation(run, stationId);
   const ticket = run.tickets.find((tk) => tk.ticket === stationId || (snapshot?.hostId && tk.ticket === snapshot.hostId));
-  const kind = snapshot?.kind ?? live.station?.kind ?? (live.repair ? 'worker' : 'worker');
+  const kind = snapshot?.kind ?? live.station?.kind ?? 'worker';
   const rawState = live.repair?.state ?? live.station?.state ?? snapshot?.state ?? 'waiting';
   const pres = metroStatePresentation(rawState);
   const acceptSeat = live.station?.kind === 'accept' || snapshot?.kind === 'accept'
     ? (live.station?.label ?? snapshot?.label ?? (run.kind === 'queue' ? (run.acceptanceSeat ?? 'lead') : undefined))
     : undefined;
+  const poolCount = live.station?.count ?? run.batch?.count ?? snapshot?.count;
   const heading = snapshot?.title
     ?? live.station?.title
     ?? (kind === 'accept' ? (acceptSeat === 'main' ? t('Hand-back (main)') : t('Lead acceptance'))
       : kind === 'review' ? t('Run review')
-        : kind === 'pool' ? t('Pool of {n}', { n: live.station?.count ?? run.batch?.count ?? snapshot?.count ?? 0 })
+        : kind === 'pool' ? (poolCount !== undefined ? t('Pool of {n}', { n: poolCount }) : t('Pool'))
           : kind === 'summary' ? t('metro: summary')
             : ticket?.title ?? live.station?.label ?? stationId);
   const numPrefix = snapshot?.num && heading !== snapshot.num ? `${monitorText(snapshot.num)} ` : '';
@@ -280,7 +281,7 @@ export function stationDetailRows(
   ];
 
   const role = live.repair?.role ?? live.station?.role ?? ticket?.role ?? snapshot?.role;
-  if (role) rows.push(...kvRows('Role', `${runRoleInk(role)(roleIcon(role))} ${monitorText(role)}`, width));
+  if (role) rows.push(...kvRows('Role', `${roleIcon(role)} ${role}`, width, runRoleInk(role)));
   if (acceptSeat) rows.push(...kvRows('Seat', acceptSeat === 'main' ? 'main' : t(acceptSeat), width));
 
   const blockers = live.station?.blockers ?? ticket?.blockers ?? ticket?.deps ?? snapshot?.blockers;
@@ -328,19 +329,26 @@ export function stationDetailRows(
     if (countsText) rows.push(...kvRows('Counts', countsText, width));
   }
 
-  // Hand-back / acceptance facts.
+  // Hand-back / acceptance facts, scoped to this station's step.
   if (kind === 'accept') {
+    const stepKey = run.kind === 'queue' ? 'accept' : stationId;
     const acceptStep = run.steps.find((s) => s.key === 'accept');
-    const verdict = run.verdict ?? acceptStep?.verdict;
+    const verdict = acceptStep?.verdict ?? (rawState !== 'waiting' ? run.verdict : undefined);
     if (verdict) rows.push(...kvRows('Verdict', verdict, width));
-    if (run.handback) {
+    const handbackBelongs = run.handback?.step === stepKey;
+    if (handbackBelongs && run.handback) {
       const hb = [run.handback.step ? t(run.handback.step) : '', run.handback.ticket ?? '', run.handback.question ?? ''].filter(Boolean).join(' · ');
       if (hb) rows.push(...kvRows('Hand-back', hb, width, theme.board.attention));
       if (run.handback.choices?.length) rows.push(...kvRows('Decisions', run.handback.choices.join(' · '), width));
     }
-    if (run.held && !reason) rows.push(...kvRows('Held', run.held.reason, width, theme.board.attention));
-    if (run.reason && !reason) rows.push(...kvRows('Reason', run.reason, width, theme.board.attention));
-    const acceptDecisions = run.decisions.filter((d) => d.step === 'accept');
+    const holdBelongs = rawState !== 'waiting' && (
+      run.handback
+        ? handbackBelongs
+        : (acceptStep?.state === 'asking' || acceptStep?.state === 'failed' || rawState === 'asking' || rawState === 'held' || rawState === 'failed')
+    );
+    if (holdBelongs && run.held && !reason) rows.push(...kvRows('Held', run.held.reason, width, theme.board.attention));
+    if (holdBelongs && run.reason && !reason) rows.push(...kvRows('Reason', run.reason, width, theme.board.attention));
+    const acceptDecisions = run.decisions.filter((d) => d.step === stepKey);
     if (acceptDecisions.length) {
       rows.push(plain(''), section(t('Decisions'), width, String(acceptDecisions.length)));
       for (const d of acceptDecisions) {

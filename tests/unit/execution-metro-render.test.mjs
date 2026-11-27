@@ -712,7 +712,7 @@ test('keyboard and mouse: station cursor, lane moves, Tab switching, Enter targe
 
 /* ───────────────────────── 3. Layout edge cases & exec-page/04 model interface ───────────────────────── */
 
-test('layout handles inline repair fallback, cycles, skip-a-column edges, and pre-assigned lanes cleanly', () => {
+test('layout handles inline repair fallback, cycles, skip-a-column edges, and changedAt selection cleanly', () => {
   // Inline repair fallback when all 3 lanes are occupied (no free neighbouring lane for repair spur).
   const crowded = {
     flow: 'crowded', kind: 'queue', name: 'full-lanes', state: 'running', createdAt: ago(10),
@@ -732,7 +732,7 @@ test('layout handles inline repair fallback, cycles, skip-a-column edges, and pr
   assert.ok(crowdedRows.length <= 5, 'stays within 3 map lanes + header + detail');
   assert.ok(plain(crowdedRows).some((l) => l.includes('↻')), 'inline repair shows ↻ in none mode');
 
-  // Cycle safety + skip-a-column edge + pre-assigned lanes (exec-page/04 integration surface).
+  // Cycle safety + changedAt selection.
   const cyclic = {
     flow: 'cyc', kind: 'graph', name: 'cyclic', state: 'running', createdAt: ago(5),
     stations: [
@@ -743,18 +743,18 @@ test('layout handles inline repair fallback, cycles, skip-a-column edges, and pr
   };
   assert.doesNotThrow(() => layoutMetroFlow(cyclic, 62, false));
 
-  const preLaned = {
-    flow: 'laned', kind: 'queue', name: 'pre-laned', state: 'running', createdAt: ago(15), lanes: 3,
+  const changedFlow = {
+    flow: 'laned', kind: 'queue', name: 'changed-at', state: 'running', createdAt: ago(15),
     stations: [
-      { id: 's1', num: '01', kind: 'worker', state: 'done', lane: 1, title: 'Base' },
-      { id: 's2', num: '02', kind: 'worker', state: 'working', lane: 0, title: 'Top', changedAt: ago(4) },
-      { id: 's3', num: '03', kind: 'worker', state: 'asking', lane: 2, title: 'Bottom', changedAt: ago(1) },
-      { id: 's4', num: '04', kind: 'worker', state: 'waiting', lane: 1, title: 'Merge', waits: '02,03' },
+      { id: 's1', num: '01', kind: 'worker', state: 'done', title: 'Base' },
+      { id: 's2', num: '02', kind: 'worker', state: 'working', title: 'Top', changedAt: ago(4) },
+      { id: 's3', num: '03', kind: 'worker', state: 'asking', title: 'Bottom', changedAt: ago(1) },
+      { id: 's4', num: '04', kind: 'worker', state: 'waiting', title: 'Merge', waits: '02,03' },
     ],
     edges: [{ from: 's1', to: 's2' }, { from: 's1', to: 's3' }, { from: 's2', to: 's4' }, { from: 's3', to: 's4' }],
   };
-  const lanedRows = paintFlow(preLaned, undefined, 62, { lang: 'en', theme: 'none' });
-  assert.match(plain(lanedRows).at(-1), /\? 03 Bottom/, 'changedAt picks most recently changed station');
+  const changedRows = paintFlow(changedFlow, undefined, 62, { lang: 'en', theme: 'none' });
+  assert.match(plain(changedRows).at(-1), /\? 03 Bottom/, 'changedAt picks most recently changed station');
 });
 
 /* ───────────────────────── 4. Collector metro integration, junctions, multi-round repair, and station inspection ───────────────────────── */
@@ -1072,4 +1072,373 @@ test('Enter and second click on folded groups (done×, wait×, overflow pool) an
     assert.equal(clickRes.subpage?.kind, 'station-detail');
     assert.equal(clickRes.subpage?.stationId, groupId);
   }
+});
+
+/* ───────────────────────── 5. Horizontal viewport, scoped Station Detail, terminal theme escaping, unknown pool ───────────────────────── */
+
+test('40-column horizontal viewport keeps every station reachable by ←/→ and mouse on 22-step chain and 32-step graph', () => {
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const makeRunView = (flowId, label, stations, edges, lastChangedId) => ({
+    root: '/synthetic/proj', complete: true, screens: new Map(), endedJobs: [], jobs: [],
+    runs: [{
+      flow: flowId, kind: 'graph', label, unattended: false, state: 'working',
+      createdAt: ago(30), updatedAt: ago(1),
+      steps: [], tickets: [], todo: [], decisions: [], reviews: [], heldCount: 0, repairRounds: 0,
+      metro: { stations, edges, lastChangedId },
+    }],
+  });
+
+  // 1) 22-step alternating worker/reviewer chain (no station folds away).
+  const chainFlow = 'gchain22000000001';
+  const chainStations = Array.from({ length: 22 }, (_, i) => ({
+    id: `s${i + 1}`,
+    kind: i % 2 === 0 ? 'worker' : 'review',
+    state: i < 10 ? 'done' : i === 10 ? 'working' : 'waiting',
+    title: `Step ${i + 1}`,
+    role: i % 2 === 0 ? 'imp' : 'reviewer',
+  }));
+  const chainEdges = Array.from({ length: 21 }, (_, i) => ({ from: `s${i + 1}`, to: `s${i + 2}` }));
+  const chainView = makeRunView(chainFlow, 'chain-22', chainStations, chainEdges, 's1');
+
+  const renderAt40 = (view, state, opts = { lang: 'en', theme: 'terminal', icons: 'unicode' }) => {
+    const frame = withMode(opts, () =>
+      renderMonitor({ state, width: 40, height: 24, nowMs: NOW, execution: view, projectName: 'demo' }));
+    for (const line of frame.lines) {
+      assert.equal(visualLength(line), 40, `line width must stay 40: ${stripAnsi(line)}`);
+      if (opts.theme === 'none') assert.equal(line, stripAnsi(line));
+    }
+    return frame;
+  };
+  const sendAt40 = (view, state, raw, opts = { lang: 'en', theme: 'terminal', icons: 'unicode' }) => {
+    const frame = renderAt40(view, state, opts);
+    const input = typeof raw === 'string'
+      ? (raw === '\x1b' ? { type: 'key', key: 'escape' } : decoder.push(Buffer.from(raw))[0])
+      : raw;
+    return { frame, ...handleMonitorInput(frame.state, input, { frame, nowMs: NOW }) };
+  };
+
+  // Walk → from s1 to s22 and ← back to s1; verify off-screen indicators and exact 40-col lines.
+  let state = { ...initialMonitorState(), activeTab: 'execution', execution: { cursor: metroStationItem(chainFlow, 's1'), scroll: 0 } };
+  const startFrame = renderAt40(chainView, state);
+  const startMapRow = startFrame.workboard.rows.find((r) => r.metroStations?.length);
+  assert.equal(startMapRow.metroStations.length, 22, 'all 22 stations stay in metroStations');
+  assert.ok(stripAnsi(startMapRow.text).endsWith('»'), `right edge marker shown at start: ${stripAnsi(startMapRow.text)}`);
+  assert.ok(!stripAnsi(startMapRow.text).startsWith('«'), 'no left edge marker at start');
+
+  // ASCII mode uses > / < markers and exact width 40.
+  const asciiStart = renderAt40(chainView, state, { lang: 'en', theme: 'none', icons: 'text' });
+  const asciiRow = asciiStart.workboard.rows.find((r) => r.metroStations?.length);
+  assert.ok(stripAnsi(asciiRow.text).endsWith('>'), `ASCII right edge marker shown: ${stripAnsi(asciiRow.text)}`);
+
+  const visitedForward = ['s1'];
+  let sawBothEdges = false;
+  for (let i = 1; i < 22; i++) {
+    const step = sendAt40(chainView, state, '\x1b[C');
+    state = step.state;
+    const f = renderAt40(chainView, state);
+    const mapText = stripAnsi(f.workboard.rows.find((r) => r.metroStations?.length).text);
+    if (mapText.startsWith('«') && mapText.endsWith('»')) sawBothEdges = true;
+    visitedForward.push(state.execution.cursor.split(':').at(-1));
+  }
+  assert.deepEqual(visitedForward, chainStations.map((s) => s.id), '→ reaches all 22 stations');
+  assert.ok(sawBothEdges, 'mid-chain frames show both « and » edge markers');
+  const endFrame = renderAt40(chainView, state);
+  const endMapText = stripAnsi(endFrame.workboard.rows.find((r) => r.metroStations?.length).text);
+  assert.ok(endMapText.startsWith('«'), `left edge marker shown at end: ${endMapText}`);
+  assert.ok(!endMapText.endsWith('»'), `no right edge marker at end: ${endMapText}`);
+  assert.match(endFrame.lines.map(stripAnsi).join('\n'), /Step 22/);
+
+  // Walk ← all the way back to s1.
+  const visitedBack = [state.execution.cursor.split(':').at(-1)];
+  for (let i = 1; i < 22; i++) {
+    state = sendAt40(chainView, state, '\x1b[D').state;
+    visitedBack.push(state.execution.cursor.split(':').at(-1));
+  }
+  assert.deepEqual(visitedBack, [...chainStations].reverse().map((s) => s.id), '← returns through all 22 stations');
+
+  // Mouse-only reachability: pan right via clicking » edge markers until s22 is visible, click s22 twice -> Station Detail, then pan back via «.
+  state = { ...initialMonitorState(), activeTab: 'execution', execution: { cursor: metroStationItem(chainFlow, 's1'), scroll: 0 } };
+  for (let clicks = 0; clicks < 10; clicks++) {
+    const f = renderAt40(chainView, state);
+    const pane = f.panes.find((p) => p.id === 'agents');
+    const rowIdx = pane.rows.findIndex((r) => r.metroStations?.length);
+    const row = pane.rows[rowIdx];
+    const s22 = row.metroStations.find((s) => s.stationId === 's22');
+    const y = pane.y + (pane.edge ?? 0) + rowIdx - pane.offset;
+    if (!s22.offscreen) {
+      state = handleMonitorInput(f.state, { type: 'mouse', button: 'left', x: pane.x + s22.x, y }, { frame: f, nowMs: NOW }).state;
+      assert.equal(state.execution.cursor, metroStationItem(chainFlow, 's22'));
+      const f2 = renderAt40(chainView, state);
+      const pane2 = f2.panes.find((p) => p.id === 'agents');
+      const rIdx2 = pane2.rows.findIndex((r) => r.metroStations?.length);
+      const hit2 = pane2.rows[rIdx2].metroStations.find((s) => s.stationId === 's22');
+      const y2 = pane2.y + (pane2.edge ?? 0) + rIdx2 - pane2.offset;
+      const opened = handleMonitorInput(f2.state, { type: 'mouse', button: 'left', x: pane2.x + hit2.x, y: y2 }, { frame: f2, nowMs: NOW }).state;
+      assert.equal(opened.subpage?.kind, 'station-detail');
+      assert.equal(opened.subpage?.stationId, 's22');
+      break;
+    }
+    const rightEdge = row.metroEdges?.find((e) => e.side === 'right');
+    assert.ok(rightEdge, 'right edge marker clickable while s22 is off-screen');
+    assert.equal(monitorItemAt(pane, pane.x + rightEdge.x, y), rightEdge.target.item);
+    state = handleMonitorInput(f.state, { type: 'mouse', button: 'left', x: pane.x + rightEdge.x, y }, { frame: f, nowMs: NOW }).state;
+  }
+  assert.equal(state.execution.cursor, metroStationItem(chainFlow, 's22'), 'mouse reached s22');
+
+  // Pan back left via clicking « edge markers until s1 is visible, then click s1.
+  for (let clicks = 0; clicks < 10; clicks++) {
+    const f = renderAt40(chainView, state);
+    const pane = f.panes.find((p) => p.id === 'agents');
+    const rowIdx = pane.rows.findIndex((r) => r.metroStations?.length);
+    const row = pane.rows[rowIdx];
+    const s1 = row.metroStations.find((s) => s.stationId === 's1');
+    const y = pane.y + (pane.edge ?? 0) + rowIdx - pane.offset;
+    if (!s1.offscreen) {
+      state = handleMonitorInput(f.state, { type: 'mouse', button: 'left', x: pane.x + s1.x, y }, { frame: f, nowMs: NOW }).state;
+      break;
+    }
+    const leftEdge = row.metroEdges?.find((e) => e.side === 'left');
+    assert.ok(leftEdge, 'left edge marker clickable while s1 is off-screen');
+    state = handleMonitorInput(f.state, { type: 'mouse', button: 'left', x: pane.x + leftEdge.x, y }, { frame: f, nowMs: NOW }).state;
+  }
+  assert.equal(state.execution.cursor, metroStationItem(chainFlow, 's1'), 'mouse returned to s1');
+
+  // 2) 32-step graph (28 sequential stages + two 2-way parallel diamonds = 32 stations, mixed kinds/states).
+  const graphFlow = 'ggraph32000000001';
+  const gStations = [];
+  const gEdges = [];
+  let prev = [];
+  let idx = 1;
+  const addNode = (kind, stateVal) => {
+    const id = `n${idx++}`;
+    gStations.push({ id, kind, state: stateVal, title: `Node ${id}`, role: kind === 'review' ? 'reviewer' : 'imp' });
+    return id;
+  };
+  for (let step = 0; step < 30; step++) {
+    if (step === 8 || step === 20) {
+      const a = addNode('worker', step === 8 ? 'working' : 'waiting');
+      const b = addNode('review', step === 8 ? 'working' : 'waiting');
+      for (const p of prev) { gEdges.push({ from: p, to: a }, { from: p, to: b }); }
+      prev = [a, b];
+    } else {
+      const kind = step === 29 ? 'accept' : step % 2 === 1 ? 'review' : 'worker';
+      const st = step < 8 ? 'done' : step === 9 ? 'working' : 'waiting';
+      const id = addNode(kind, st);
+      for (const p of prev) gEdges.push({ from: p, to: id });
+      prev = [id];
+    }
+  }
+  assert.equal(gStations.length, 32);
+  const graphView = makeRunView(graphFlow, 'graph-32', gStations, gEdges, 'n1');
+  let gState = { ...initialMonitorState(), activeTab: 'execution', execution: { cursor: metroStationItem(graphFlow, 'n1'), scroll: 0 } };
+  const gStart = renderAt40(graphView, gState, { lang: 'en', theme: 'none', icons: 'unicode' });
+  const all32 = gStart.workboard.rows.flatMap((r) => r.metroStations ?? []);
+  assert.equal(all32.length, 32, 'all 32 graph stations present and none folded away');
+  assert.ok(gStart.workboard.rows.some((r) => r.metroEdges?.some((e) => e.side === 'right')), '32-step graph shows right overflow marker');
+
+  // Reach every station of the 32-step graph via ←/→ and ↑/↓.
+  const reached = new Set(['n1']);
+  for (let c = 0; c < 35; c++) {
+    const curId = gState.execution.cursor.split(':').at(-1);
+    reached.add(curId);
+    // Probe adjacent lanes at this column too.
+    for (const arrow of ['\x1b[B', '\x1b[A']) {
+      const probe = sendAt40(graphView, gState, arrow, { lang: 'en', theme: 'none', icons: 'unicode' }).state;
+      if (probe.execution.cursor?.startsWith(`project:exec-run:${graphFlow}:`)) {
+        reached.add(probe.execution.cursor.split(':').at(-1));
+      }
+    }
+    const next = sendAt40(graphView, gState, '\x1b[C', { lang: 'en', theme: 'none', icons: 'unicode' }).state;
+    if (next.execution.cursor === gState.execution.cursor) break;
+    gState = next;
+  }
+  assert.equal(reached.size, 32, `all 32 graph stations reachable by keyboard (got ${reached.size})`);
+  assert.equal(gState.execution.cursor, metroStationItem(graphFlow, 'n32'), '→ reaches final station n32');
+
+  // Reach n32 from n1 by mouse clicks only on the 32-step graph.
+  gState = { ...initialMonitorState(), activeTab: 'execution', execution: { cursor: metroStationItem(graphFlow, 'n1'), scroll: 0 } };
+  let clickedN32 = false;
+  for (let clicks = 0; clicks < 12; clicks++) {
+    const f = renderAt40(graphView, gState);
+    const pane = f.panes.find((p) => p.id === 'agents');
+    let hitRow = -1;
+    let target = undefined;
+    for (let i = 0; i < pane.rows.length; i++) {
+      const st = pane.rows[i].metroStations?.find((s) => s.stationId === 'n32');
+      if (st && !st.offscreen) { hitRow = i; target = st; break; }
+    }
+    if (target) {
+      const y = pane.y + (pane.edge ?? 0) + hitRow - pane.offset;
+      gState = handleMonitorInput(f.state, { type: 'mouse', button: 'left', x: pane.x + target.x, y }, { frame: f, nowMs: NOW }).state;
+      clickedN32 = gState.execution.cursor === metroStationItem(graphFlow, 'n32');
+      break;
+    }
+    const edgeRowIdx = pane.rows.findIndex((r) => r.metroEdges?.some((e) => e.side === 'right'));
+    assert.ok(edgeRowIdx >= 0, 'right edge marker present until n32 enters view');
+    const edge = pane.rows[edgeRowIdx].metroEdges.find((e) => e.side === 'right');
+    const y = pane.y + (pane.edge ?? 0) + edgeRowIdx - pane.offset;
+    gState = handleMonitorInput(f.state, { type: 'mouse', button: 'left', x: pane.x + edge.x, y }, { frame: f, nowMs: NOW }).state;
+  }
+  assert.ok(clickedN32, 'mouse reached final station n32 in 32-step graph');
+});
+
+test('Station Detail scopes hand-back/choices/hold/reason to its step and emits no literal \\x1b in terminal theme', () => {
+  const flowId = 'qscope00000000001';
+  const baseRun = {
+    flow: flowId, kind: 'queue', label: 'scoped-detail', unattended: false, state: 'paused', acceptanceSeat: 'main',
+    createdAt: ago(25), updatedAt: ago(2),
+    steps: [
+      { key: 'tickets', state: 'running' },
+      { key: 'review', state: 'waiting' },
+      { key: 'accept', state: 'waiting' },
+    ],
+    handback: {
+      step: 'tickets',
+      choices: ['resume', 'stop'],
+      kind: 'blocker',
+      ticket: 'demo/01',
+      question: 'Needs schema sign-off?',
+    },
+    held: { reason: 'Ticket 01 blocked on schema sign-off', at: new Date(ago(2)).toISOString(), kind: 'blocker' },
+    reason: 'Ticket 01 blocked on schema sign-off',
+    tickets: [
+      { ticket: 'demo/01', role: 'imp', stage: 'held', holdTag: 'blocker', reason: 'Ticket 01 blocked on schema sign-off', title: 'Schema migration' },
+      { ticket: 'demo/02', role: 'imp', stage: 'queued', blockers: ['demo/01'], title: 'Consumer update' },
+    ],
+    metro: {
+      stations: [
+        { id: 'demo/01', kind: 'worker', state: 'held', role: 'imp', holdTag: 'blocker', reason: 'Ticket 01 blocked on schema sign-off', title: 'Schema migration' },
+        { id: 'demo/02', kind: 'worker', state: 'waiting', role: 'imp', blockers: ['demo/01'], title: 'Consumer update' },
+        { id: 'review', kind: 'review', state: 'waiting', role: 'reviewer', blockers: ['demo/02'] },
+        { id: 'accept', kind: 'accept', state: 'waiting', role: 'lead', label: 'main', blockers: ['review'] },
+      ],
+      edges: [
+        { from: 'demo/01', to: 'demo/02' },
+        { from: 'demo/02', to: 'review' },
+        { from: 'review', to: 'accept' },
+      ],
+      lastChangedId: 'demo/01',
+    },
+    todo: [], decisions: [], reviews: [], heldCount: 1, repairRounds: 0,
+  };
+  const view = { root: '/synthetic/proj', complete: true, screens: new Map(), endedJobs: [], jobs: [], runs: [baseRun] };
+
+  // 1) Future accept station during a tickets-step blocker shows NO hand-back, choices, hold or reason from that blocker.
+  const acceptState = {
+    ...initialMonitorState(),
+    activeTab: 'execution',
+    subpage: { kind: 'station-detail', flow: flowId, stationId: 'accept', scroll: 0 },
+  };
+  const acceptFrame = withMode({ lang: 'en', theme: 'terminal', icons: 'unicode' }, () =>
+    renderMonitor({ state: acceptState, width: 62, height: 24, nowMs: NOW, execution: view, projectName: 'demo' }));
+  const acceptRaw = acceptFrame.lines.join('\n');
+  const acceptPlain = stripAnsi(acceptRaw);
+  assert.doesNotMatch(acceptPlain, /Hand-back\s+tickets/, 'future accept must not show tickets-step hand-back');
+  assert.doesNotMatch(acceptPlain, /Needs schema sign-off/, 'future accept must not show tickets blocker question');
+  assert.doesNotMatch(acceptPlain, /resume · stop/, 'future accept must not show tickets blocker choices');
+  assert.doesNotMatch(acceptPlain, /Ticket 01 blocked/, 'future accept must not show tickets blocker hold/reason');
+  assert.ok(!acceptRaw.includes('\\x1b'), 'terminal theme Station Detail (accept) must not contain literal \\x1b');
+  assert.ok(!acceptPlain.includes('\x1b'), 'stripped Station Detail must contain no ESC');
+
+  // 2) Run Detail keeps whole-run context (held + reason).
+  const runDetailState = {
+    ...initialMonitorState(),
+    activeTab: 'execution',
+    subpage: { kind: 'run-detail', flow: flowId, scroll: 0 },
+  };
+  const runDetailPlain = withMode({ lang: 'en', theme: 'terminal', icons: 'unicode' }, () =>
+    renderMonitor({ state: runDetailState, width: 62, height: 24, nowMs: NOW, execution: view, projectName: 'demo' }))
+    .lines.map(stripAnsi).join('\n');
+  assert.match(runDetailPlain, /Ticket 01 blocked on schema sign-off/, 'Run Detail retains run-level hold/reason');
+
+  // 3) Station Detail in terminal & mocha themes on stations with roles emits NO literal \x1b escape text.
+  for (const stationId of ['demo/01', 'review', 'accept']) {
+    for (const th of ['terminal', 'mocha']) {
+      const st = { ...initialMonitorState(), activeTab: 'execution', subpage: { kind: 'station-detail', flow: flowId, stationId, scroll: 0 } };
+      const frame = withMode({ lang: 'en', theme: th, icons: 'unicode' }, () =>
+        renderMonitor({ state: st, width: 62, height: 24, nowMs: NOW, execution: view, projectName: 'demo' }));
+      for (const line of frame.lines) assert.equal(visualLength(line), 62);
+      const raw = frame.lines.join('\n');
+      assert.ok(!raw.includes('\\x1b'), `${stationId} (${th}) must not print literal \\x1b:\n${raw}`);
+      assert.ok(!stripAnsi(raw).includes('\x1b'), `${stationId} (${th}) stripped text must not contain ESC`);
+      assert.match(stripAnsi(raw), /Role\s+\S+/, `${stationId} (${th}) still renders Role row`);
+    }
+  }
+
+  // 4) Active accept-step hand-back DOES show its own hand-back, choices, hold and reason.
+  const acceptRun = {
+    ...baseRun,
+    steps: [{ key: 'tickets', state: 'done' }, { key: 'review', state: 'done' }, { key: 'accept', state: 'asking' }],
+    handback: { step: 'accept', choices: ['finish', 'repair', 'escalate'], question: 'Ready to accept?' },
+    held: { reason: 'Waiting for owner acceptance', at: new Date(ago(1)).toISOString() },
+    reason: 'Waiting for owner acceptance',
+    metro: {
+      ...baseRun.metro,
+      stations: baseRun.metro.stations.map((s) => s.id === 'accept' ? { ...s, state: 'asking' } : { ...s, state: 'done' }),
+    },
+  };
+  const acceptActiveView = { ...view, runs: [acceptRun] };
+  const activeAcceptPlain = withMode({ lang: 'en', theme: 'terminal', icons: 'unicode' }, () =>
+    renderMonitor({ state: acceptState, width: 62, height: 24, nowMs: NOW, execution: acceptActiveView, projectName: 'demo' }))
+    .lines.map(stripAnsi).join('\n');
+  assert.match(activeAcceptPlain, /Ready to accept\?/);
+  assert.match(activeAcceptPlain, /finish · repair · escalate/);
+  assert.match(activeAcceptPlain, /Waiting for owner acceptance/);
+});
+
+test('pool without recorded counts renders unknown instead of a fabricated zero count', () => {
+  const unknownPoolFlow = {
+    flow: 'pool-unknown', kind: 'graph', name: 'batch-step', state: 'running', createdAt: ago(4),
+    stations: [
+      { id: 'prep', kind: 'worker', state: 'done', title: 'Prepare' },
+      { id: 'pool', kind: 'pool', state: 'waiting', deps: ['prep'], title: 'Batch step' },
+      { id: 'done', kind: 'summary', state: 'waiting', deps: ['pool'], title: 'Summary' },
+    ],
+  };
+  const emptyCountsFlow = {
+    ...unknownPoolFlow,
+    flow: 'pool-empty',
+    stations: unknownPoolFlow.stations.map((s) => s.id === 'pool' ? { ...s, counts: {} } : s),
+  };
+
+  for (const flow of [unknownPoolFlow, emptyCountsFlow]) {
+    const term = plain(paintFlow(flow, 'pool', 62, { lang: 'en', theme: 'terminal', icons: 'unicode' })).join('\n');
+    assert.ok(term.includes('▐◌▌'), `terminal unknown pool should render ▐◌▌:\n${term}`);
+    assert.ok(!term.includes('×0'), `must not render fabricated ×0:\n${term}`);
+
+    const none = plain(paintFlow(flow, 'pool', 62, { lang: 'en', theme: 'none', icons: 'unicode' })).join('\n');
+    assert.ok(none.includes('(◌)'), `none unknown pool should render (◌):\n${none}`);
+    assert.ok(!none.includes('○×0'), `must not render (○×0):\n${none}`);
+
+    const asc = plain(paintFlow(flow, 'pool', 62, { lang: 'en', theme: 'none', icons: 'text' })).join('\n');
+    assert.ok(asc.includes('(u)'), `ASCII unknown pool should render (u):\n${asc}`);
+    assert.ok(!asc.includes('o0'), `must not render (o0):\n${asc}`);
+
+    const legend = withMode({ lang: 'en', theme: 'none', icons: 'unicode' }, () =>
+      renderMetroLegend([flow], 62).map((r) => stripAnsi(r.text)).join('\n'));
+    assert.ok(legend.includes('◌ unknown'), `contextual legend explains unknown glyph:\n${legend}`);
+  }
+
+  // Station Detail on a pool without counts/count also prints no fabricated zero ("Pool of 0").
+  const runView = {
+    root: '/synthetic/proj', complete: true, screens: new Map(), endedJobs: [], jobs: [],
+    runs: [{
+      flow: 'gpool000000000001', kind: 'graph', label: 'batch-step', unattended: false, state: 'working',
+      createdAt: ago(4), updatedAt: ago(1),
+      steps: [], tickets: [], todo: [], decisions: [], reviews: [], heldCount: 0, repairRounds: 0,
+      metro: {
+        stations: [
+          { id: 'pool', kind: 'pool', state: 'waiting' },
+        ],
+        edges: [],
+      },
+    }],
+  };
+  const detailText = withMode({ lang: 'en', theme: 'terminal', icons: 'unicode' }, () =>
+    renderMonitor({
+      state: { ...initialMonitorState(), activeTab: 'execution', subpage: { kind: 'station-detail', flow: 'gpool000000000001', stationId: 'pool', scroll: 0 } },
+      width: 62, height: 24, nowMs: NOW, execution: runView, projectName: 'demo',
+    })).lines.map(stripAnsi).join('\n');
+  assert.doesNotMatch(detailText, /Pool of 0/, 'pool without count must not print Pool of 0');
+  assert.doesNotMatch(detailText, /0○|×0/, 'pool without counts must not print zero counts');
 });

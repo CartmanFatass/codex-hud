@@ -9,6 +9,7 @@ import { clearFilter, filterInput, filterRetentionScope, filterScope } from './f
 import { expInput } from './exp-view.js';
 import { resourcesShown } from './main-tabs.js';
 import { hasUnsavedDraft } from './monitor-state.js';
+import { metroStationAt } from './execution-metro.js';
 export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRow | undefined {
   const edge = pane.edge ?? 1;
   if (x < pane.x || x >= pane.x + pane.width || y < pane.y + edge || y >= pane.y + pane.height) return undefined;
@@ -19,10 +20,7 @@ export function monitorRowAt(pane: MonitorRect, x: number, y: number): MonitorRo
 export function monitorItemAt(pane: MonitorRect, x: number, y: number): string | undefined {
   const row = monitorRowAt(pane, x, y);
   if (!row) return undefined;
-  if (row.metroStations) {
-    const col = x - pane.x;
-    return row.metroStations.find((s) => col >= s.x && col < s.x + s.width)?.item;
-  }
+  if (row.metroStations) return metroStationAt(row, x - pane.x)?.item;
   return row.item || undefined;
 }
 export function handleMonitorInput(state: MonitorState, input: WorkbenchInput, ctx: MonitorContext): MonitorOutcome {

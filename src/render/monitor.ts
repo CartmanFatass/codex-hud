@@ -58,10 +58,18 @@ export interface MetroStationTarget {
   readonly width: number;
   readonly lane: number;
   readonly col: number;
+  /** Set when the station lies outside the visible horizontal viewport (still reachable via ←/→). */
+  readonly offscreen?: 'left' | 'right';
   /** True for the station that changed last (or its closest column fallback) for vertical entry into the map. */
   readonly defaultEntry?: true;
   readonly execJob?: { target: JobTarget; dir: string; tab: boolean };
   readonly inspect?: MetroStationInspect;
+}
+export interface MetroEdgeTarget {
+  readonly side: 'left' | 'right';
+  readonly x: number;
+  readonly width: number;
+  readonly target: MetroStationTarget;
 }
 export interface MonitorRow {
   text: string;
@@ -71,6 +79,8 @@ export interface MonitorRow {
   controls?: RowControl[];
   /** Metro-map stations on this row: multiple per-cell hit targets and custom per-station cursor rendering. */
   metroStations?: readonly MetroStationTarget[];
+  /** Clickable horizontal viewport edge markers (`«`/`»`) when a metro map is wider than the pane. */
+  metroEdges?: readonly MetroEdgeTarget[];
   files?: string[];
   /** On a Control plane place row (and the picker's filter row) where a model can be picked: the place and the lists to pick from. */
   modelPick?: ModelPick;
