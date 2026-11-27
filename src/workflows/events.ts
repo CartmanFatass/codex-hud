@@ -1,18 +1,49 @@
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { batchActive, batchEvents, isBatchId, type Batch } from '../mcp/batch-state.js';
+import { isAutoLandFlakeJob } from '../mcp/flake-admission.js';
+import type { Job } from '../mcp/job-contracts.js';
 import { activeLand, isFlowId, landFile, landNoticeLine, readLand } from '../mcp/land-state.js';
 import { isTicketQueueId, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
+import { writePrivateFile } from '../utils/atomic-fs.js';
+import { reportReadHint } from '../utils/report-summary.js';
 import { composedActive, isComposedId, type ComposedRun } from './composed-state.js';
 import { workflowHeaders } from './header-scan.js';
 import { directRecipient, runVisible } from './scope.js';
 import { noticeEvents } from './store.js';
 
+function flakeBlockEvents(home: string, pane: string | null, cwd: string) {
+  const cache = getJobIndexCache(home);
+  // These handbacks can precede any flow. Only read recent job receipts; QA
+  // and report bodies are not needed to deliver the persisted decision.
+  return cache.listJobDirsByMtime({ limit: 200 }).dirs.flatMap(({ id, dir }) => {
+    const receipt = cache.readJob<Job>(id);
+    if (receipt.status !== 'ok') return [];
+    const job = receipt.value, block = job.auto_land_blocked, main = job.worktree?.main_root;
+    if (job.job !== id || !isAutoLandFlakeJob(job) || !main || typeof block?.reason !== 'string') return [];
+    const owner = jobCallerPane(job);
+    if (owner ? owner !== pane : main !== cwd && main !== sharedRoot(cwd)) return [];
+    if (fs.existsSync(landFile(home, `f${id.slice(1)}`))) return [];
+    // One claim per persisted refusal, retained with the job. panelDelivery
+    // releases it when typing fails so changes or the next tick can retry.
+    const key = createHash('sha256').update(JSON.stringify([block.at, block.sig, block.reason])).digest('hex').slice(0, 16);
+    const marker = join(dir, `auto-land-blocked-${key}.noticed`);
+    if (fs.existsSync(marker)) return [];
+    const reason = block.reason.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, ' ').trim();
+    try { writePrivateFile(marker, '', { exclusive: true, mkdir: false }); }
+    catch { return []; } // Another delivery claimed it, or this receipt cannot be claimed now.
+    return [{ line: `${id}: auto-land blocked: ${reason} | ${reportReadHint(id)}`, marker }];
+  });
+}
+
 export function taskNoticeSource(home: string, pane: string | null, cwd: string) {
   const dir = join(home, 'flows');
   let previous: string | undefined, composed: ComposedRun[] = [];
-  return () => {
+  const flowEvents = () => {
     // Only list flows when a receipt changed. Composed claims live in child
     // directories, so a failed push can release one without changing this stamp.
     const st = fs.statSync(dir, { bigint: true, throwIfNoEntry: false });
@@ -50,6 +81,7 @@ export function taskNoticeSource(home: string, pane: string | null, cwd: string)
     if (!events.length) previous = stamp;
     return events;
   };
+  return () => [...flowEvents(), ...flakeBlockEvents(home, pane, cwd)];
 }
 
 /** Scan active runs and unclaimed terminal results. Quiet passes only parse a

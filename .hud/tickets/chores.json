@@ -1120,7 +1120,7 @@
     {
       "number": 53,
       "title": "Unreadable-QA flake refusal reaches a Claude MCP task session without hud watch",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -1133,22 +1133,29 @@
         {
           "id": 1,
           "text": "Test: a task-client main session with no hud watch gets exactly one notice for the persisted QA refusal with the job ID, reason and read hint, no repeat on the next scan, and no land flow is created",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "openQuestions() is removed or has a caller",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Full suite passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T12:34:39.604Z",
+        "job": "jc71ddcdabd49d70b",
+        "flow": "fc71ddcdabd49d70b",
+        "replay_base": "b24289505a970a310a25d1d22a49bc9134fdea53",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T12:17:08.264Z",
-      "updated_at": "2026-11-27T12:17:08.264Z"
+      "updated_at": "2026-11-27T12:34:39.604Z"
     },
     {
       "number": 54,

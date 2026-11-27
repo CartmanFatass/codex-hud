@@ -230,10 +230,6 @@ export function readRow(job: Job, markExhaustion = true, lookup?: number | JobSc
 
 export const settled = (state: string | null) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(state ?? '');
 
-export function openQuestions(dir: string): string[] {
-  return jobCache.readQa(dir).openIds.map((id) => `${id}.md`);
-}
-
 // Count JSON escapes and UTF-8, not UTF-16 units; never split a code point.
 export function digestLine(text: string, budget: number) {
   let line = '';

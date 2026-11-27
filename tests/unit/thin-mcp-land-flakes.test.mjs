@@ -20,7 +20,7 @@ import { runUnattendedScanStep } from '../../dist/unattended/service.js';
 import { controlPath } from '../../dist/unattended/state.js';
 import { publishQuestion } from '../../dist/worker/qa.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
-import { until } from '../helpers/thin-mcp-harness.mjs';
+import { taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 import { checkout, job as sourceJob, seedJsonTickets } from '../helpers/thin-mcp-land.mjs';
 
 const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -1780,6 +1780,34 @@ test('unreadable QA yields one auto-land handback to main without calling startL
   assert.equal(fs.existsSync(join(f.home, 'flows', `f${seeded.id.slice(1)}.json`)), false);
   assert.equal(startLandFn.mock.callCount(), 0);
   assert.equal(f.git(f.main, 'rev-parse', 'origin/base'), base);
+});
+
+test('a Claude task client without hud watch receives a persisted flake QA refusal once', { timeout: 10_000 }, async t => {
+  // No pane means the collector dispatches for the project and the MCP client
+  // collects changes on tool calls, with no timer competing to type the notice.
+  const f = await checkout(t, ['true'], { after: [], inHerdr: false });
+  const rpc = taskRpc(f.rpc);
+  await rpc('initialize', { clientInfo: { name: 'claude-code' } });
+  await rpc('server/discover');
+  assert.equal((await rpc('tools/list')).tools.some(tool => tool.name === 'hud_wait'), false);
+  const scan = async () => (await f.call('hud_roster')).changes ?? [];
+
+  const seeded = seedAutoFlakeJob(f, { id: 'j0000000000000a23', ticket: 'test-flakes/01' });
+  fs.writeFileSync(join(seeded.dir, 'qa'), 'not a directory\n');
+  settleDispatchedFlakeJob(f, seeded.id, 'Fixed flake.\nBlockers: none\n');
+  assert.deepEqual(await scan(), []);
+  const startLandFn = t.mock.fn();
+  const refusal = await settleAutoLandFlakeJob(f.home, seeded.id, { startLandFn });
+  assert.equal(refusal.action, 'blocked');
+  assert.equal(readJson(seeded.jobFile).auto_land_blocked.reason, 'questions could not be read');
+
+  const notices = await scan();
+  assert.equal(notices.length, 1);
+  assert.ok(notices[0].includes(`${seeded.id}: auto-land blocked: questions could not be read`), notices[0]);
+  assert.ok(notices[0].includes(`hud_read job=${seeded.id}`), notices[0]);
+  assert.deepEqual(await scan(), []);
+  assert.equal(startLandFn.mock.callCount(), 0);
+  assert.equal(fs.existsSync(join(f.home, 'flows', `f${seeded.id.slice(1)}.json`)), false);
 });
 
 test('catch-up watcher skips a timed-out Pi question and still announces another unanswered question', { timeout: 10_000 }, async t => {
