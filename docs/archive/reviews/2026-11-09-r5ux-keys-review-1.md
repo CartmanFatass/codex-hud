@@ -45,4 +45,4 @@ Node **v24.22.1**, npm **11.19.1**. Commands ran sequentially with temporary HOM
 
 The additional isolated AI Studio reproduction above also exited 0, confirming the reported defect. No real credential file, live provider, shared browser, real installer or real tmux acceptance check was used.
 
-Report: `/home/fires/projects/MyHUD/tmp/tasks/R5UX-KEYS/review-1.md` — 1 finding (major).
+Report: `~/projects/MyHUD/tmp/tasks/R5UX-KEYS/review-1.md` — 1 finding (major).

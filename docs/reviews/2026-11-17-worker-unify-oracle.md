@@ -8,7 +8,7 @@ This incorporates both follow-ups: **a skill is one case of “who receives whic
 
 ### Evidence labels
 
-- **Verified source:** current source inspected in this investigation. `H/` below means `/home/fires/projects/MyHUD/`; `P/` means `/home/fires/Fishpref/pi-roles/`; `U/` means `/home/fires/codex/MySkills/_upstream/mattpocock-skills/`.
+- **Verified source:** current source inspected in this investigation. `H/` below means `~/projects/MyHUD/`; `P/` means `~/Fishpref/pi-roles/`; `U/` means `~/codex/MySkills/_upstream/mattpocock-skills/`.
 - **Reported live / not independently verified:** the main session’s observations supplied in the brief, including Claude’s skill list with/without `--disable-slash-commands`, the live `frontend-imp` assignment, and the lack of current Codex CLI places.
 - **Unverified:** client behavior, protocol/version claims or prior art not established from inspected source. These are explicitly identified below; proposed behavior is a design, not a claim of current implementation.
 

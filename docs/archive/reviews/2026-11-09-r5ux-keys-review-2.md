@@ -40,4 +40,4 @@ Node **v24.22.1**, npm **11.19.1**. All seven required commands ran sequentially
 
 The optional live provider check was not run. No real credential file, provider, shared browser, installer or real-tmux acceptance check was used. Repository source files were not modified by this review.
 
-Report: `/home/fires/projects/MyHUD/tmp/tasks/R5UX-KEYS/review-2.md` — 0 findings.
+Report: `~/projects/MyHUD/tmp/tasks/R5UX-KEYS/review-2.md` — 0 findings.

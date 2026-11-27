@@ -40,4 +40,4 @@ Commands run (all read-only; synthetic HOME/HUD_HOME where relevant):
 - Runtime smokes: `node bin/hud --help` → retained usage, exit 0; `node packages/hud-mcp/bin/hud-claude-hook.mjs x` → breakage confirmed (finding 1); `node integrations/claude/scripts/mcp.mjs` → breakage confirmed (finding 2).
 - Implementer's evidence inspected: `checks/{build,build-test,mcp-build,unit,unit-mjs,role-summary-mutants,diff-check}.log` all end `exit=0` (1,817 unit + 389 mjs tests passed, 3/3 mutants killed); `checks/deleted-files.txt` (659 paths) cross-checked against kept references.
 
-Report: /home/fires/.hud/jobs/j0ca7987b6b019a9c/report.md — 5 findings (all minor).
+Report: ~/.hud/jobs/j0ca7987b6b019a9c/report.md — 5 findings (all minor).

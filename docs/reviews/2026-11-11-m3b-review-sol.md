@@ -42,4 +42,4 @@ This is a normal supported continuation path: `hud_send` retains the job id (`pa
 - `git status --short` showed only the pre-existing `M node_modules/.package-lock.json`, with no untracked files. No repository files were changed by this review.
 - No builds, tests or real provider calls were run, as explicitly required by the brief. Its reported full-suite result at `b3fdd830` is **29 unit + 48 mjs passed**; that result was supplied, not independently rerun here.
 
-Report: `/home/fires/.hud/jobs/j7192d001c4feeaf9/report.md` — 2 blocking findings, 1 optional follow-up.
+Report: `~/.hud/jobs/j7192d001c4feeaf9/report.md` — 2 blocking findings, 1 optional follow-up.

@@ -24,12 +24,12 @@ Recommendation: 值得吸收 Matt 的需求澄清、可执行规格与反馈纪�
 
 | 简写 | 绝对路径 |
 |---|---|
-| `H/` | `/home/fires/projects/MyHUD/` |
-| `R/` | `/home/fires/Fishpref/pi-roles/` |
-| `M/` | `/home/fires/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.3.1/` |
-| `U/` | `/home/fires/codex/MySkills/_upstream/mattpocock-skills/` |
-| `S/` | `/home/fires/codex/MySkills/` |
-| `J/` | `/home/fires/projects/JevDev/` |
+| `H/` | `~/projects/MyHUD/` |
+| `R/` | `~/Fishpref/pi-roles/` |
+| `M/` | `~/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.3.1/` |
+| `U/` | `~/codex/MySkills/_upstream/mattpocock-skills/` |
+| `S/` | `~/codex/MySkills/` |
+| `J/` | `~/projects/JevDev/` |
 | `E/<name>` | `M/skills/engineering/<name>/SKILL.md` |
 | `P/<name>` | `M/skills/productivity/<name>/SKILL.md` |
 

@@ -4,7 +4,7 @@ oracle 报告，2026-11-17。只读调研，未改任何文件，未启动其他
 
 标记约定：**【核实】** 读源码或文档确认；**【推断】** 由已核实事实推出、未实测；**【未验证】** 需要探针才能下结论。
 
-路径缩写：`HUD` = `/home/fires/projects/MyHUD`，`MATT` = `/home/fires/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.3.1`，`UP` = `/home/fires/codex/MySkills/_upstream/mattpocock-skills`，`PI` = `/home/fires/Fishpref/pi-roles`，`MS` = `/home/fires/codex/MySkills`，`JD` = `/home/fires/projects/JevDev`。
+路径缩写：`HUD` = `~/projects/MyHUD`，`MATT` = `~/.claude/plugins/cache/claude-plugins-official/mattpocock-skills/1.3.1`，`UP` = `~/codex/MySkills/_upstream/mattpocock-skills`，`PI` = `~/Fishpref/pi-roles`，`MS` = `~/codex/MySkills`，`JD` = `~/projects/JevDev`。
 
 ---
 
@@ -366,7 +366,7 @@ grill（主会话，Matt 原样）
 
 ## 7. 读过的文件与运行的命令
 
-**HUD（`/home/fires/projects/MyHUD`）**
+**HUD（`~/projects/MyHUD`）**
 - 全文：`packages/hud-mcp/README.md`、`packages/hud-mcp/hud-convention.md`、`docs/delegation.md`、`docs/spec.md`、`AGENTS.md`、`CLAUDE.md`、`ISSUES.md`、`integrations/skills/hud-delegate/SKILL.md`、`integrations/skills/hud-handoff/SKILL.md`、`integrations/skills/hud-setup/SKILL.md`、`integrations/skills/hud-delegate/roles/implementer.md`、`packages/hud-mcp/roles/*.json`、`packages/hud-mcp/harnesses.json`、`packages/hud-mcp/instructions/{oracle,implementer,reviewer,frontend-implementer,general}.md`、`src/collectors/project-board.ts`、`src/roles/cli-kinds.ts`、`docs/agents/{domain,issue-tracker,triage-labels}.md`
 - 分段：`packages/hud-mcp/src/thin-main.ts`（1-135、290-490、605-705、779-1008）、`src/roles/roster.ts`（340-510）、`src/cli/setup.ts`（100-260）、`src/render/project-view.ts`（79-83、286-300、324-360）、`docs/handoff/STATE.md`（前 60 行）、`docs/design/hud-workflows.md`（标题与状态头）、`.scratch/role-bind/issues/02-*.md`、`.scratch/role-bind/spec.md`（前 30 行）
 - grep：`install.d/*`、`packages/hud-mcp/bin/hud-watch.mjs`、`integrations/pi/package/README.md`、`README.md`
@@ -374,9 +374,9 @@ grill（主会话，Matt 原样）
 **本机配置**
 - `~/.hud/roles/*.json`、`~/.hud/harnesses.json`、`~/.hud/projects.json`、`~/.hud/config.json`（非凭据部分）、`~/.hud/jobs/*/job.json` 与 `STATUS.json`（仅汇总 role、place、model、cwd、package、state）
 - `~/.claude/settings.json`（`enabledPlugins` 段）、`~/.claude/skills/`、`~/.codex/skills/`、`~/.agents/skills/`、`~/.codex/config.toml`（772-792 行）、`~/.pi/agent/skills/`（目录列表）
-- `/home/fires/projects/bilingual/.hud/project.json`
+- `~/projects/bilingual/.hud/project.json`
 
-**pi-roles（`/home/fires/Fishpref/pi-roles`）**
+**pi-roles（`~/Fishpref/pi-roles`）**
 - `roles/{implementer,reviewer,architect,sonic,general}.md` 全文，`bin/pi-role`（80-135 行），目录列表
 
 **Matt skills（插件缓存 1.3.1）**
@@ -385,10 +385,10 @@ grill（主会话，Matt 原样）
 - 部分：`wizard`、`to-questionnaire`、`codebase-design`、`improve-codebase-architecture`、`pr`、`teach`（开头部分）；`CHANGELOG.md`（1.3.1、1.3.0 及部分 1.2.x）
 - 上游 clone（1.3.2）：`git log -1`、与 1.3.1 的 `diff -rq`、`implement-spec`/`code-review`/`research` 的逐行 diff、`CHANGELOG.md` 1.3.2 段、`skills/in-progress/software-factory/SKILL.md`（前 90 行）
 
-**MySkills（`/home/fires/codex/MySkills`）**
+**MySkills（`~/codex/MySkills`）**
 - `README.md`、`AGENTS.md`、`teaming/SKILL.md`、`teaming/references/workflow.md`、`teaming/agents/openai.yaml`、`workflow-design/SKILL.md`、`agents/README.md`
 
-**JevDev（`/home/fires/projects/JevDev`）**
+**JevDev（`~/projects/JevDev`）**
 - `AGENTS.md`（含未提交 diff）、`.claude/settings.json`、`docs/agents/{domain,issue-tracker,triage-labels}.md`、目录列表
 
 **只读命令**

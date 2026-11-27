@@ -193,13 +193,13 @@ Generate **300** `j` + 16-hex job directories: 20 working, 280 closed, all synth
 Run, in the isolated environment, 3 batches of 30 fresh processes:
 
 ```sh
-node /home/fires/projects/MyHUD/bin/hud-statusline < "$T/input.json"
+node ~/projects/MyHUD/bin/hud-statusline < "$T/input.json"
 ```
 
 Measure wall time and child CPU as in §2; first with 0 jobs, then 300; first transcript encounter, incremental catch-up, fully warm transcript cache, and a small append. Record p50/p95/p99/max, file opens/body bytes and Git subprocess count. When `strace` is available:
 
 ```sh
-strace -c -f node /home/fires/projects/MyHUD/bin/hud-statusline < "$T/input.json"
+strace -c -f node ~/projects/MyHUD/bin/hud-statusline < "$T/input.json"
 ```
 
 This is the acceptance check missing for both startup pruning and the cold-process side of JOB-SCAN. Compare against the replaced statusline only if its executable is actually available; **no baseline parity claim is established by this review**.
@@ -212,7 +212,7 @@ For three sequential 180 s runs, use the 300-job fixture and the bound/unbound v
 CODEX_HUD_STANDALONE_PANEL=1 CODEX_HUD_PANEL_ALL_DELEGATIONS=1 \
 CODEX_HUD_CWD="$T/project" CODEX_HUD_PROFILE=1 \
 node --cpu-prof --heap-prof --cpu-prof-dir="$T" --heap-prof-dir="$T" \
-  /home/fires/projects/MyHUD/dist/tree-page.js
+  ~/projects/MyHUD/dist/tree-page.js
 ```
 
 Capture stdout/stderr into `$T`, sample `/proc/$PID/{stat,status,io}` every second, and record display/profile.log stage counts. Compare 20-working vs all-settled, Home vs modal, and initial vs warm collection. Count render invocations and actual frame bytes separately. Use a synthetic private PTY for the frame-size test; a pipe is acceptable for collection but is not a real terminal paint benchmark. Do not infer hidden-pane savings from redirected output. Only a supported synthetic visibility signal can test that case.
@@ -222,7 +222,7 @@ Capture stdout/stderr into `$T`, sample `/proc/$PID/{stat,status,io}` every seco
 Start the existing MCP with the same 300-job home:
 
 ```sh
-node /home/fires/projects/MyHUD/packages/hud-mcp/bin/hud-mcp.mjs
+node ~/projects/MyHUD/packages/hud-mcp/bin/hud-mcp.mjs
 ```
 
 Send newline-delimited initialize, then 30 `hud_roster`, 30 no-job `hud_read`, 30 direct `hud_read` calls. For one working job with a retained 64 KiB report and no open question, send `hud_read` with `wait_ms:120000`; instrument reads and CPU. Repeat three times, then repeat with a question created at 5 s and with settlement at 5 s. Verify the answer latency, report bytes, and `read_at` side effect. The existing protocol supports concurrent read requests; also test two waits to expose multiplied read cost.
@@ -232,7 +232,7 @@ Send newline-delimited initialize, then 30 `hud_roster`, 30 no-job `hud_read`, 3
 Against a fixture-only Herdr event socket and PATH containing a synthetic `pi-role-reap` stub:
 
 ```sh
-node /home/fires/projects/MyHUD/packages/hud-mcp/bin/hud-watch.mjs
+node ~/projects/MyHUD/packages/hud-mcp/bin/hud-watch.mjs
 ```
 
 Measure startup with 300 jobs, 60 s no-change idle, 100 STATUS renames, closure of the final working job, and a shortened synthetic failed-retention deadline. Verify process exit, count inotify watches, and check one reap attempt per intended event. A separate stub that sleeps tests serialization and event responsiveness. Never aim this at the owner’s socket or use real tab IDs.

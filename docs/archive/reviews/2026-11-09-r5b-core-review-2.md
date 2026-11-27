@@ -55,4 +55,4 @@ Peak file attempts/bytes/entries per refresh were **32 / 28,704 / 128**; peak pr
 
 These are non-gating synthetic measurements. The baseline uses the unchanged native builder over an empty native listing, not historical whole-process timing. Large-history collection remains bounded/incremental; repaint measures rendering without terminal writes. File attempts are not syscall counts, and RSS includes fixture generation/JIT/GC. No real Herdr, logged-in harness, Jev/shared browser, installer or production/WSL qualification was attempted.
 
-Report: `/home/fires/projects/MyHUD/tmp/tasks/R5B-CORE/review-2.md` — 0 findings.
+Report: `~/projects/MyHUD/tmp/tasks/R5B-CORE/review-2.md` — 0 findings.

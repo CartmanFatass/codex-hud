@@ -153,4 +153,4 @@ refreshed when a call is submitted. Spec §4 asks the panel to stay at least as 
 - No tests or builds were run, per the brief ("no builds and no test runs"); the implementer's reported 29 unit + 48 mjs
   at b3fdd830 is taken as given — there is no log in the checkout to verify it against.
 
-Delivered as `/home/fires/.hud/jobs/j0cd9b0ae55fd397e/report.md`; 2 blockers, 5 minor, plus the optional list.
+Delivered as `~/.hud/jobs/j0cd9b0ae55fd397e/report.md`; 2 blockers, 5 minor, plus the optional list.

@@ -70,4 +70,4 @@ Collection p95 ranges across the three runs: quiet **15.474–18.492 ms**, chang
 
 The benchmark explicitly uses an empty-native-list baseline, bounded incremental large-history collection, and render-only repaint timing. File attempts are not syscall counts; RSS is process-wide. These are synthetic design measurements, not historical whole-panel timings or live-provider/production qualification. No real Herdr, logged-in harness, Jev/browser or installer acceptance was attempted.
 
-Report: `/home/fires/projects/MyHUD/tmp/tasks/R5B-CORE/review-1.md` — 2 findings (2 major).
+Report: `~/projects/MyHUD/tmp/tasks/R5B-CORE/review-1.md` — 2 findings (2 major).

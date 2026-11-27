@@ -32,10 +32,10 @@ Read-only inspection, no agents launched, no builds, installs, client sessions o
 
 Source notation:
 
-- `H/` = `/home/fires/projects/MyHUD/`.
-- `U/` = `/home/fires/codex/MySkills/_upstream/mattpocock-skills/`, verified clean at **5863806dd4e15c63174bee4e7515a4256792ecfa**, version 1.3.2.
+- `H/` = `~/projects/MyHUD/`.
+- `U/` = `~/codex/MySkills/_upstream/mattpocock-skills/`, verified clean at **5863806dd4e15c63174bee4e7515a4256792ecfa**, version 1.3.2.
 - `E/name` = `U/skills/engineering/name/SKILL.md`; `P/name` = the corresponding `productivity` file.
-- `W/` = `/home/fires/projects/MyHUD-wt/ORACLE-SKILL/`, inspected only for its candidate `codebase-design` texts, not accepted as a completed runtime implementation.
+- `W/` = `~/projects/MyHUD-wt/ORACLE-SKILL/`, inspected only for its candidate `codebase-design` texts, not accepted as a completed runtime implementation.
 
 HUD was `b6f39da0` when inspected. It advanced to `d02c67e3` during the investigation; the intervening diff changed only `docs/handoff/STATE.md`, recording SIDEBAR-ONE landed and ORACLE-SKILL held for this decision. I read all **39 upstream skill entries**, their supporting files/scripts, bucket READMEs, manifests and 38 existing `agents/openai.yaml` files; all current HUD skill assets; the requested installers, roles and instructions; relevant setup/dispatch source; both earlier reports; and the rejected/reverted commits. Source claims below are static observations, not live-client qualification.
 

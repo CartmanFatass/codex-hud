@@ -83,4 +83,4 @@ Confirmed these against [official pricing](https://docs.mistral.ai/inference/pri
 - Ran read-only `python3 - <<'PY' … PY` catalog extraction and an `HTMLParser`/`Decimal` comparison of official table cells to local catalog fields. The first comparison exited 1 because my substring selector matched both GLM names; after correcting it to exact model-name matching, the check exited 0: **9/9 official price fields match; all three IDs present in the 34-model catalog**. Decimal calculations confirmed the cache ratios and B's derived batch prices.
 - No build/test/lint command was requested for this documentary comparison. No source, catalog, configuration, or Git state was modified; only this authorized review file was written.
 
-Report: /home/fires/projects/MyHUD/tmp/tasks/SONIC-AB-01-review/review.md — 5 findings (A: 3; B: 2).
+Report: ~/projects/MyHUD/tmp/tasks/SONIC-AB-01-review/review.md — 5 findings (A: 3; B: 2).

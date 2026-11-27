@@ -54,6 +54,6 @@ Reviewed `e651befb..ab6815c8` on `wt/worker-close-02` against both tickets, `doc
 - `tmp/env.sh node --input-type=module -e …` synthetic probes: both partial-reap reproductions exited 0 after asserting the failures above. The `/proc` probe exited 0: old helper alone `false`, with an in-turn grandchild `true`, after grandchild exit `false`. No real Pi, CLI or Herdr worker was launched.
 - `git diff --check ab6815c8..4c264954`: exit 0. `git status --short --untracked-files=all`: clean.
 
-Report: `/home/fires/.hud/jobs/j10ebe798f551f836/report.md` — 1 finding.
+Report: `~/.hud/jobs/j10ebe798f551f836/report.md` — 1 finding.
 
 **Orchestrator, 2026-11-17:** landed anyway. The remaining finding needs a Herdr failure during cleanup and leaves a tab whose worker already quit; below the blocking bar, kept as a follow-up note on ticket 03.

@@ -41,7 +41,7 @@ Files read and checks
 
 Read: reviewer instructions; both briefs (`REVIEW-014`, `REREVIEW-014`); both first-round reviews; `docs/spec.md` §2 and §5; `docs/delegation.md` step 5; `docs/ARCHITECTURE.md` §7–§8; `docs/reference.md` and `docs/reference.zh.md` (CLI, roles, outbound); `docs/releases/0.1.4.md`; `integrations/skills/hud-delegate/SKILL.md`; `.scratch/cli-workers/issues/10-quiet-job-decision.md`; `git show a2b2b033` and `git show 7bd5e175`. Code: `packages/hud-mcp/src/thin-main.ts` (roster), `packages/hud-mcp/bin/hud-cli.mjs` (prompt failure and flag), `packages/hud-mcp/src/cli-judge.ts`, `packages/hud-mcp/src/quiet-decision.ts`, `src/roles/roster.ts` `assignment`, `src/cli/watch.ts`, `src/collectors/thin-jobs.ts` (`jobRow`, `jobChanges`, card `settledAt`), `src/render/work-card.ts`, `src/render/work-view.ts`, `src/render/workboard-i18n.ts`, `src/render/home-view.ts` (needs-you strip only), `src/render/work-inspector.ts`, role JSON for `imp`, `reviewer`, `oracle`, `pro`. HEAD `7bd5e17566c1eb9a5766f173358f862541fe3d40`. The brief states the orchestrator's full suite was 562/562; I did not re-run it.
 
-Checks, worktree, `/home/fires/projects/MyHUD/tmp/env.sh` (temp homes):
+Checks, worktree, `~/projects/MyHUD/tmp/env.sh` (temp homes):
 
 | Command | Result |
 |---|---|
