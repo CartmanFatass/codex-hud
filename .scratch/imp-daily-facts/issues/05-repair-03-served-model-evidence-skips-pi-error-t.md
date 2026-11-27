@@ -1,6 +1,7 @@
 # 05: Repair 03: served-model evidence skips Pi error turns and keeps AGY coverage and order
 
 **Status:** ready-for-agent
+**Repairs:** imp-daily-facts/03, imp-daily-facts/01
 **Live try:** none
 **Blocked by:** none
 
