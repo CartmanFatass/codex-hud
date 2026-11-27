@@ -1,4 +1,5 @@
 import type { ExecutionRun, MetroRepair, MetroStation, MetroStationState } from './execution-runs.js';
+import type { OwnerWorker } from './workboard-types.js';
 import type { HomePortfolio } from './home-portfolio.js';
 import { ROLE_GLYPHS, roleIcon } from '../render/model-glyphs.js';
 import { monitorText } from '../render/monitor-text.js';
@@ -64,6 +65,8 @@ function stationShortLabel(run: ExecutionRun, station: MetroStation, ticketIds: 
   if (run.kind === 'queue' && ticketIds.has(station.id)) return text(ticketNumber(station.id)) || station.id;
   if (station.kind === 'review') return 'review';
   if (station.kind === 'accept') return 'accept';
+  if (station.workflowKind === 'land') return 'land';
+  if (station.role === 'lead' && (station.workflowKind === 'job' || station.kind === 'synth')) return 'lead';
   if (KIND_WORDS.has(station.id)) return station.id;
   const rawLabel = station.label ? text(station.label) : '';
   const isBareRole = (value: string) => Boolean(value) && (
@@ -86,7 +89,7 @@ function stepHasWorker(run: ExecutionRun, station: MetroStation, step: MetroStat
 
 /** Reuse Home's already ordered requests and Execution's open-run stations; do not reinterpret worker questions. */
 export function buildSidebarProjection(portfolio: HomePortfolio,
-  openRuns: readonly { root: string; group: string; run: ExecutionRun }[],
+  openRuns: readonly { root: string; group: string; run: ExecutionRun; workers?: ReadonlyMap<string, OwnerWorker> }[],
   represented: ReadonlySet<string> | undefined,
   paneForJob: (id: string) => string | undefined,
   now: number,
@@ -107,7 +110,7 @@ export function buildSidebarProjection(portfolio: HomePortfolio,
   const targets = new Map<string, SidebarRunTarget>();
   const starts: (number | null)[] = [];
   const runs: Run[] = [];
-  for (const { root, group, run } of openRuns) {
+  for (const { root, group, run, workers } of openRuns) {
     if (runs.length === MAX_ROWS) break;
     const hud_group = text(group) || '·';
     let hud_subgroup = text(run.feature ?? run.label) || run.flow;
@@ -135,8 +138,10 @@ export function buildSidebarProjection(portfolio: HomePortfolio,
         const state = step === station && blocked.has(step.id) ? 'blocked' : states[step.state];
         const pane = step.jobId && ['working', 'asking', 'held', 'stalled'].includes(step.state) ? paneForJob(step.jobId) : undefined;
         const label = 'round' in step ? repairShortLabel(baseLabel, step) : baseLabel;
-        const fullTitle = !('round' in step) && step.title ? text(step.title) : '';
-        const role = step.role && stepHasWorker(run, station, step) ? iconForRole(step.role) : undefined;
+        const worker = step.jobId ? workers?.get(step.jobId) : undefined;
+        const fullTitle = text(('title' in step && step.title) || worker?.ticketTitle || worker?.briefTitle || worker?.task || '');
+        const roleName = step.role || worker?.role;
+        const role = roleName && stepHasWorker(run, station, step) ? iconForRole(roleName) : undefined;
         steps.push({
           id: step.id,
           label,

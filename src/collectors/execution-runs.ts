@@ -1278,7 +1278,7 @@ function readFixedExecutionRun(
     const stationState: MetroStationState = stalledReason && !pool?.working ? 'stalled' : stepToMetroState(node.state);
     const stationReason = node.reason ?? stalledReason;
     return {
-      id: key, kind, state: stationState,
+      id: key, kind, workflowKind: step.kind, state: stationState,
       ...(pool ? { pool, count } : {}),
       ...(node.changedAt !== undefined ? { changedAt: node.changedAt } : {}),
       ...(node.role ? { role: node.role } : {}),

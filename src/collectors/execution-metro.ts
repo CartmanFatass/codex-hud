@@ -1,5 +1,7 @@
 /** Pure metro-map graph types and 3-lane reduction for Execution workflows. No I/O or render imports. */
 
+import type { Step } from '../workflows/graph.js';
+
 export type MetroStationKind = 'worker' | 'review' | 'accept' | 'synth' | 'pool' | 'summary';
 
 export type MetroStationState =
@@ -57,6 +59,8 @@ export interface MetroPoolCounts {
 export interface MetroStation {
   readonly id: string;
   readonly kind: MetroStationKind;
+  /** Original kind for composed steps (e.g. a land step also uses the worker station shape). */
+  readonly workflowKind?: Step['kind'];
   readonly state: MetroStationState;
   /** Last state-change timestamp (ms epoch) for "changed last" detail selection and station age. */
   readonly changedAt?: number;

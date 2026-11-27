@@ -95,6 +95,25 @@ test('sidebar reuses Home request order and Execution steps; no new generation f
   assert.equal(sidebarDestination({ ...hit, step: 'not-a-step' }, facts), undefined);
 });
 
+test('composed steps use the job label or kind word; even a borrowed land worker carries its glyph', (t) => {
+  const f = fixture(t, { withRun: false }), graph = 'w1000000000000001';
+  put(join(f.home, 'flows', `${graph}.json`), { flow: graph, project_root: f.project, state: 'working',
+    steps: { inspect: { state: 'done', job }, decide: { state: 'done' }, publish: { state: 'running' } } });
+  put(join(f.home, 'flows', graph, 'graph.json'), { version: 1, name: 'release', steps: {
+    inspect: { kind: 'job', role: 'imp', needs: [] }, decide: { kind: 'job', role: 'lead', needs: ['inspect'] },
+    publish: { kind: 'land', job: 'inspect', needs: ['decide'] },
+  } });
+  const workers = new Map([[job, { id: `thin-job:${job}`, role: 'imp', briefTitle: 'Inspect the release checklist' }]]);
+  const [run] = readExecutionRuns(f.home, { root: f.project, pane: null }, workers, f.now);
+  const { projection } = buildSidebarProjection({ projects: [], requests: [] }, [{ root: f.project, group: 'orchard', run, workers }],
+    undefined, () => undefined, f.now);
+  const { steps } = projection.runs[0];
+  assert.equal(steps[0].title, 'Inspect the release checklist');
+  assert.deepEqual(steps.map(s => [s.id, s.label, s.role]), [
+    ['inspect', 'inspect', undefined], ['decide', 'lead', undefined], ['publish', 'land', roleIcon('imp')],
+  ]);
+});
+
 async function fakeHerdr(t, f, dock = 'closed') {
   const sockets = new Set(), listeners = new Set(), messages = new EventEmitter(), projections = [];
   const server = createServer(socket => {

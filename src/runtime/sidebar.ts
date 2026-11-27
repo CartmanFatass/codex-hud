@@ -119,7 +119,7 @@ function sidebarCollector(home: string, endpoint: string, env: NodeJS.ProcessEnv
         const workers = ok ? new Map(pipeline.workboard(noAgents).workers.map(w => [w.id.replace(/^thin-job:/, ''), w])) : noWorkers;
         for (const [id, worker] of workers) if (worker.settledAt === null && !worker.headless) live.add(id);
         for (const run of readExecutionRuns(home, { root, pane: null }, workers, now)) {
-          if (run.endedAt === undefined) runs.push({ root, group, run });
+          if (run.endedAt === undefined) runs.push({ root, group, run, workers });
         }
       }
       for (const [root, pipeline] of jobs) if (!retained.has(root)) { pipeline.dispose(); jobs.delete(root); }
