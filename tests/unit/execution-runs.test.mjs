@@ -688,13 +688,13 @@ function foldFixture(t) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const project = join(root, 'project'), hud = join(root, 'hud');
   const id = (n) => `j${n.toString(16).padStart(16, '0')}`;
-  const writeJob = (n, brief, minutes, { role = 'sonic', questions = [], ...receipt } = {}) => {
+  const writeJob = (n, brief, minutes, { role = 'sonic', state = 'done', questions = [], ...receipt } = {}) => {
     const jobId = id(n), dir = join(hud, 'jobs', jobId);
     putJson(join(dir, 'job.json'), {
       job: jobId, role, cwd: project, project_root: project, created_at: ago(minutes + 5),
       ...(role === 'sonic' && { headless: true }), ...receipt,
     });
-    putJson(join(dir, 'STATUS.json'), { state: 'done', settled_at: ago(minutes), ended_at: ago(minutes) });
+    putJson(join(dir, 'STATUS.json'), { state, settled_at: ago(minutes), ended_at: ago(minutes) });
     fs.writeFileSync(join(dir, 'brief.md'), brief);
     for (const qid of questions) {
       fs.mkdirSync(join(dir, 'qa'), { recursive: true });
@@ -713,7 +713,7 @@ function foldFixture(t) {
     await execution.refresh(undefined, NOW);
     return { execution, view: execution.view(project) };
   };
-  return { hud, writeJob, queue, collect };
+  return { hud, project, writeJob, queue, collect };
 }
 
 test('an ended queue counts settled sonic helpers on the ticket row, which opens the worker Inspector listing them', async (t) => {
@@ -777,18 +777,181 @@ test('an ended queue counts settled sonic helpers on the ticket row, which opens
   assert.equal(clicked.subpage.target.workerId, `thin-job:${second}`);
 });
 
-test('helpers keep their own Recent rows when no row leads to the run member that started them', async (t) => {
+test('helpers keep their own Recent rows when no retained recent row leads to the run member that started them', async (t) => {
   const f = foldFixture(t), flow = 'q0000000000000051';
   const stale = f.writeJob(1, '# 01: Settled yesterday\n', 1500, { role: 'imp', ticket_queue: flow });
   const late = f.writeJob(2, 'Read-only: check older callers\n', 20, { parent_job: stale });
-  const reviewer = f.writeJob(3, '# Review the run\n', 15, { role: 'reviewer', ticket_queue: flow });
-  const reviewHelper = f.writeJob(4, 'Read-only: check the review range\n', 16, { parent_job: reviewer });
-  f.queue(flow, { tickets: [{ ticket: '01', role: 'imp', job: stale, landed: true }], review_job: reviewer });
+  const unretainedReviewer = 'j0000000000000099';
+  const orphanHelper = f.writeJob(4, 'Read-only: check pruned reviewer range\n', 16, { parent_job: unretainedReviewer });
+  f.queue(flow, { tickets: [{ ticket: '01', role: 'imp', job: stale, landed: true }], review_job: unretainedReviewer });
 
   const { view } = await f.collect();
   assert.ok(view.runs[0].tickets[0].execJob, 'the old member is still retained');
   assert.equal(view.runs[0].tickets[0].children, undefined);
-  assert.deepEqual(view.endedJobs.map((job) => job.jobId), [reviewHelper, late]);
+  assert.deepEqual(view.endedJobs.map((job) => job.jobId), [orphanHelper, late]);
+});
+
+test('helpers of a settled queue reviewer, acceptance lead, land repair and earlier attempt fold into Run Detail step rows while failed helpers keep Recent rows', async (t) => {
+  const f = foldFixture(t), flow = 'q0000000000000052', landFlow = 'f0000000000000052';
+  const member = { ticket_queue: flow };
+  const ticketWorker = f.writeJob(1, '# 01: Implement feature\n', 30, { role: 'imp', ...member });
+  const repairWorker = f.writeJob(2, '# 01: Repair failing gate\n', 25, { role: 'imp', ...member });
+  const repairHelper = f.writeJob(3, 'Read-only: inspect gate flake\n', 26, { parent_job: repairWorker });
+  const earlierAttempt = f.writeJob(4, '# 01: Earlier attempt\n', 40, { role: 'imp', ...member });
+  const earlierHelper = f.writeJob(5, 'Read-only: check previous diff\n', 41, { parent_job: earlierAttempt });
+  const reviewer = f.writeJob(6, '# Review milestone\n', 15, { role: 'reviewer', ...member });
+  const revHelper1 = f.writeJob(7, 'Read-only: audit collector fold\n', 17, { parent_job: reviewer });
+  const revHelper2 = f.writeJob(8, 'Read-only survey: check render widths\n', 16, { parent_job: reviewer });
+  const failedRevHelper = f.writeJob(9, 'Read-only: failed reviewer probe\n', 14, { parent_job: reviewer, state: 'failed' });
+  const acceptLead = f.writeJob(10, '# Accept milestone\n', 10, { role: 'lead', ...member });
+  const leadHelper1 = f.writeJob(11, 'Read-only: verify acceptance checklist\n', 12, { parent_job: acceptLead });
+  const leadHelper2 = f.writeJob(12, 'Read-only: verify reference docs\n', 11, { parent_job: acceptLead });
+
+  putJson(join(f.hud, 'flows', `${landFlow}.json`), {
+    flow: landFlow, job: ticketWorker, pane: PANE, task: false, ticket_queue: flow,
+    wt: { root: join(f.hud, 'wt'), main_root: f.project, branch: 'wt/52' },
+    config: { base: 'main', gate: ['npm test'], after: [], push: false },
+    state: 'completed', step: 'done', landed_sha: 'b'.repeat(40), landed_at: ago(24),
+    created_at: ago(29), updated_at: ago(24), source_sha: 'a'.repeat(40),
+    repairs: [{ step: 'gate[1]: npm test', outcome: 'gate passed', job: repairWorker, started_at: ago(27), changed_at: ago(25) }],
+  });
+  f.queue(flow, {
+    steps: { tickets: { state: 'done' }, review: { state: 'done' }, accept: { state: 'done', answer: 'finish' } },
+    verdict: 'finish: all checks passed',
+    review_job: reviewer,
+    tickets: [{ ticket: '01', role: 'imp', job: ticketWorker, land: landFlow, landed: true }],
+    reviews: [{ round: 0, job: reviewer, summary: 'Clean milestone diff.', findings: { blocker: 0, major: 0, minor: 1 } }],
+    decisions: [{ step: 'accept', kind: 'accept', job: acceptLead, decision: 'finish', reason: 'Verified checks', at: ago(10) }],
+  });
+
+  const { execution, view } = await f.collect();
+  assert.deepEqual(view.endedJobs.map((job) => job.jobId), [failedRevHelper], 'only the failed helper keeps a Recent row');
+  const run = view.runs[0];
+  assert.deepEqual(run.tickets[0].landRepairs[0].children?.map((c) => c.jobId), [repairHelper]);
+  assert.deepEqual(run.reviews[0].children?.map((c) => c.jobId), [revHelper2, revHelper1]);
+  assert.deepEqual(run.decisions[0].children?.map((c) => c.jobId), [leadHelper2, leadHelper1]);
+  assert.deepEqual(run.otherSteps?.map((s) => [s.jobId, s.children.map((c) => c.jobId)]), [[earlierAttempt, [earlierHelper]]]);
+
+  const press = (state, key, size = {}) => {
+    const frame = render(view, { state, ...size, workboard: state.subpage && execution.board() });
+    return handleMonitorInput(frame.state, { type: 'key', key }, { frame, nowMs: NOW }).state;
+  };
+  const recent = render(view);
+  assert.deepEqual(recent.workboard.rows.map((row) => row.item).filter(Boolean),
+    [`project:exec-run:${flow}`, `project:exec:${failedRevHelper}`]);
+  assert.doesNotMatch(text(recent), /audit collector fold|verify acceptance checklist|inspect gate flake|check previous diff/);
+
+  const detail = press(onExecution({ cursor: `project:exec-run:${flow}` }), 'enter');
+  assert.deepEqual(detail.subpage, { kind: 'run-detail', flow, scroll: 0 });
+  const expectedTargets = [
+    ['project:run-ticket-repair:01:1', `thin-job:${repairWorker}`, 1],
+    ['project:run-review:0', `thin-job:${reviewer}`, 2],
+    ['project:run-decision:0', `thin-job:${acceptLead}`, 2],
+    [`project:run-step:${earlierAttempt}`, `thin-job:${earlierAttempt}`, 1],
+  ];
+  for (const lang of ['en', 'zh']) for (const width of [40, 62, 100]) {
+    const frame = render(view, { state: detail, lang, width, workboard: execution.board() });
+    const targets = frame.workboard.rows.filter((row) => row.item);
+    assert.deepEqual(targets.map((row) => [row.item, row.execJob.target.workerId]),
+      expectedTargets.map(([item, workerId]) => [item, workerId]));
+    for (const [i, [, , count]] of expectedTargets.entries()) {
+      const needle = lang === 'zh' ? `+${count} 个 sonic` : `+${count} sonic`;
+      assert.ok(targets[i].text.includes(needle), `${lang} ${width} row ${i}: ${targets[i].text}`);
+    }
+    for (const line of frame.lines) {
+      assert.equal(visualLength(line), width, `${lang} ${width}: ${line}`);
+      assert.equal(line, stripAnsi(line));
+    }
+    for (const line of render(view, { state: detail, lang, width, theme: 'mocha' }).lines) {
+      assert.equal(visualLength(line), width, `mocha ${lang} ${width}`);
+    }
+  }
+
+  // Tab to the review row, Enter opens reviewer Inspector with its helpers' asks, Esc returns to the review row.
+  const onReview = press(press(detail, 'tab'), 'tab');
+  const revInspector = press(onReview, 'enter');
+  assert.deepEqual([revInspector.subpage.kind, revInspector.subpage.target.workerId], ['inspector', `thin-job:${reviewer}`]);
+  const revListed = text(render(view, { state: revInspector, height: 40, workboard: execution.board() }));
+  assert.match(revListed, /Sonic children/);
+  assert.ok(revListed.includes('audit collector fold'), revListed);
+  assert.ok(revListed.includes('check render widths'), revListed);
+  assert.doesNotMatch(revListed, /verify acceptance checklist|Read-only/);
+  const backReview = press(revInspector, 'escape');
+  assert.deepEqual([backReview.subpage.kind, backReview.subpage.cursor], ['run-detail', 'project:run-review:0']);
+
+  // Tab to the acceptance lead row, Enter opens lead Inspector listing its helpers' asks, Esc returns to it then Recent.
+  const leadInspector = press(press(backReview, 'tab'), 'enter');
+  assert.equal(leadInspector.subpage.target.workerId, `thin-job:${acceptLead}`);
+  const leadListed = text(render(view, { state: leadInspector, height: 40, workboard: execution.board() }));
+  assert.ok(leadListed.includes('verify acceptance checklist'), leadListed);
+  assert.ok(leadListed.includes('verify reference docs'), leadListed);
+  assert.doesNotMatch(leadListed, /audit collector fold|Read-only/);
+  const backLead = press(leadInspector, 'escape');
+  assert.deepEqual([backLead.subpage.kind, backLead.subpage.cursor], ['run-detail', 'project:run-decision:0']);
+  assert.equal(press(backLead, 'escape').subpage, undefined);
+});
+
+test('helpers of council, batch and unrecorded reviewer steps fold into their Run Detail step rows', async (t) => {
+  const f = foldFixture(t);
+  // 1. Ended queue with review_job not yet appended to reviews[].
+  const qFlow = 'q0000000000000053';
+  const unrecordedRev = f.writeJob(1, '# Review before record\n', 15, { role: 'reviewer', ticket_queue: qFlow });
+  const unrecordedRevHelper = f.writeJob(2, 'Read-only: inspect unrecorded review\n', 16, { parent_job: unrecordedRev });
+  f.queue(qFlow, { tickets: [], review_job: unrecordedRev });
+
+  // 2. Ended council whose member started two settled sonic helpers.
+  const seat = f.writeJob(3, '# Council seat\n', 20, { role: 'oracle' });
+  const seatHelper1 = f.writeJob(4, 'Read-only: council fact one\n', 22, { parent_job: seat });
+  const seatHelper2 = f.writeJob(5, 'Read-only: council fact two\n', 21, { parent_job: seat });
+  const council = f.writeJob(6, '# Architecture council\n', 18, {
+    role: 'council', synthesizer: 'main', council_members: [{ preset: 'fable', job: seat }],
+  });
+  putJson(join(f.hud, 'flows', `${council}.json`), {
+    flow: council, cwd: f.project, project_root: f.project, pane: PANE,
+    template: 'council', state: 'completed', steps: { council: { state: 'done' } },
+    created_at: ago(30), updated_at: ago(18),
+  });
+
+  // 3. Ended batch whose item started a settled sonic helper.
+  const batch = 'b0000000000000053';
+  const batchItem = f.writeJob(7, '# Batch item one\n', 25, { role: 'imp', batch_flow: batch });
+  const batchHelper = f.writeJob(8, 'Read-only: inspect batch target\n', 26, { parent_job: batchItem });
+  const batchFile = join(f.hud, 'flows', `${batch}.json`);
+  putJson(batchFile, {
+    flow: batch, cwd: f.project, project_root: f.project, pane: PANE,
+    state: 'completed', created_at: Date.parse(ago(35)), updated_at: Date.parse(ago(24)),
+    scale: { role: 'imp', count: 1, max_parallel: 1 },
+    totals: { done: 1, failed: 0, running: 0, waiting: 0 },
+  });
+  const batchTime = new Date(ago(24));
+  fs.utimesSync(batchFile, batchTime, batchTime);
+  putJson(join(f.hud, 'flows', batch, 'index.json'), { items: [{ item: 1, pilot: true, state: 'done', job: batchItem }] });
+
+  const { execution, view } = await f.collect();
+  assert.deepEqual(view.endedJobs, [], 'all settled step helpers fold into their workflow runs');
+  const press = (state, key) => {
+    const frame = render(view, { state, width: 80, height: 40, workboard: state.subpage && execution.board() });
+    return handleMonitorInput(frame.state, { type: 'key', key }, { frame, nowMs: NOW }).state;
+  };
+
+  for (const [flow, expectedItem, expectedWorker, expectedCount, expectedAsk] of [
+    [qFlow, 'project:run-reviewer', unrecordedRev, '+1 sonic', 'inspect unrecorded review'],
+    [council, 'project:run-node:member-0', seat, '+2 sonic', 'council fact one'],
+    [batch, `project:run-step:${batchItem}`, batchItem, '+1 sonic', 'inspect batch target'],
+  ]) {
+    const detail = press(onExecution({ cursor: `project:exec-run:${flow}` }), 'enter');
+    const detailFrame = render(view, { state: detail, width: 80, height: 40, workboard: execution.board() });
+    const row = detailFrame.workboard.rows.find((r) => r.item === expectedItem);
+    assert.ok(row, `${flow} missing selectable row ${expectedItem}`);
+    assert.ok(row.text.includes(expectedCount), `${flow}: ${row.text}`);
+    const insp = press(detail, 'enter');
+    assert.equal(insp.subpage.target.workerId, `thin-job:${expectedWorker}`);
+    const inspText = text(render(view, { state: insp, width: 80, height: 40, workboard: execution.board() }));
+    assert.ok(inspText.includes(expectedAsk), `${flow}: ${inspText}`);
+    const back = press(insp, 'escape');
+    assert.deepEqual([back.subpage.kind, back.subpage.cursor], ['run-detail', expectedItem]);
+  }
+  assert.ok([unrecordedRevHelper, seatHelper1, seatHelper2, batchHelper].length === 4);
 });
 
 test('a helper folds only when its questions are known to be closed', async (t) => {

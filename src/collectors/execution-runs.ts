@@ -85,6 +85,32 @@ export interface ExecutionRunStep {
   readonly changedAt?: number;
 }
 
+export type ExecutionRunRepair = MetroRepair & {
+  /** Settled helpers of this repair job, counted here instead of taking Recent rows. */
+  readonly children?: readonly EndedExecutionJob[];
+};
+
+export interface ExecutionRunReview extends ReviewRecord {
+  readonly execJob?: ExecutionRunJobTarget;
+  /** Settled helpers of this review job, counted here instead of taking Recent rows. */
+  readonly children?: readonly EndedExecutionJob[];
+}
+
+export interface ExecutionRunDecision extends RunDecision {
+  readonly execJob?: ExecutionRunJobTarget;
+  /** Settled helpers of this lead job, counted here instead of taking Recent rows. */
+  readonly children?: readonly EndedExecutionJob[];
+}
+
+export interface ExecutionRunMember {
+  readonly jobId: string;
+  readonly role?: string;
+  readonly label?: string;
+  readonly state: RunStepState;
+  readonly execJob: ExecutionRunJobTarget;
+  readonly children: readonly EndedExecutionJob[];
+}
+
 export interface ExecutionRunTicket {
   readonly ticket: string;
   readonly role?: 'imp' | 'frontend-imp';
@@ -95,7 +121,7 @@ export interface ExecutionRunTicket {
   readonly landProgress?: LandProgress;
   readonly landGate?: MetroGate;
   readonly landRepair?: MetroRepair;
-  readonly landRepairs?: readonly MetroRepair[];
+  readonly landRepairs?: readonly ExecutionRunRepair[];
   readonly title?: string;
   readonly since?: number;
   /** Last station transition time (landed, failed, held, asking, answered, gate step change, worker start). */
@@ -137,6 +163,8 @@ export interface WorkflowNode {
   readonly reason?: string;
   readonly jobId?: string;
   readonly execJob?: ExecutionRunJobTarget;
+  /** Settled helpers of this step's job, counted here instead of taking Recent rows. */
+  readonly children?: readonly EndedExecutionJob[];
 }
 export interface ExecutionRun {
   readonly flow: string;
@@ -176,8 +204,10 @@ export interface ExecutionRun {
   readonly handback?: TicketHandback;
   readonly tickets: readonly ExecutionRunTicket[];
   readonly todo: readonly RunTodoItem[];
-  readonly decisions: readonly RunDecision[];
-  readonly reviews: readonly ReviewRecord[];
+  readonly decisions: readonly ExecutionRunDecision[];
+  readonly reviews: readonly ExecutionRunReview[];
+  /** Retained run-member jobs (earlier attempts, batch items, unclosed leads) not listed above that have folded helpers. */
+  readonly otherSteps?: readonly ExecutionRunMember[];
   readonly heldCount: number;
   readonly repairRounds: number;
 }
@@ -1251,7 +1281,10 @@ function readFixedExecutionRun(
   return { ...common, kind: 'graph', label: graph.name,
     metro: { stations: graphStations, edges: graphEdges, ...(graphLastChanged !== undefined ? { lastChangedId: graphLastChanged } : {}) },
     nodes: dependencyWaves(nodes, (node) => node.key, (node) => node.blockers ?? []),
-    jobIds: nodes.flatMap((node) => node.jobId ? [node.jobId] : []) };
+    jobIds: [
+      ...nodes.flatMap((node) => node.jobId ? [node.jobId] : []),
+      ...stepEntries.flatMap(([key]) => cursors[key]?.items?.flatMap((item) => item.job ? [item.job] : []) ?? []),
+    ] };
 }
 
 const STATE_RANK: Record<ExecutionRun['state'], number> = {
@@ -1340,7 +1373,8 @@ export function readExecutionRuns(
         flow: q.flow,
         kind: 'queue',
         jobIds: [q.review_job, q.active_lead?.job, q.pending_answer?.lead_job, ...(q.unclosed_leads?.map((lead) => lead.job) ?? []),
-          ...(q.tickets ?? []).map((ticket) => ticket?.job)]
+          ...(q.tickets ?? []).flatMap((ticket) => [ticket?.job, ticket?.repair_job]),
+          ...tickets.flatMap((ticket) => ticket.landRepairs?.map((repair) => repair.jobId) ?? [])]
           .filter((id): id is string => !!id),
         reviewer,
         acceptanceSeat: q.handback_to,
@@ -1362,8 +1396,14 @@ export function readExecutionRuns(
         queueWaves: waves,
         ...(metro ? { metro } : {}),
         todo: q.todo ?? [],
-        decisions: q.decisions ?? [],
-        reviews: q.reviews ?? [],
+        decisions: (q.decisions ?? []).map((decision) => {
+          const execJob = jobTargetFor(home, workers.get(decision.job), decision.job);
+          return execJob ? { ...decision, execJob } : decision;
+        }),
+        reviews: (q.reviews ?? []).map((review) => {
+          const execJob = jobTargetFor(home, workers.get(review.job), review.job);
+          return execJob ? { ...review, execJob } : review;
+        }),
         heldCount,
         repairRounds: q.repair_rounds ?? 0,
       };

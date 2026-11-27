@@ -10,7 +10,17 @@ import { isComposedId, type ComposedRun } from '../workflows/composed-state.js';
 import { headerScanner } from '../workflows/header-scan.js';
 import { runVisible } from '../workflows/scope.js';
 import { stopRequested } from '../workflows/store.js';
-import { ENDED_MS, isPublishingLandStep, jobTargetFor, readExecutionRuns, type ExecutionRun, type ExecutionRunJobTarget, type LandProgress } from './execution-runs.js';
+import {
+  ENDED_MS,
+  isPublishingLandStep,
+  jobTargetFor,
+  readExecutionRuns,
+  type ExecutionRun,
+  type ExecutionRunJobTarget,
+  type ExecutionRunMember,
+  type LandProgress,
+  type RunStepState,
+} from './execution-runs.js';
 import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
 import type { ProjectSnapshot } from './project-board.js';
 import { targetKey } from './ticket-evidence.js';
@@ -21,7 +31,11 @@ import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
 
 export type {
   ExecutionRun,
+  ExecutionRunDecision,
   ExecutionRunJobTarget,
+  ExecutionRunMember,
+  ExecutionRunRepair,
+  ExecutionRunReview,
   ExecutionRunStep,
   ExecutionRunTicket,
   LandProgress,
@@ -333,13 +347,25 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
     }];
   }));
   const runIds = new Set(runs.map((run) => run.flow));
-  const runJobs = new Set(runs.flatMap((run) => [
-    ...run.jobIds ?? [], ...run.tickets.map((ticket) => ticket.jobId), ...run.reviews.map((review) => review.job), ...run.decisions.map((decision) => decision.job),
-  ]));
-  const belongsToRun = (jobId: string) => {
-    if (runJobs.has(jobId)) return true;
+  const runJobToFlow = new Map<string, string>();
+  for (const run of runs) {
+    const ids = [
+      ...(run.jobIds ?? []),
+      ...run.tickets.flatMap((ticket) => [ticket.jobId, ...(ticket.landRepairs?.map((repair) => repair.jobId) ?? [])]),
+      ...run.reviews.map((review) => review.job),
+      run.reviewer?.jobId,
+      ...run.decisions.map((decision) => decision.job),
+      run.lead?.jobId,
+      ...(run.nodes ?? []).flat().map((node) => node.jobId),
+    ];
+    for (const id of ids) if (id && !runJobToFlow.has(id)) runJobToFlow.set(id, run.flow);
+  }
+  const runForJob = (jobId: string): string | undefined => {
+    const direct = runJobToFlow.get(jobId);
+    if (direct) return direct;
     const job = receipt(jobId);
-    return [job.ticket_queue, job.workflow, job.batch_flow, job.council?.id, job.land_turn].some((id) => id && runIds.has(id));
+    return [job.ticket_queue, job.workflow, job.batch_flow, job.council?.id, job.land_turn]
+      .find((id): id is string => Boolean(id && runIds.has(id)));
   };
   /** `unknown` when `qa/` cannot be read. A question with a recorded timeout is closed. */
   const questionState = (jobId: string, worker: OwnerWorker): 'open' | 'closed' | 'unknown' => {
@@ -353,23 +379,22 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   const standaloneEnded: EndedExecutionJob[] = [...workers]
     .flatMap(([jobId, worker]) => {
       const endedAt = worker.settledAt;
-      if (endedAt === null || !recent(endedAt) || belongsToRun(jobId)) return [];
+      if (endedAt === null || !recent(endedAt) || runForJob(jobId)) return [];
       return [{ jobId, worker, dir: join(home, 'jobs', jobId), endedAt, result: endedJobResult(worker, receipt(jobId)) }];
     })
     .sort((a, b) => b.endedAt - a.endedAt || a.jobId.localeCompare(b.jobId));
   const standaloneById = new Map(standaloneEnded.map((entry) => [entry.jobId, entry]));
-  // Run Detail leads to a member only through a ticket row that can open its retained job.
-  const ticketRows = new Set(runs.flatMap((run) => run.tickets.flatMap((ticket) => ticket.jobId && ticket.execJob ? [ticket.jobId] : [])));
-  // A run receipt does not prove that its member settled within the window.
+  // A run receipt does not prove that its member is retained or settled within the window.
   const reachable = (jobId: string) => {
-    const settledAt = workers.get(jobId)?.settledAt;
-    return liveSet.has(jobId) || standaloneById.has(jobId) || (ticketRows.has(jobId) && settledAt != null && recent(settledAt));
+    if (liveSet.has(jobId) || standaloneById.has(jobId)) return true;
+    const worker = workers.get(jobId);
+    return Boolean(worker && worker.settledAt !== null && recent(worker.settledAt) && runForJob(jobId));
   };
   const parentOf = ({ jobId, worker }: EndedExecutionJob) => {
     const parent = jobIdOf(worker.parentJobId);
     return parent === jobId ? undefined : parent;
   };
-  /** The ancestor whose rows count this child instead of its own Recent row: a live card, a Recent row or a ticket row. */
+  /** The ancestor whose row counts this child instead of its own Recent row: a live card, a Recent row or a Run Detail step row. */
   const foldTarget = (entry: EndedExecutionJob): string | undefined => {
     let parentId = parentOf(entry);
     if (!parentId || !reachable(parentId) || childNeedsOwnRow(entry.jobId, entry.worker)) return undefined;
@@ -402,10 +427,89 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
     });
   const ordered = live.map((id) => ({ ...jobs.get(id)!, children: children.get(id)?.map((child) => jobs.get(child)!).sort(byStart) }))
     .sort((a, b) => PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase] || byStart(a, b));
-  const counted = runs.map((run) => ({ ...run, tickets: run.tickets.map((ticket) => {
-    const folded = ticket.jobId ? foldedChildren.get(ticket.jobId) : undefined;
-    return folded ? { ...ticket, children: folded } : ticket;
-  }) }));
+  const counted = runs.map((run) => {
+    const claimed = new Set<string>();
+    const claim = (jobId: string | undefined, execJob: ExecutionRunJobTarget | undefined) => {
+      if (!jobId || !execJob) return undefined;
+      const folded = foldedChildren.get(jobId);
+      if (!folded?.length) return undefined;
+      claimed.add(jobId);
+      return folded;
+    };
+    const tickets = run.tickets.map((ticket) => {
+      const folded = claim(ticket.jobId, ticket.execJob);
+      let repairChanged = false;
+      const seenRepairJob = new Set<string>(ticket.jobId ? [ticket.jobId] : []);
+      const landRepairs = ticket.landRepairs?.map((repair, idx, all) => {
+        const isLastForJob = repair.jobId ? !all.slice(idx + 1).some((later) => later.jobId === repair.jobId) : false;
+        if (!repair.jobId || seenRepairJob.has(repair.jobId) || !isLastForJob) return repair;
+        seenRepairJob.add(repair.jobId);
+        const repFolded = claim(repair.jobId, repair.execJob);
+        if (!repFolded) return repair;
+        repairChanged = true;
+        return { ...repair, children: repFolded };
+      });
+      if (!folded && !repairChanged) return ticket;
+      return { ...ticket, ...(folded ? { children: folded } : {}), ...(repairChanged && landRepairs ? { landRepairs } : {}) };
+    });
+    const reviewJobs = new Set(run.reviews.map((review) => review.job));
+    const reviews = run.reviews.map((review, idx, all) => {
+      const isLastForJob = !all.slice(idx + 1).some((later) => later.job === review.job);
+      const folded = isLastForJob ? claim(review.job, review.execJob) : undefined;
+      return folded ? { ...review, children: folded } : review;
+    });
+    const reviewerFolded = run.reviewer && !reviewJobs.has(run.reviewer.jobId ?? '')
+      ? claim(run.reviewer.jobId, run.reviewer.execJob) : undefined;
+    const reviewer = run.reviewer && reviewerFolded ? { ...run.reviewer, children: reviewerFolded } : run.reviewer;
+    const decisionJobs = new Set(run.decisions.map((decision) => decision.job));
+    const decisions = run.decisions.map((decision, idx, all) => {
+      const isLastForJob = !all.slice(idx + 1).some((later) => later.job === decision.job);
+      const folded = isLastForJob ? claim(decision.job, decision.execJob) : undefined;
+      return folded ? { ...decision, children: folded } : decision;
+    });
+    const leadFolded = run.lead && !decisionJobs.has(run.lead.jobId ?? '')
+      ? claim(run.lead.jobId, run.lead.execJob) : undefined;
+    const lead = run.lead && leadFolded ? { ...run.lead, children: leadFolded } : run.lead;
+    const flatNodes = (run.nodes ?? []).flat();
+    const lastNodeIndexForJob = new Map<string, number>();
+    flatNodes.forEach((node, idx) => { if (node.jobId && node.execJob) lastNodeIndexForJob.set(node.jobId, idx); });
+    let flatIdx = 0;
+    const nodes = run.nodes?.map((wave) => wave.map((node) => {
+      const idx = flatIdx++;
+      const folded = node.jobId && lastNodeIndexForJob.get(node.jobId) === idx
+        ? claim(node.jobId, node.execJob) : undefined;
+      return folded ? { ...node, children: folded } : node;
+    }));
+    const otherSteps: ExecutionRunMember[] = [];
+    for (const [jobId, folded] of foldedChildren) {
+      if (claimed.has(jobId) || !folded.length || runForJob(jobId) !== run.flow) continue;
+      const worker = workers.get(jobId);
+      const execJob = jobTargetFor(home, worker, jobId);
+      if (!worker || !execJob || worker.settledAt === null || !recent(worker.settledAt)) continue;
+      const state: RunStepState = worker.state === 'failed' || worker.state === 'error' || worker.work?.failed ? 'failed'
+        : worker.state === 'stopped' ? 'cancelled' : 'done';
+      const label = worker.ticketTitle ?? worker.briefTitle ?? worker.displayId ?? undefined;
+      otherSteps.push({
+        jobId,
+        ...(worker.role ? { role: worker.role } : {}),
+        ...(label ? { label } : {}),
+        state,
+        execJob,
+        children: folded,
+      });
+    }
+    otherSteps.sort((a, b) => (workers.get(a.jobId)?.startedAt ?? 0) - (workers.get(b.jobId)?.startedAt ?? 0) || a.jobId.localeCompare(b.jobId));
+    return {
+      ...run,
+      tickets,
+      reviews,
+      ...(reviewer ? { reviewer } : {}),
+      decisions,
+      ...(lead ? { lead } : {}),
+      ...(nodes ? { nodes } : {}),
+      ...(otherSteps.length ? { otherSteps } : {}),
+    };
+  });
   const excerpts = readSelectionExcerpts(home, cache, { project: scope.root });
   return { ...snapshot, ...(counted.length && { runs: counted }), endedJobs, jobs: ordered, ...(excerpts.length && { excerpts }) };
 }

@@ -651,6 +651,208 @@
       "comments": [],
       "created_at": "2026-11-27T12:16:05.647Z",
       "updated_at": "2026-11-27T12:29:06.194Z"
+    },
+    {
+      "number": 16,
+      "title": "Repair unattended/14: a lead escalation pause is answerable with hud_respond resume|stop",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/14"
+      ],
+      "objective": "unattended",
+      "what": "Milestone review j052818360e2b58a8 finding 1. On an ordinary lead `Decision: escalate`, `src/mcp/ticket-queue-step.ts` (~1759-1766, ~1620) leaves a failed `accept` cursor; `settleTicketHandback` (~400-414) calls `setAsking()` for blocker/assumption but not for `escalate`, so the persisted run is `paused` with choices resume/stop yet `answerTicketQueueHandback` (`src/mcp/ticket-queue.ts` ~419) refuses both with `no_pending_handback (paused for escalate)`. The main-answer escalation and repair-cap branches also store `failed` (~523, ~555). Make the step `asking` wherever resume/stop choices are offered. Resume must make forward progress (not replay the same settled lead decision): define it as main's override of the escalation (finish = accept the run, or re-dispatch a fresh lead), and take the simplest that does not loop; stop cancels as for report-gate pauses. Verify line numbers at HEAD first.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a run whose lead escalates (fake lead report) accepts `hud_respond resume` and moves forward without replaying the same lead decision",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: the same run accepts `stop` and ends cancelled",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: the repair-cap and main-answer escalation branches that offer resume/stop also leave the step asking and are answerable",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T12:37:30.226Z",
+      "updated_at": "2026-11-27T12:37:30.226Z"
+    },
+    {
+      "number": 17,
+      "title": "Repair unattended/06: a pause wake is never lost to an expired typed delivery or another session",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/06"
+      ],
+      "objective": "unattended",
+      "what": "Milestone review j052818360e2b58a8 findings 2 and 3. (a) `src/cli/watch.ts` (~517-535, ~546-558): the Codex typed fallback claims the notice markers but stores only text and retry callback; if main has a draft or stays busy past the ten-minute guard, expiry drops the text without releasing the marker, so neither a new watcher nor `changes` can deliver the wake. Keep the claimed markers with the pending delivery and release them on expiry, cancellation or confirmed non-send; never repeat an uncertain send. (b) `src/workflows/events.ts` (~29-31, ~103-113) authorizes claiming a queue notice with `runVisible`, which allows any pane in the same project while the origin is alive (`src/workflows/scope.ts` ~10-15); another project main session can win the shared `.noticed` marker and the dispatching pane gets nothing. Keep project-wide read/control visibility, but deliver to the bound live origin; use the project fallback only when the origin is absent or dead. Verify line numbers at HEAD first.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a typed pause notice that expires unsent (draft present / busy past the guard) releases its marker and a later watcher pass delivers it exactly once; an uncertain send is not repeated",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: with the origin pane alive, a second main session in the same project does not claim the run's pause notice; with the origin dead, the project fallback still delivers",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T12:37:30.226Z",
+      "updated_at": "2026-11-27T12:37:30.226Z"
+    },
+    {
+      "number": 18,
+      "title": "Repair unattended/11: every automatic queue land is fenced to the judged head and report, including clean ones",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/11"
+      ],
+      "objective": "unattended",
+      "what": "Milestone review j052818360e2b58a8 finding 4. In `src/mcp/ticket-queue-step.ts` (~1206-1208, ~1245-1247) an ordinary item whose first report declared no blockers or triggering assumptions gets no approval fence; if its land gate fails, a repair can declare a blocker on a new report, yet `src/mcp/land-runner.ts` (~665-674) replaces `source_sha` and publishes directly. Bind every automatic ticket-queue land to the judged head and report signature (clearance counts as a judgement), so a repair that changes the commit or report returns to report triage (Blockers/Assumed gates) before publishing. Do not change the standalone manual `hud_land` route or the ordinary/unattended spec-file rules. Verify line numbers at HEAD first.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: an ordinary-run item with a clean first report whose land repair report adds a Blockers line goes back to triage instead of publishing",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a land repair whose report stays clean still publishes after triage passes it",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Existing land-repair and manual hud_land tests unchanged",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T12:37:30.226Z",
+      "updated_at": "2026-11-27T12:37:30.226Z"
+    },
+    {
+      "number": 19,
+      "title": "Repair unattended/10: only an affirmative try-only Blockers text clears; mixed clauses go to the lead",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/10"
+      ],
+      "objective": "unattended",
+      "what": "Milestone review j052818360e2b58a8 finding 6. `src/mcp/report-notes.ts` (~11-12, ~48-53) treats any pending-try phrase plus detail as a try note unless a veto keyword matches, so `Blockers: owner live try remains: reopen the panel and pick which layout ships` lands without the lead. Replace the blacklist with a narrow affirmative form: the text is a try note only when it is a pending live/owner try phrase whose detail is a plain try instruction (reopen/run/check/look at ... and observe), with no second clause; anything ambiguous or mixed goes to the lead. Keep the cases ticket 10 accepted (`none requiring an owner decision.`, `none (owner live try remains)`, `owner live try remains: reopen the panel`). Remove the now-unneeded decision-keyword list (`detailNamesDecision`) if nothing else uses it.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: `owner live try remains: reopen the panel and pick which layout ships` goes to the lead",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: the ticket 10 clearance cases still land with the try part in run todo",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: a try detail with a second clause joined by `and`/`;` that is not a plain observation goes to the lead",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T12:37:30.226Z",
+      "updated_at": "2026-11-27T12:37:30.226Z"
+    },
+    {
+      "number": 20,
+      "title": "Repair unattended/08-09: multiple permission menus and conflicting file targets on a blocked pane go to main",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "In a scratch herdr pane bound to a synthetic job, show (a) a blocked pane with an earlier complete Claude permission menu still visible above the current one and (b) a Claude Edit file prompt whose heading path and question path name different directories with the same basename: each yields one main notice naming the pane and no key press.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/08",
+        "unattended/09",
+        "unattended/07"
+      ],
+      "objective": "unattended",
+      "what": "Milestone review j052818360e2b58a8 findings 5 and 11, `src/mcp/worker-permissions.ts`. (5) Multiple headings defer to `unknownLayout` (~61-65), which returns null if an earlier footer is visible; with an old complete menu above the current one on a blocked pane, capture returns `unrecognized` (~311), no manual entry is written and after the queue grace it is again a generic worker problem. Multiple headings on a confirmed block must produce a manual-only (main) entry before the stale-single-menu heuristic applies. (11) In the Claude file prompt parse (~141-152) heading path and question path count as consistent when only their basenames match, even when both are qualified with different directories, and only the heading path is proved. Accept a genuinely basename-only (unqualified) display abbreviation; qualified paths that disagree make the prompt manual. Verify line numbers at HEAD first.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a blocked pane showing two complete permission menus yields one manual main entry and notice, no key press, and no worker failure after the grace",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: heading `/w/a/x.ts` with question `/w/b/x.ts` is manual; heading `/w/a/x.ts` with question `x.ts` still proves the heading path",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T12:37:30.226Z",
+      "updated_at": "2026-11-27T12:37:30.226Z"
+    },
+    {
+      "number": 21,
+      "title": "Repair unattended/07: permission proof narrows unproven forms to main instead of approving them",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "In a scratch herdr pane bound to a synthetic job, show Claude Bash prompts for (a) `S=<scratchpad>; rm -rf $S/out` (approved once), (b) the same with the worktree's `scratchpad` a symlink to a user-owned directory outside the job (main), (c) `test -d sub && cd sub; rm -f x` (main), (d) `npm run release` in the worktree (main), (e) `cp a.txt <worktree>/dir/` (main unless the derived child is proven): only (a) gets a key press; the others reach main with recommendation and answer action.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/07",
+        "unattended/08"
+      ],
+      "objective": "unattended",
+      "what": "Milestone review j052818360e2b58a8 findings 7-10 and its deletion list, `src/mcp/permission-policy.ts`. Prefer narrowing unsupported forms to main over growing a shell interpreter; spec §2.1 approves only what is proven confined and reversible, anything unsure goes to main. (7) `resolveRoots` (~125-153) realpaths `worktree/scratchpad` and `task/scratchpad` and trusts the destination on a UID match; a symlinked scratchpad makes an outside directory a deletion root. Anchor each derived root beneath its verified job parent (realpath must stay inside it). (8) `tokenizeShell`/`proveShellPrompt` (~322-380, ~1297-1315, ~1350-1359) flatten conditionals and persist assignments/`cd` as if executed; only allow state-bearing sequences (assignment, cd) when every earlier separator is unconditional and not in a pipeline; otherwise main. (9) `validateCpMv` (~643-691) checks the destination directory, not the derived child; `validateTar`/`validateUnzip` (~773-876) do not check extracted members. Prove the effective child target (no existing symlink, recoverable or new) or send to main; tar/unzip without proven member lists go to main. (10) `npm run <script>` and `npx tsc` (~1044-1158) are not evidence of a local-only effect: hand them to main unless a trusted confined route exists (e.g. `npx --no-install tsc` with a local `node_modules/.bin/tsc` inside the worktree); arbitrary script names go to main. Delete the old PNG-only `permissionDirectory`, the root-string `permissionProof` adapter and the string branch of `normalizeProof` (~110, ~1418, ~1431); tests use the structured proof. Update docs/reference.md and docs/ARCHITECTURE.md §5 where the approved set changes; ticket 07's acceptance item that listed `npm run build` as auto-approved is superseded by this narrowing. Verify line numbers at HEAD first.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: symlinked scratchpad, conditional `cd`/assignment before `;`, `cp` into a directory with an existing child symlink, tar/unzip without member list, `npm run release` and `npx tsc` without a proven local binary all go to main",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Tests: `S=<scratchpad>; rm -rf $S/out`, `mkdir -p`/`cp` to explicit new targets inside the worktree and a Claude Edit file inside the worktree are still approved",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "The legacy string proof path is removed and no test passes a bare string as a verified proof",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md and docs/ARCHITECTURE.md describe the narrowed approved set",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T12:37:30.226Z",
+      "updated_at": "2026-11-27T12:37:30.226Z"
     }
   ]
 }

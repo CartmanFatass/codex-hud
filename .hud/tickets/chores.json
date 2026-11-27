@@ -1085,7 +1085,7 @@
     {
       "number": 52,
       "title": "Helpers of a workflow run's reviewer, lead and land steps fold into the run instead of flooding Recent",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "After a ticket queue whose milestone reviewer started several hud_sonic helpers has settled, open Execution: Recent shows no separate helper rows for that run; Run Detail shows `+N sonic` on the review (and lead/land) step rows, Enter lists each helper's ask, Esc returns to the same row.",
       "approved_removals": [],
@@ -1095,27 +1095,34 @@
         {
           "id": 1,
           "text": "Test: a settled run whose reviewer and lead each started settled sonic helpers yields no helper rows in Recent, and the review and acceptance step rows in Run Detail carry the counts",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: Enter on such a step row lists the helpers' asks; a failed helper still has its own Recent row",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "belongsToRun is used or removed",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "docs/reference.md describes the fold for step rows",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T12:40:20.411Z",
+        "job": "j7c9cae37ae6bcc24",
+        "flow": "f7c9cae37ae6bcc24",
+        "replay_base": "4429697d6cd8c9c4126a167a0f54b3f92a8301b6",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T12:16:01.648Z",
-      "updated_at": "2026-11-27T12:16:01.648Z"
+      "updated_at": "2026-11-27T12:40:20.411Z"
     },
     {
       "number": 53,

@@ -1,12 +1,12 @@
 /** Cached workflow facts rendered as Hairline metro maps on Execution, and compact step lists in Run Detail. */
 import type { ExecutionRun, LandProgress, WorkflowNode } from '../collectors/execution-runs.js';
 import { theme, visualLength } from './colors.js';
-import { stepStateView } from './execution-run-detail.js';
+import { childTag, otherStepRows, stepDetailRow, stepStateView } from './execution-run-detail.js';
 import { metroFlowFromRun, renderMetroFlow, renderMetroLegend, runItem, type MetroFlow } from './execution-metro.js';
 import { t } from './i18n.js';
 import { roleIcon } from './model-glyphs.js';
 import type { MonitorRow } from './monitor.js';
-import { fit, monitorText, pair } from './monitor-text.js';
+import { fit, monitorText } from './monitor-text.js';
 import { stemLines } from './work-job-detail.js';
 import { boardRow, compactAge, mark, stateMark } from './workboard-rows.js';
 
@@ -73,9 +73,15 @@ function batchDetailRows(run: ExecutionRun, width: number): MonitorRow[] {
   return rows;
 }
 
-export function workflowDetailRows(run: ExecutionRun, width: number, now: number): MonitorRow[] {
-  return run.kind === 'batch' ? batchDetailRows(run, width) : (run.nodes ?? []).flat().flatMap((node) => [
-    boardRow(fit(pair(`  ${detailNodeText(node, now)}`, muted(node.jobId?.slice(0, 8) ?? ''), width), width)),
-    ...(node.reason ? stemLines(node.reason, width).map((line) => boardRow(line)) : []),
-  ]);
+export function workflowDetailRows(run: ExecutionRun, width: number, now: number, cursor?: string): MonitorRow[] {
+  const base = run.kind === 'batch' ? batchDetailRows(run, width) : (run.nodes ?? []).flat().flatMap((node) => {
+    const tag = childTag(node.children);
+    const open = tag && node.execJob ? { item: `project:run-node:${node.key}`, execJob: node.execJob } : undefined;
+    const marker = open && cursor === open.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
+    return [
+      stepDetailRow(`${marker}${detailNodeText(node, now)}`, tag, [node.jobId ? muted(node.jobId.slice(0, 8)) : ''], width, open),
+      ...(node.reason ? stemLines(node.reason, width).map((line) => boardRow(line)) : []),
+    ];
+  });
+  return run.otherSteps?.length ? [...base, ...otherStepRows(run.otherSteps, width, cursor)] : base;
 }

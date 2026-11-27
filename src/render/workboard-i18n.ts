@@ -466,6 +466,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'Run not available': '运行记录不可用',
   'Feature not available': '功能不可用',
   Steps: '步骤',
+  'Other steps': '其他步骤',
   Elapsed: '耗时',
   Verdict: '结论',
   Repairs: '修复轮次',

@@ -1,5 +1,5 @@
 /** Shared workflow state formatting and the Inspector-style Run Detail / Station Detail scroll views. Pure; no I/O. */
-import type { ExecutionRun, ExecutionRunStep, ExecutionRunTicket, MetroPoolCounts, MetroStation, RunStepKey, RunStepState } from '../collectors/execution-runs.js';
+import type { ExecutionRun, ExecutionRunMember, ExecutionRunStep, ExecutionRunTicket, MetroPoolCounts, MetroStation, RunStepKey, RunStepState } from '../collectors/execution-runs.js';
 import type { EndedExecutionJob } from '../collectors/execution.js';
 import type { MonitorRow } from './monitor.js';
 import type { MetroStationInspect } from './monitor-state.js';
@@ -110,6 +110,40 @@ export function childTag(children: readonly EndedExecutionJob[] | undefined): st
   return t(children.length === 1 ? '+{n} child' : '+{n} children', { n: children.length });
 }
 
+/** One Run Detail step row: optional metadata (findings, job ID) drops before cutting the label or `+N sonic`. */
+export function stepDetailRow(
+  left: string,
+  tag: string,
+  optionalRight: readonly string[],
+  width: number,
+  open?: Pick<MonitorRow, 'item' | 'execJob'>,
+): MonitorRow {
+  const opts = optionalRight.filter(Boolean);
+  const choices: string[] = [];
+  for (let n = opts.length; n >= 0; n--) {
+    const parts = [...(tag ? [muted(tag)] : []), ...opts.slice(0, n)];
+    choices.push(parts.join(muted(' · ')));
+  }
+  const minLeft = Math.min(visualLength(left), 14);
+  const right = choices.find((r) => visualLength(left) + (r ? visualLength(r) + 2 : 0) <= width)
+    ?? (tag && minLeft + visualLength(muted(tag)) + 2 <= width ? muted(tag) : '');
+  return { ...boardRow(fit(pair(left, right, width), width)), ...open };
+}
+
+/** Selectable step rows for retained earlier attempts, batch members or unclosed leads with folded helpers. */
+export function otherStepRows(members: readonly ExecutionRunMember[], width: number, cursor?: string): MonitorRow[] {
+  return members.map((member) => {
+    const tag = childTag(member.children);
+    const open = tag ? { item: `project:run-step:${member.jobId}`, execJob: member.execJob } : undefined;
+    const marker = open && cursor === open.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
+    const st = stepStateView(member.state);
+    const icon = member.role ? `${runRoleInk(member.role)(roleIcon(member.role))} ` : '';
+    const label = member.label ? monitorText(member.label) : member.role ? monitorText(member.role) : member.jobId.slice(0, 8);
+    const head = `${marker}${st.ink(st.glyph)} ${icon}${label}`;
+    return stepDetailRow(head, tag, [muted(member.jobId.slice(0, 8))], width, open);
+  });
+}
+
 /** Inspector-style scroll view for one workflow; queues retain full review/decision/todo detail. */
 export function runDetailRows(run: ExecutionRun, width: number, now: number, diagram?: MonitorRow[], cursor?: string): MonitorRow[] {
   const plain = (text: string) => boardRow(fit(text, width));
@@ -155,15 +189,29 @@ export function runDetailRows(run: ExecutionRun, width: number, now: number, dia
       if (tk.reason && (tk.stage === 'held' || tk.stage === 'failed')) {
         rows.push(...stemLines(tk.reason, width, stage.ink).map((line) => boardRow(line)));
       }
+      for (const rep of tk.landRepairs ?? []) {
+        const repTag = childTag(rep.children);
+        if (!repTag || !rep.execJob) continue;
+        const repOpen = { item: `project:run-ticket-repair:${tk.ticket}:${rep.round}`, execJob: rep.execJob };
+        const repState = stepStateView(rep.state === 'working' ? 'running' : rep.state === 'asking' ? 'asking' : rep.state === 'done' ? 'done' : rep.state === 'stopped' ? 'cancelled' : 'failed');
+        const repMarker = cursor === repOpen.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
+        const repHead = `${repMarker}  ${repState.ink(repState.glyph)} ${mark('↻', '~')} ${t('Repair')} ${rep.round}/${rep.total}`;
+        rows.push(stepDetailRow(repHead, repTag, [rep.jobId ? muted(rep.jobId.slice(0, 8)) : ''], width, repOpen));
+      }
     }
   }
 
-  rows.push(plain(''), section(t('Review'), width, String(run.reviews.length)));
-  if (!run.reviews.length) {
+  const extraReviewer = run.reviewer?.jobId && !run.reviews.some((r) => r.job === run.reviewer!.jobId) ? run.reviewer : undefined;
+  const reviewCount = run.reviews.length + (extraReviewer ? 1 : 0);
+  rows.push(plain(''), section(t('Review'), width, String(reviewCount)));
+  if (!reviewCount) {
     rows.push(plain(`  ${muted(t('none'))}`));
   } else {
-    for (const review of run.reviews) {
-      const head = `  ${runRoleInk('reviewer')(roleIcon('reviewer'))} ${t('round {n}', { n: review.round })}`;
+    for (const [i, review] of run.reviews.entries()) {
+      const tag = childTag(review.children);
+      const open = tag && review.execJob ? { item: `project:run-review:${i}`, execJob: review.execJob } : undefined;
+      const marker = open && cursor === open.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
+      const head = `${marker}${runRoleInk('reviewer')(roleIcon('reviewer'))} ${t('round {n}', { n: review.round })}`;
       const findings = review.findings
         ? [
           review.findings.blocker ? `${review.findings.blocker} ${t('blocker')}` : '',
@@ -171,28 +219,51 @@ export function runDetailRows(run: ExecutionRun, width: number, now: number, dia
           review.findings.minor ? `${review.findings.minor} ${t('minor')}` : '',
         ].filter(Boolean).join(' · ')
         : '';
-      const right = [findings, review.job ? review.job.slice(0, 8) : ''].filter(Boolean).join(' · ');
-      rows.push(plain(pair(head, muted(right), width)));
+      rows.push(stepDetailRow(head, tag, [findings ? muted(findings) : '', review.job ? muted(review.job.slice(0, 8)) : ''], width, open));
       if (review.summary) rows.push(...stemLines(review.summary, width).map((line) => boardRow(line)));
       if (review.reviewed) {
         const range = `${review.reviewed.base.slice(0, 7)}..${review.reviewed.head.slice(0, 7)}`;
         rows.push(...stemLines(range, width, muted).map((line) => boardRow(line)));
       }
     }
+    if (extraReviewer) {
+      const tag = childTag(extraReviewer.children);
+      const open = tag && extraReviewer.execJob ? { item: 'project:run-reviewer', execJob: extraReviewer.execJob } : undefined;
+      const marker = open && cursor === open.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
+      const st = stepStateView(extraReviewer.state);
+      const head = `${marker}${st.ink(st.glyph)} ${runRoleInk('reviewer')(roleIcon('reviewer'))} ${t('review')}`;
+      rows.push(stepDetailRow(head, tag, [extraReviewer.jobId ? muted(extraReviewer.jobId.slice(0, 8)) : ''], width, open));
+    }
   }
 
-  rows.push(plain(''), section(t('Decisions'), width, String(run.decisions.length)));
-  if (!run.decisions.length) {
+  const extraLead = run.lead?.jobId && !run.decisions.some((d) => d.job === run.lead!.jobId) ? run.lead : undefined;
+  const decisionCount = run.decisions.length + (extraLead ? 1 : 0);
+  rows.push(plain(''), section(t('Decisions'), width, String(decisionCount)));
+  if (!decisionCount) {
     rows.push(plain(`  ${muted(t('none'))}`));
   } else {
-    for (const decision of run.decisions) {
-      const lead = `  ${roleIcon('lead')} ${t(decision.step)} · ${monitorText(t(decision.decision))}${decision.ticket ? ` · ${monitorText(decision.ticket)}` : ''}`;
-      const right = decision.job ? muted(decision.job.slice(0, 8)) : '';
-      rows.push(plain(pair(lead, right, width)));
+    for (const [i, decision] of run.decisions.entries()) {
+      const tag = childTag(decision.children);
+      const open = tag && decision.execJob ? { item: `project:run-decision:${i}`, execJob: decision.execJob } : undefined;
+      const marker = open && cursor === open.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
+      const lead = `${marker}${roleIcon('lead')} ${t(decision.step)} · ${monitorText(t(decision.decision))}${decision.ticket ? ` · ${monitorText(decision.ticket)}` : ''}`;
+      rows.push(stepDetailRow(lead, tag, [decision.job ? muted(decision.job.slice(0, 8)) : ''], width, open));
       if (decision.question) rows.push(...stemLines(`${t('question')}: ${decision.question}`, width, muted).map((line) => boardRow(line)));
       if (decision.reason) rows.push(...stemLines(decision.reason, width).map((line) => boardRow(line)));
       if (decision.close_error) rows.push(...stemLines(decision.close_error, width, theme.board.danger).map((line) => boardRow(line)));
     }
+    if (extraLead) {
+      const tag = childTag(extraLead.children);
+      const open = tag && extraLead.execJob ? { item: 'project:run-lead', execJob: extraLead.execJob } : undefined;
+      const marker = open && cursor === open.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
+      const st = stepStateView(extraLead.state);
+      const head = `${marker}${st.ink(st.glyph)} ${roleIcon('lead')} ${t('accept')}`;
+      rows.push(stepDetailRow(head, tag, [extraLead.jobId ? muted(extraLead.jobId.slice(0, 8)) : ''], width, open));
+    }
+  }
+
+  if (run.otherSteps?.length) {
+    rows.push(plain(''), section(t('Other steps'), width, String(run.otherSteps.length)), ...otherStepRows(run.otherSteps, width, cursor));
   }
 
   rows.push(plain(''), section(t('Todo'), width, String(run.todo.length)));
