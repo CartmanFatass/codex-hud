@@ -15,3 +15,5 @@
 - [ ] Full test suite passes
 
 ## Comments
+
+- Main 2026-11-27 (herdr-fork is ~77 KB, over the 64 KiB cap): keep the cap. Before `--delete-legacy`, split herdr-fork: tickets whose status is done or wontfix and that no open ticket names as a blocker move to a new feature `herdr-fork-done` (same numbers kept in titles/comments for provenance; objectives list both); open tickets stay in herdr-fork. Open tickets whose Blocked by names no ticket ID get a real ticket ref or `none` first.
