@@ -958,54 +958,6 @@ function validateSearch(
   return { kind: 'read_only', verb, roots: dedupe(stepRoots), flags: dedupe(flags), canonicals };
 }
 
-const GIT_DIFF_OPTIONS = ['--stat', '--shortstat', '--numstat', '--name-only', '--name-status', '--summary',
-  '--no-ext-diff', '--no-textconv', '--no-renames', '--patch', '-p'];
-const GIT_HISTORY_OPTIONS = ['--oneline', '--no-decorate', '--decorate', '--no-patch', '-s', ...GIT_DIFF_OPTIONS];
-const GIT_READ_OPTIONS = new Map([
-  ['status', new Set(['--short', '-s', '--branch', '-b', '-sb', '-bs', '--porcelain', '--porcelain=v1', '--porcelain=v2',
-    '--untracked-files=no', '--untracked-files=normal', '--untracked-files=all', '-uno', '-unormal', '-uall'])],
-  ['diff', new Set(['--cached', '--staged', ...GIT_DIFF_OPTIONS])],
-  ['log', new Set(GIT_HISTORY_OPTIONS)],
-  ['show', new Set(GIT_HISTORY_OPTIONS)],
-]);
-
-function validateGit(args: string[], activeCwd: string | undefined, roots: ResolvedRoots): StepInternal | undefined {
-  let gitCwd = activeCwd;
-  let i = 0;
-  while (i < args.length && args[i].startsWith('-')) {
-    const a = args[i];
-    if (a === '--no-pager' || a === '-P') { i++; continue; }
-    if (a === '-C' && i + 1 < args.length) {
-      const target = resolveTargetPath(args[i + 1], gitCwd, roots, { mode: 'read', allowRootItself: true });
-      if (!target || !target.exists || !target.isDir || target.category !== 'worktree') return;
-      gitCwd = target.canonical;
-      i += 2; continue;
-    }
-    return;
-  }
-  if (!gitCwd || !roots.worktree || !inside(roots.worktree, gitCwd)) return;
-  const sub = args[i++];
-  const allowed = GIT_READ_OPTIONS.get(sub);
-  if (!allowed) return;
-  const canonicals = [gitCwd];
-  let afterDash = false;
-  for (; i < args.length; i++) {
-    const arg = args[i];
-    if (!afterDash && arg === '--') { afterDash = true; continue; }
-    if (!afterDash && arg.startsWith('-')) {
-      if (allowed.has(arg)) continue;
-      if ((sub === 'log' || sub === 'show') && (/^-\d+$/.test(arg) || /^--max-count=\d+$/.test(arg))) continue;
-      if ((sub === 'log' || sub === 'show') && ['-n', '--max-count'].includes(arg) && /^\d+$/.test(args[i + 1] ?? '')) { i++; continue; }
-      return;
-    }
-    if (arg.includes(':')) return; // No pathspec magic or object:path lookups.
-    const target = resolveTargetPath(arg, gitCwd, roots, { mode: 'read', allowRootItself: true });
-    if (!target || target.category !== 'worktree') return;
-    canonicals.push(target.canonical);
-  }
-  return { kind: 'read_only', verb: `git ${sub}`, roots: ['worktree'], flags: ['verified_cwd'], canonicals };
-}
-
 function summarizeProof(operations: PermissionStepProof[], roots: PermissionRootCategory[]): string {
   const labels = dedupe(operations.map(op => {
     if (op.kind === 'file_edit') return 'Edit file';
@@ -1128,7 +1080,6 @@ function proveShellPrompt(command: string, roots: ResolvedRoots): PermissionProo
       case 'diff': step = validateReadOnly(verb, args, activeCwd, roots, hasStdin); break;
       case 'grep':
       case 'rg': step = validateSearch(verb, args, activeCwd, roots, hasStdin); break;
-      case 'git': step = validateGit(args, activeCwd, roots); break;
       default: return;
     }
     if (!step || (writesFile && step.kind !== 'read_only')) return;
@@ -1164,10 +1115,10 @@ export function provePermission(target: PermissionTarget | string | undefined, r
 }
 
 const reasons = {
-  approve: 'The locally verified operation stays inside the job’s own roots and involves no network writes, secrets, git push or installation.',
+  approve: 'The locally verified operation stays inside the job’s own roots and involves no Git commands, network writes, secrets or installation.',
   outside: 'The operation is not proven to stay inside this job’s roots.',
   irreversible: 'The operation is not proven reversible or regenerable.',
-  restricted: 'The operation may involve network writes, secrets, git push or installation.',
+  restricted: 'The operation may involve Git commands, network writes, secrets or installation.',
   unsure: 'HUD could not prove that this operation is low risk.',
 } as const;
 const choices = Object.keys(reasons) as (keyof typeof reasons)[];
@@ -1198,7 +1149,7 @@ export async function classifyPermission(
         : { verified: false, operations: [], roots: [] },
       choices: [{
         name: 'permission',
-        statement: 'Classify a native worker permission prompt from the quoted structural facts only. Approve only when verified is true and every operation is a locally proven low-risk file edit, file housekeeping, read-only inspection, or read-only Git command confined to the job’s own worktree, task directory or derived scratchpad, with no network write, secrets, git push, installs, privilege escalation or paths outside the job’s roots. If anything is missing or uncertain, hand to main and choose the best reason. Never deny.',
+        statement: 'Classify a native worker permission prompt from the quoted structural facts only. Approve only when verified is true and every operation is a locally proven low-risk file edit, file housekeeping or read-only inspection confined to the job’s own worktree, task directory or derived scratchpad, with no Git commands, network write, secrets, installs, privilege escalation or paths outside the job’s roots. If anything is missing or uncertain, hand to main and choose the best reason. Never deny.',
         choices: choices.map(value => ({ value, description: reasons[value] })),
       }],
     });

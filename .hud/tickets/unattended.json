@@ -244,7 +244,7 @@
     {
       "number": 27,
       "title": "Drop Git from permission auto-approval; keep indented Blockers children",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -258,27 +258,34 @@
         {
           "id": 1,
           "text": "A worker permission prompt for `git diff`, `git log -p` or `git status` is handed to main, never auto-approved.",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "No Git-specific read classifier remains in `src/mcp/permission-policy.ts`.",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "A report with `- Blockers: ...` followed by an indented child bullet records the child as a blocker and the ticket does not land without the owner.",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "`docs/reference.md` lists Git as going to main.",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T16:28:17.534Z",
+        "job": "ja252679ad304f5ea",
+        "flow": "fa252679ad304f5ea",
+        "replay_base": "39c2394cc268b52624498bafbfed1b554b8e7b99",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T15:31:42.445Z",
-      "updated_at": "2026-11-27T15:31:42.445Z"
+      "updated_at": "2026-11-27T16:28:17.534Z"
     },
     {
       "number": 28,

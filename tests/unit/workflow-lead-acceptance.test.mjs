@@ -406,15 +406,33 @@ test('extractReportNotes parses heading/empty Blockers, qualified none, try note
     extractReportNotes('Blockers: owner live try remains: owner must decide on deleting X\n'),
     { blockers: ['owner live try remains: owner must decide on deleting X'], tries: [] },
   );
+  // Indented child bullets remain in their enclosing field while sibling bullets stop it.
+  assert.deepEqual(
+    extractReportNotes('- Blockers: owner live try remains\n  - Owner must choose which layout ships\n- Removes: none\n'),
+    { blockers: ['Owner must choose which layout ships'], tries: ['owner live try remains'] },
+  );
+  assert.deepEqual(
+    extractReportNotes('- Blockers: owner live try remains\n  - Owner must choose\n    which layout ships\n  - Second owner decision\n- Removes: none\n'),
+    { blockers: ['Owner must choose which layout ships', 'Second owner decision'], tries: ['owner live try remains'] },
+  );
+  assert.deepEqual(
+    extractReportNotes('Blockers: none\n  - Owner must choose which layout ships\nRemoves: none\n'),
+    { blockers: ['Owner must choose which layout ships'], tries: [] },
+  );
+  assert.deepEqual(
+    extractReportNotes('- Blockers: none\n- Other top-level bullet\n'),
+    { blockers: [], tries: [] },
+  );
 });
 
-test('mixed try-detail Blockers with a Markdown wrap or semicolon go to the lead instead of landing silently', { timeout: 60_000 }, async t => {
+test('mixed try-detail Blockers with a Markdown wrap, semicolon, or indented child go to the lead instead of landing silently', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: {
     '01-mixed-and.md': goodTicket(1),
     '02-mixed-semi.md': goodTicket(2, { blocked: 'none' }),
+    '03-indented-child.md': goodTicket(3, { blocked: 'none' }),
   } });
-  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, max_parallel: 2 });
-  const [job1, job2] = await f.jobs(flow, 2);
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, max_parallel: 3 });
+  const [job1, job2, job3] = await f.jobs(flow, 3);
 
   const andLine = 'owner live try remains: reopen the panel and pick which layout ships';
   await f.settle(job1, { report: `Done.\nBlockers: ${andLine.replace(' and ', '\n  and ')}\nRemoves: none\n` });
@@ -433,6 +451,15 @@ test('mixed try-detail Blockers with a Markdown wrap or semicolon go to the lead
   assert.equal(f.flow(flow).tickets.find(x => x.ticket === 'sample/02')?.land, undefined);
   await f.settleLead(lead2, 'Decision: escalate\nReason: Second clause is not a plain observation.\nOwner approval: scope\n');
   await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/02')?.held?.request_id === lead2, 15_000);
+
+  const childBlocker = 'Owner must choose which layout ships';
+  await f.settle(job3, { report: `Done.\n- Blockers: owner live try remains\n  - ${childBlocker}\n- Removes: none\n` });
+  await until(() => f.flow(flow).active_lead?.kind === 'blocker' && f.flow(flow).active_lead.ticket === 'sample/03', 15_000);
+  const lead3 = f.flow(flow).active_lead.job;
+  assert.ok(fs.readFileSync(join(f.dir(lead3), 'brief.md'), 'utf8').includes(`Worker Blockers: lines:\n- ${childBlocker}`));
+  assert.equal(f.flow(flow).tickets.find(x => x.ticket === 'sample/03')?.land, undefined);
+  await f.settleLead(lead3, 'Decision: escalate\nReason: Indented child blocker requires owner choice.\nOwner approval: value-tradeoff\n');
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/03')?.held?.request_id === lead3, 15_000);
 
   await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
 });

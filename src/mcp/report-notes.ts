@@ -172,6 +172,40 @@ export function extractReportNotes(reportText: string): { blockers: string[]; tr
         i++;
       }
       recordEntry(field, parts.join(' '));
+
+      const childItems: string[] = [];
+      let lastChildIndent = -1;
+      let sawBlank = false;
+      let lastConsumed = i;
+      for (let j = i + 1; j < lines.length; j++) {
+        const next = lines[j];
+        if (!next.trim()) {
+          sawBlank = true;
+          continue;
+        }
+        if (knownReportField.test(next) || markdownHeading.test(next) || horizontalRule.test(next)) break;
+        const bMatch = bulletLine.exec(next);
+        if (bMatch) {
+          const bIndent = bMatch[1].length;
+          if (bIndent <= indent) break;
+          sawBlank = false;
+          lastChildIndent = bIndent;
+          const bText = bMatch[2].trim();
+          if (bText) childItems.push(bText);
+          lastConsumed = j;
+          continue;
+        }
+        if (sawBlank || !childItems.length) break;
+        const nextIndent = next.match(/^[ \t]*/)![0].length;
+        if (nextIndent >= lastChildIndent && !inlineFieldStop.test(next)) {
+          childItems[childItems.length - 1] = `${childItems[childItems.length - 1]} ${next.trim()}`;
+          lastConsumed = j;
+        } else {
+          break;
+        }
+      }
+      i = lastConsumed;
+      for (const item of childItems) recordEntry(field, item);
       continue;
     }
 

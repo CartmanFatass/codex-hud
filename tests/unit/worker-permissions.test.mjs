@@ -517,6 +517,9 @@ test('milestone review blockers go to main with a recommendation and no keys', {
   execFileSync('git', ['init', '-q'], { cwd: worktree });
   execFileSync('git', ['add', 'sub/x'], { cwd: worktree });
   const cases = [
+    prompt('git diff'),
+    prompt('git log -p'),
+    prompt('git status'),
     prompt('git commit -m x'),
     prompt('chmod -R 755 sub'),
     prompt('grep -r key .'),
@@ -755,12 +758,9 @@ test('local proof allows confined forms and refuses unproven flags, sequences an
     `tail -n 10 src/a.ts`,
     `grep -n export src/a.ts`,
     `diff -u src/a.ts src/a.ts`,
-    `git status -s && git diff --stat && git log -n 5 --oneline`,
-    `git show HEAD`,
     `cat src/a.ts > ${scratch}/copy.txt`,
     `cat src/a.ts > dest-tracked/a.ts`,
     `cat src/a.ts 2>/dev/null`,
-    `git -C ${worktree} status -s`,
   ];
   for (const cmd of allowed) {
     assert.ok(provePermission(cmd, roots), `expected allowed: ${cmd}`);
@@ -814,6 +814,12 @@ test('local proof allows confined forms and refuses unproven flags, sequences an
     'touch tmp/x/f; ls tmp',
     'cat src/a.ts > new.txt; ls new.txt',
     'cat src/a.ts | head > new.txt',
+    'git status',
+    'git diff',
+    'git log -p',
+    'git status -s && git diff --stat && git log -n 5 --oneline',
+    'git show HEAD',
+    `git -C ${worktree} status -s`,
     'git add src/a.ts && git commit -m "synthetic fix"',
     'git add src/a.ts',
     'git commit -m "synthetic fix"',
