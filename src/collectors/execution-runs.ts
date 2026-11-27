@@ -147,6 +147,12 @@ export interface ExecutionRun {
   readonly endedAt?: number;
   readonly result?: 'failed' | 'landed' | 'not landed' | 'done' | 'stopped';
   readonly jobIds?: readonly string[];
+  /** Standalone land's current step and worker, separate from its historical diagram nodes. */
+  readonly landActivity?: {
+    readonly progress?: LandProgress;
+    readonly jobId: string;
+    readonly execJob?: ExecutionRunJobTarget;
+  };
   readonly nodes?: readonly (readonly WorkflowNode[])[];
   readonly queueWaves?: {
     readonly prefix: readonly ExecutionRunTicket[];
@@ -434,7 +440,9 @@ function ticketLand(
   try {
     // Read only the header; the recovery-aware land API can write to it.
     const land = pass.header<LandFlow>(`${item.land}.json`);
-    if (land?.flow === item.land && land.job === item.job && typeof land.step === 'string' && land.step.trim() &&
+    // A legacy landed item can reference its receipt without retaining the source job ID.
+    const matchingJob = land?.job === item.job || (item.landed === true && !item.job);
+    if (land?.flow === item.land && matchingJob && typeof land.step === 'string' && land.step.trim() &&
         (land.landed_sha === undefined || (typeof land.landed_sha === 'string' && /^[\da-f]{7,64}$/i.test(land.landed_sha)))) {
       return { land, ...extractLandGateAndRepair(home, land, workers, cache, item.ticket) };
     }
@@ -985,6 +993,8 @@ function readFixedExecutionRun(
     const gateState: RunStepState = progress?.kind === 'gate' ? 'running'
       : gateTiming?.ok === false ? 'failed' : gateTiming?.ok && gate?.index === gate?.total ? 'done' : 'waiting';
     const job = workers.get(land.job), source = { jobId: land.job, execJob: jobTargetFor(home, job, land.job) };
+    const current = progress?.kind === 'repair' && metroRepair?.jobId
+      ? { jobId: metroRepair.jobId, execJob: metroRepair.execJob } : source;
     const createdAt = parseTime(land.created_at);
     const updatedAt = parseTime(land.updated_at);
     const stepStarted = parseTime(land.step_started_at);
@@ -1046,6 +1056,7 @@ function readFixedExecutionRun(
     const landEdges: MetroEdge[] = landStations.slice(1).map((s, idx) => ({ from: landStations[idx].id, to: s.id }));
     const landLastChanged = lastChangedStationId(landStations);
     return { ...base, kind: 'land', label: workerTitle(job) ?? land.job.slice(0, 8), state: 'working', nodes,
+      landActivity: { progress, ...current },
       metro: { stations: landStations, edges: landEdges, ...(landLastChanged !== undefined ? { lastChangedId: landLastChanged } : {}) },
       // Keep a settled source job's own recent outcome after the land flow closes.
       jobIds: [land.job, ...land.repairs?.flatMap(({ job }) => job ? [job] : []) ?? []],

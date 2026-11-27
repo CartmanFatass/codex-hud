@@ -474,7 +474,12 @@ test('Feature and Objective use individual queue landing times, not the queue en
   const slug = 'nav-redesign', flow = 'q0000000000000010', job = 'j0000000000000013';
   const at = (min) => NOW - min * 60_000, iso = (min) => new Date(at(min)).toISOString();
   const path = (no) => join(f.cwd, '.scratch', slug, 'issues', `${no}-sample.md`);
-  for (const n of ['01', '02', '03', '04']) f.issue(slug, n, `Queue ticket ${n}`, 'done', undefined, 'none', n === '04' ? 720 : 0);
+  for (const n of ['01', '02', '03', '04', '05']) f.issue(slug, n, `Queue ticket ${n}`, 'done', undefined, 'none', n === '04' ? 720 : 0);
+  const land = 'f0000000000000015';
+  f.put(join(f.hud, 'flows', `${land}.json`), {
+    flow: land, job: 'j0000000000000015', state: 'completed', step: 'done', landed_sha: 'a'.repeat(40),
+    landed_at: iso(60), updated_at: iso(6),
+  });
   // An old landing must not come back as a recent job outcome when the source worker settles later.
   f.put(join(f.hud, 'jobs', job, 'job.json'), { job, role: 'imp', cwd: f.cwd, ticket: `${slug}/03`, created_at: iso(1800) });
   f.put(join(f.hud, 'jobs', job, 'STATUS.json'), { state: 'done', settled_at: iso(10) });
@@ -484,7 +489,8 @@ test('Feature and Objective use individual queue landing times, not the queue en
       { ticket: '01', path: path('01'), role: 'imp', landed: true, landed_at: iso(480), changed_at: iso(7) },
       { ticket: '02', path: path('02'), role: 'imp', landed: true, changed_at: iso(120) },
       { ticket: '03', path: path('03'), role: 'imp', landed: true, landed_at: iso(1500), job },
-      { ticket: '04', path: path('04'), role: 'imp', landed: true }, // Undated legacy item: no fabricated age.
+      { ticket: '04', path: path('04'), role: 'imp', landed: true, land: 'f0000000000000014' }, // Missing header: no fabricated age.
+      { ticket: '05', path: path('05'), role: 'imp', landed: true, land },
     ],
   }, 5);
   const execution = new PanelExecution(f.hud, null);
@@ -492,10 +498,14 @@ test('Feature and Objective use individual queue landing times, not the queue en
   execution.sync(f.cwd);
   const project = await f.collector.collect(true, f.board, NOW);
   await execution.refresh(undefined, NOW, false, project);
-  assert.equal(execution.view(f.cwd).runs.find((run) => run.flow === flow).endedAt, at(5));
+  const run = execution.view(f.cwd).runs.find((run) => run.flow === flow);
+  assert.equal(run.endedAt, at(5));
+  assert.deepEqual(run.tickets.slice(3).map(({ stage, changedAt }) => [stage, changedAt]), [
+    ['landed', undefined], ['landed', at(60)],
+  ]);
   const projectActivity = execution.activity(f.cwd);
   assert.deepEqual(projectActivity.map(({ ticket, kind, result, at }) => [ticket, kind, result, at]), [
-    [`${slug}/01`, 'ended', 'landed', at(480)], [`${slug}/02`, 'ended', 'landed', at(120)],
+    [`${slug}/01`, 'ended', 'landed', at(480)], [`${slug}/02`, 'ended', 'landed', at(120)], [`${slug}/05`, 'ended', 'landed', at(60)],
   ]);
   const draw = (subpage) => f.render(120, 'en', { ...onPage(), subpage }, 24, project, true, 'unicode', 'none', {
     projectActivity, projectLandings: execution.landings(f.cwd),
@@ -505,7 +515,9 @@ test('Feature and Objective use individual queue landing times, not the queue en
   assert.match(lines, /Queue ticket 01.*✓ landed 8h/);
   assert.match(lines, /Queue ticket 02.*✓ landed 2h/);
   assert.match(lines, /Queue ticket 03\s+done\s*$/m);
-  assert.deepEqual([...lines.matchAll(/Queue ticket (\d+)/g)].map((m) => m[1]), ['02', '01', '04', '03']);
+  assert.match(lines, /Queue ticket 04\s+done\s*$/m);
+  assert.match(lines, /Queue ticket 05.*✓ landed 1h/);
+  assert.deepEqual([...lines.matchAll(/Queue ticket (\d+)/g)].map((m) => m[1]), ['05', '02', '01', '04', '03']);
   const objective = { id: 'interaction', state: 'active', title: 'Synthetic project navigation', features: [slug], evidence: [] };
   const projectWithObjective = {
     ...project,
@@ -514,7 +526,99 @@ test('Feature and Objective use individual queue landing times, not the queue en
   const detail = f.render(120, 'en', { ...onPage(), subpage: { kind: 'objective', target: { root: f.cwd, objective, blocked: false } } }, 24, projectWithObjective, true, 'unicode', 'none', {
     projectActivity, projectLandings: execution.landings(f.cwd),
   });
-  assert.match(detail.workboard.rows.find((row) => row.item === `objective:feature:${slug}`).text, /✓ landed 2h ago/);
+  assert.match(detail.workboard.rows.find((row) => row.item === `objective:feature:${slug}`).text, /✓ landed 1h ago/);
+});
+
+test('Feature uses each batch member’s settlement, not the batch end or its 24-hour window', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-batch-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const slug = 'nav-redesign', flow = 'b0000000000000012';
+  const at = (min) => NOW - min * 60_000, iso = (min) => new Date(at(min)).toISOString();
+  const items = [['01', 240], ['02', 12], ['03', 1441]].map(([number, minutes], i) => {
+    f.issue(slug, number, `Batch ticket ${number}`, 'ready-for-agent');
+    const job = `j00000000000004${number}`, dir = join(f.hud, 'jobs', job);
+    f.put(join(dir, 'job.json'), { job, cwd: f.cwd, role: 'imp', ticket: `${slug}/${number}`, batch_flow: flow, created_at: iso(1500) });
+    f.put(join(dir, 'STATUS.json'), { state: 'done', started_at: iso(1500), settled_at: iso(minutes) }, minutes);
+    return { item: i + 1, job, state: 'done' };
+  });
+  f.put(join(f.hud, 'flows', `${flow}.json`), {
+    flow, cwd: f.cwd, state: 'completed', created_at: iso(1500), updated_at: iso(5),
+    scale: { role: 'imp', count: 3, max_parallel: 3 }, totals: { done: 3, failed: 0, running: 0, waiting: 0 },
+  }, 5);
+  f.put(join(f.hud, 'flows', flow, 'index.json'), { items });
+
+  const execution = new PanelExecution(f.hud, null);
+  t.after(() => execution.dispose());
+  execution.sync(f.cwd);
+  const project = await f.collector.collect(true, f.board, NOW);
+  await execution.refresh(undefined, NOW, false, project);
+  assert.equal(execution.view(f.cwd).runs.find((run) => run.flow === flow).endedAt, at(5));
+  const projectActivity = execution.activity(f.cwd);
+  const state = { ...onPage(), subpage: { kind: 'feature', target: { root: f.cwd, slug } } };
+  const frame = f.render(100, 'en', state, 20, project, true, 'unicode', 'none', { projectActivity });
+  const lines = plain(frame).join('\n');
+  assert.match(lines, /Batch ticket 01.*✓ done 4h/);
+  assert.match(lines, /Batch ticket 02.*✓ done 12m/);
+  assert.match(lines, /Batch ticket 03\s+ready$/m);
+  assert.deepEqual(projectActivity.map(({ ticket, kind, at }) => [ticket, kind, at]).sort(), [
+    [`${slug}/01`, 'ended', at(240)], [`${slug}/02`, 'ended', at(12)],
+  ]);
+});
+
+test('Feature shows the current standalone land repair and opens the worker asking for help', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-land-repair-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const slug = 'nav-redesign', flow = 'f0000000000000501';
+  const source = 'j0000000000000501', first = 'j0000000000000502', second = 'j0000000000000503';
+  const iso = (min) => new Date(NOW - min * 60_000).toISOString();
+  f.issue(slug, '01', 'Repair the synthetic landing', 'claimed');
+  for (const [job, status, receipt] of [
+    [source, { state: 'done', settled_at: iso(20) }, { ticket: `${slug}/01` }],
+    [first, { state: 'done', settled_at: iso(10) }, { land_turn: `land:${flow}:1` }],
+    [second, { state: 'waiting_orchestrator' }, { land_turn: `land:${flow}:2`, herdr_pane: 'w4E:p2' }],
+  ]) {
+    const dir = join(f.hud, 'jobs', job);
+    f.put(join(dir, 'job.json'), { job, cwd: f.cwd, role: 'imp', created_at: iso(30), ...receipt });
+    f.put(join(dir, 'STATUS.json'), { ...status, started_at: iso(25) });
+  }
+  f.put(join(f.hud, 'flows', `${flow}.json`), {
+    flow, job: source, wt: { main_root: f.cwd }, state: 'running', step: 'repair 2',
+    created_at: iso(18), updated_at: iso(2), step_started_at: iso(3), config: { gate: ['unit', 'lint'] },
+    timings: [{ step: 'cherry-pick', ok: true }, { step: 'gate[2]: lint', ok: false }],
+    repairs: [
+      { step: 'gate[2]: lint', outcome: 'settled; retrying gate', job: first },
+      { step: 'gate[2]: lint', outcome: 'waiting for worker', job: second },
+    ],
+  });
+
+  const execution = new PanelExecution(f.hud, null);
+  t.after(() => execution.dispose());
+  execution.sync(f.cwd);
+  const project = await f.collector.collect(true, f.board, NOW);
+  await execution.refresh(undefined, NOW, false, project);
+  const run = execution.view(f.cwd).runs.find((run) => run.flow === flow);
+  assert.deepEqual(run.nodes.flat().filter((n) => n.progress).map(({ key, state }) => [key, state]), [
+    ['gate', 'failed'], ['repair', 'done'], ['repair-2', 'asking'],
+  ]);
+  const cursor = `feature:ticket:${slug}:01-sample.md`;
+  const state = { ...onPage(), subpage: { kind: 'feature', target: { root: f.cwd, slug }, cursor } };
+  const frame = f.render(80, 'en', state, 20, project, true, 'unicode', 'none', {
+    projectActivity: execution.activity(f.cwd), workboard: execution.board(),
+  });
+  const row = frame.workboard.rows.find((r) => r.item === cursor);
+  assert.match(row.text, /↻ Repair 2\/2/);
+  const dir = join(f.hud, 'jobs', second);
+  assert.equal(row.execJob?.target.workerId, `thin-job:${second}`);
+  assert.equal(row.execJob?.dir, dir);
+  const send = (input) => handleMonitorInput(frame.state, { type: 'key', ...input }, { frame, nowMs: NOW });
+  const inspector = send({ key: 'enter' }).state.subpage;
+  assert.equal(inspector.kind, 'inspector');
+  assert.equal(inspector.target.workerId, `thin-job:${second}`);
+  for (const [text, type] of [['g', 'focus-job-tab'], ['P', 'pin-job-tab'], ['H', 'hide-job-tab']]) {
+    assert.deepEqual(send({ text }).action, { type, dir });
+  }
 });
 
 test('Project-resolved target hints and filenames supply the live Feature Inspector and tab actions', async (t) => {

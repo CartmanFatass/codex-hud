@@ -238,27 +238,29 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   }
   const queueLandings = new Set<string>();
   for (const run of runs) {
-    if (run.kind === 'land') {
-      const jobId = run.jobIds?.[0];
-      const activeNode = run.nodes?.flat().find((n) => n.state === 'running') ?? run.nodes?.flat().find((n) => n.progress);
-      const progress = activeNode?.progress;
-      const execJob = activeNode?.execJob ?? jobTargetFor(home, jobId ? workers.get(jobId) : undefined, jobId);
-      for (const ticket of jobId ? ticketsOf(jobId) : []) ticketActivity.push({
-        ticket, kind: 'gate', flow: run.flow, at: run.updatedAt ?? run.createdAt ?? undefined,
-        ...(activeNode?.jobId || jobId ? { jobId: activeNode?.jobId ?? jobId } : {}),
+    if (run.kind === 'land' && run.landActivity) {
+      const sourceId = run.jobIds?.[0];
+      const { progress, jobId, execJob } = run.landActivity;
+      for (const ticket of sourceId ? ticketsOf(sourceId) : []) ticketActivity.push({
+        ticket, kind: 'gate', flow: run.flow, jobId, at: run.updatedAt ?? run.createdAt ?? undefined,
         ...(progress ? { progress } : {}),
         ...(execJob ? { execJob } : {}),
       });
     }
     for (const item of run.tickets) {
       const ticket = run.feature && /^\d+$/.test(item.ticket) ? `${run.feature}/${item.ticket}` : item.ticket;
-      if (run.endedAt === undefined && item.stage === 'land-gate' && !item.landingUnknown)
+      if (run.endedAt === undefined && item.stage === 'land-gate' && !item.landingUnknown) {
+        // Activity opens the current repair; the metro's host station keeps the source job.
+        const repair = item.landProgress?.kind === 'repair' && item.landRepair?.jobId ? item.landRepair : undefined;
+        const jobId = repair?.jobId ?? item.jobId;
+        const execJob = repair ? repair.execJob : item.execJob;
         ticketActivity.push({
           ticket, kind: 'gate', flow: item.landFlow ?? `${run.flow}:${ticket}`, at: item.since,
-          ...(item.jobId ? { jobId: item.jobId } : {}),
+          ...(jobId ? { jobId } : {}),
           ...(item.landProgress ? { progress: item.landProgress } : {}),
-          ...(item.execJob ? { execJob: item.execJob } : {}),
+          ...(execJob ? { execJob } : {}),
         });
+      }
       const at = item.changedAt;
       // A dated landing wins over the worker's settlement, even if the landing is outside the window.
       if (item.stage === 'landed' && at !== undefined) {
@@ -274,17 +276,6 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
         ticketActivity.push({
           ticket, kind: 'ended', at, result,
           ...(item.jobId ? { jobId: item.jobId } : {}),
-          ...(execJob ? { execJob } : {}),
-        });
-      }
-    }
-    if (run.kind !== 'queue' && run.endedAt !== undefined && recent(run.endedAt)) {
-      for (const id of new Set(run.jobIds ?? [])) {
-        const worker = workers.get(id);
-        const execJob = jobTargetFor(home, worker, id);
-        for (const ticket of ticketsOf(id)) ticketActivity.push({
-          ticket, kind: 'ended', at: run.endedAt, jobId: id,
-          result: worker?.settledAt != null ? endedJobResult(worker, receipt(id)) : undefined,
           ...(execJob ? { execJob } : {}),
         });
       }
