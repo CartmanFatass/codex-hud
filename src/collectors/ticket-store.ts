@@ -1,7 +1,7 @@
 /** Bounded, stat-signature-cached ticket collection shared by Project, Execution and the CLI. */
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
-import { MAX_TICKET_BYTES, TICKET_FEATURE, parseTicketRef, ticketNumber, validateTicketFeature, type TicketFeatureDoc } from '../tickets/format.js';
+import { MAX_TICKET_BYTES, TICKET_FEATURE, parseTicketRef, ticketNumber, validateTicketFeature, type TicketFeatureDoc } from '../tickets/store.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import type { ProjectTicket, TicketFeature } from './project-board.js';
 import { legacyTicketEvidence, storedTicketEvidence, targetKey, ticketFileEvidence, ticketHeading } from './ticket-evidence.js';

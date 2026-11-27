@@ -5,7 +5,7 @@ import { ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readFileBounded, writeFileAtomic, writeJsonPrivate } from '../utils/atomic-fs.js';
 
-const MAX_BYTES = 64 * 1024;
+export const MAX_TICKET_BYTES = 64 * 1024;
 const MAX_WRITES = 256;
 export const TICKET_FEATURE = /^[a-z0-9-]+$/;
 export const LEGACY_TICKET_PATH = /^\.scratch\/[a-z0-9-]+\/issues\/\d+-[^/]+\.md$/;
@@ -126,7 +126,7 @@ export function validateTicketFeature(value: unknown, feature?: string): TicketF
 
 export function serializeTicketFeature(doc: TicketFeatureDoc): string {
   const bytes = JSON.stringify(validateTicketFeature(doc), null, 2) + '\n';
-  if (Buffer.byteLength(bytes) > MAX_BYTES) throw new Error(`Ticket feature ${doc.feature} exceeds 64 KiB`);
+  if (Buffer.byteLength(bytes) > MAX_TICKET_BYTES) throw new Error(`Ticket feature ${doc.feature} exceeds 64 KiB`);
   return bytes;
 }
 
@@ -145,7 +145,7 @@ export function readJsonTicketFeature(root: string, feature: string): TicketFeat
   const path = ticketFeaturePath(root, feature);
   if (!directory(join(root, '.hud')) || !directory(ticketDir(root))) return;
   try {
-    const { bytes, truncated } = readFileBounded(path, MAX_BYTES);
+    const { bytes, truncated } = readFileBounded(path, MAX_TICKET_BYTES);
     if (truncated) throw new Error('exceeds 64 KiB');
     return validateTicketFeature(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)), feature);
   } catch (error) {
@@ -245,7 +245,7 @@ export function ticketFeatureSlugs(root: string) {
 }
 
 export function readLegacyTicket(path: string, number: number, feature: string) {
-  const { bytes, truncated, stat } = readFileBounded(path, MAX_BYTES);
+  const { bytes, truncated, stat } = readFileBounded(path, MAX_TICKET_BYTES);
   if (truncated) return;
   const brief = bytes.toString('utf8');
   const [body, comments] = brief.split(/^## Comments[ \t]*\r?$/im, 2);

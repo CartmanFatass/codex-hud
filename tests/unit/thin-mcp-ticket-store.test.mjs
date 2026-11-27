@@ -3,6 +3,9 @@ import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import { main } from '../../dist/cli/hud.js';
+import { scanTicketStore } from '../../dist/collectors/ticket-store.js';
+import { collectGateFlakes } from '../../dist/mcp/land-flakes.js';
 import { takeLease } from '../../dist/roles/lease.js';
 import { readTicketWrites, serializeTicketFeature, ticketWritesPath, validateTicketFeature } from '../../dist/tickets/store.js';
 import { checkout, job } from '../helpers/thin-mcp-land.mjs';
@@ -187,4 +190,66 @@ test('hud_tickets add/update validates and stores repairs on JSON and Markdown f
   assert.equal((await call('get', { ticket: 'legacy/03' })).ticket.repairs, undefined);
   assert.match(await rpcErr('add', { feature: 'legacy', tickets: [{ ...draft('Bad'), repairs: ['legacy/99'] }] }), /unknown repairs ticket: legacy\/99/);
   assert.match(await rpcErr('add', { feature: 'legacy', tickets: [{ ...draft('Bad'), repairs: ['legacy/1'] }] }), /invalid_arguments: repairs/);
+});
+
+test('repairs and flake-list cases are collected in full and hud tickets show matches hud_create brief byte for byte', { timeout: 20_000 }, async t => {
+  const f = await checkout(t, ['true']);
+  const cfgPath = join(f.main, '.hud/project.json');
+  const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  fs.writeFileSync(cfgPath, JSON.stringify({ ...cfg, flakes: { feature: 'sample' } }));
+
+  const add = await f.call('hud_tickets', {
+    op: 'add',
+    feature: 'sample',
+    cwd: f.main,
+    tickets: [
+      draft('Base slice'),
+      { ...draft('Repair slice'), repairs: ['sample/01'], comment: 'Follow-up after review.' },
+    ],
+  });
+  assert.equal(add.ok, true);
+
+  const flakes = await collectGateFlakes(f.home, f.main, [
+    { name: 'recovers cleanly', file: 'tests/unit/alpha.test.mjs', step: 'gate[1]', flow: 'f0000000000000001', log: '~/.hud/flows/f0000000000000001.gate-1.log' },
+    { name: 'gate[2]', file: 'tests/unit/beta.test.mjs', step: 'gate[2]', flow: 'f0000000000000002', unidentified: true },
+  ]);
+  assert.equal(flakes.ticket, 'sample/03');
+
+  // Collector reads the whole feature without dropping it or marking partial.
+  const scan = scanTicketStore(f.main);
+  assert.equal(scan.partial, false);
+  const feat = scan.features.find(item => item.slug === 'sample');
+  assert.ok(feat, 'sample feature collected');
+  assert.equal(feat.partial, undefined);
+  assert.deepEqual(feat.tickets.map(ticket => ticket.number), ['01', '02', '03']);
+  assert.equal(scan.lookup('sample/02')?.title, 'Repair slice');
+  assert.equal(scan.lookup('sample/03')?.title, 'Gate flakes collected after sample/02');
+
+  const cwd = process.cwd();
+  const show = async arg => {
+    let out = '', err = '';
+    const code = await main(['tickets', 'show', arg], { env: f.env, stdout: s => { out += s; }, stderr: s => { err += s; } });
+    return { code, out, err };
+  };
+  let showAll, showRepair, showFlake;
+  try {
+    process.chdir(f.main);
+    showAll = await show('sample');
+    showRepair = await show('sample/02');
+    showFlake = await show('sample/03');
+  } finally {
+    process.chdir(cwd);
+  }
+
+  assert.equal(showAll.code, 0, showAll.err);
+  assert.match(showAll.out, /\*\*Repairs:\*\* sample\/01/);
+  assert.match(showAll.out, /### Cases\n\n- `recovers cleanly` \(tests\/unit\/alpha\.test\.mjs\) — flow `f0000000000000001`, log `~\/\.hud\/flows\/f0000000000000001\.gate-1\.log`/);
+  assert.match(showAll.out, /- unidentified failure \(`gate\[2\]`, tests\/unit\/beta\.test\.mjs\) — flow `f0000000000000002`/);
+
+  for (const [ticket, shown] of [['sample/02', showRepair], ['sample/03', showFlake]]) {
+    assert.equal(shown.code, 0, shown.err);
+    const created = await f.call('hud_create', { role: 'general', cwd: f.main, ticket, request_key: `brief-${ticket}` });
+    const brief = fs.readFileSync(join(created.task_dir, 'brief.md'), 'utf8');
+    assert.equal(brief, shown.out + '\nFinish with `hud_report`.\n');
+  }
 });

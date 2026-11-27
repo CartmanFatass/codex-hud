@@ -1,6 +1,6 @@
 /** Shared ticket identity and file evidence. No project scan or Git call. */
 import { basename } from 'node:path';
-import type { TicketRecord } from '../tickets/format.js';
+import type { TicketRecord } from '../tickets/store.js';
 import type { ProjectTicket } from './project-board.js';
 
 /** JSON rows share a file, but never a cursor or checklist toggle. */

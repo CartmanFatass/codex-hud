@@ -1,6 +1,6 @@
 # 04: hud tickets migrate converts Markdown tickets losslessly; sync writes JSON mirrors
 
-**Status:** ready-for-agent
+**Status:** needs-info
 **Owner try:** no
 **Live try:** none
 **Blocked by:** 06

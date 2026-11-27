@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { scanTicketStore } from '../collectors/ticket-store.js';
 import { getHudHome } from '../hud-home.js';
 import { commitTicketWrites } from '../tickets/commit.js';
-import { TICKET_FEATURE, parseTicketRef, renderTicketBrief } from '../tickets/format.js';
+import { TICKET_FEATURE, parseTicketRef, renderTicketBrief } from '../tickets/store.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 
