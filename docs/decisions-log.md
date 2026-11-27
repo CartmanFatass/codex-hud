@@ -9,8 +9,8 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
 
 - **D-2026-11-27-06** (§2.1 placement): Owner, after two features (toktrack capacity, unattended delivery) needed
   four or more review rounds on even-pool Neon/Sol and were then handed to Astra at xhigh: repairs go straight to
-  Astra xhigh. A repair job (a repair ticket, or a repair started after its source job closed) runs on the role's
-  configured repair place ahead of fixed/even/auto placement; the role file sets it (imp: Astra, xhigh). Main kept
+  Astra xhigh, through a dedicated role `frontier-imp` (Astra, xhigh; frontend-imp unchanged). A repair job (a repair
+  ticket, or a repair started after its source job closed) goes to frontier-imp instead of imp placement. Main kept
   land-gate repairs and native-session resumes on the source worker: they continue the same session and are mostly
   mechanical; a gate that still fails after two repairs pauses to main, whose repair then escalates. A blind
   comparison of three Neon/Sol commit pairs (j9e5f406949b85070) found only a weak difference, so the rule escalates
