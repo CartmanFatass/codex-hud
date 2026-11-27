@@ -313,8 +313,9 @@ test('MCP tasks: follow-up sends and live hud_respond carry on one task and exte
   const get = () => rpc('tasks/get', { taskId: task.taskId });
   const marker = () => JSON.parse(fs.readFileSync(join(job.task_dir, 'mcp-task.json'), 'utf8'));
   const initialExpires = marker().expires;
-  const stamp = Date.now();
-  await until(() => Date.now() > stamp, t.signal);
+  await f.waitForWorkerMetadata(job, t.signal);
+  // Compare against the clock tick that minted the marker, not an arbitrary delay after create.
+  await until(() => Date.now() > initialExpires - task.ttlMs, t.signal);
 
   const first = await taskCall(rpc, 'hud_send', { job: job.job, text: 'Synthetic follow-up one.' });
   assert.equal(first.resultType, 'complete');

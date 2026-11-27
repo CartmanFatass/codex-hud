@@ -430,6 +430,7 @@ test('hud_read lists only the caller project, including its linked worktrees', a
   const foreign = waitFixtureJob(f, 1, 'working', 'w4E:p1', initRepo(f.root));
   const legacy = waitFixtureJob(f, 2, 'working', 'w4E:p8', linked);
   const created = await f.call('hud_create', { role: 'imp', cwd: linked, task: 'Synthetic worktree job.' });
+  await f.waitForWorkerMetadata(created, t.signal);
   assert.equal(JSON.parse(fs.readFileSync(join(created.task_dir, 'job.json'))).project_root, fs.realpathSync(f.root));
   assert.equal(created.changes, undefined, 'foreign project changes do not ride on this pane’s response');
   for (const args of [{}, { view: 'recent' }]) {

@@ -228,6 +228,7 @@ test('hud_sonic accepts a project cwd relative to the parent and refuses paths o
   const f = await fixture(t), cwd = initRepo(f.root);
   sonicTask(f);
   const parent = await f.call('hud_create', { role: 'imp', cwd, isolation: 'worktree', task: 'Synthetic parent.' });
+  await f.waitForWorkerMetadata(parent, t.signal);
   const { worktree } = JSON.parse(fs.readFileSync(join(parent.task_dir, 'job.json')));
   const subdir = join(worktree.root, 'subdir');
   fs.mkdirSync(subdir);

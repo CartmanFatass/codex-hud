@@ -258,8 +258,7 @@ test('hud_close stops a working cli job and closes an idle-grace one', { timeout
 
 test('a blocked CLI turn needs the owner once, then returns to working', { timeout: 15000 }, async (t) => {
   const f = await fixture(t);
-  fs.writeFileSync(join(f.env.HOME, 'cli-blocked'), '');
-  fs.writeFileSync(join(f.env.HOME, 'hold-turn'), '');
+  fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
   const job = await f.call('hud_create', { role: 'general', on: 'grok', request_key: 'grok-blocked', task: 'Synthetic blocked.' });
   assert.match(
     fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8'),
@@ -267,7 +266,10 @@ test('a blocked CLI turn needs the owner once, then returns to working', { timeo
   );
   const notices = () =>
     f.commands().filter((c) => c.args[1] === 'prompt' && String(c.args.at(-1)).includes('BLOCKED:'));
-  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal);
+  // The supervisor has subscribed and bound its agent before we publish the block.
+  await until(() => cliState(job.task_dir)?.agent_session_id, t.signal, 'CLI supervisor did not bind its session');
+  f.push(job.job, 'blocked');
+  await until(() => cliState(job.task_dir)?.state === 'waiting_orchestrator', t.signal, 'CLI did not register the block');
   const blocked = cliState(job.task_dir);
   assert.equal(blocked.blocked, true);
   assert.equal(blocked.harness, 'cli');
@@ -278,14 +280,16 @@ test('a blocked CLI turn needs the owner once, then returns to working', { timeo
   assert.equal(worker.ask, 'grok needs input in its pane');
   assert.match(cardText(worker), /grok needs input in its pane/);
   assert.match(cardText(worker), /asking/);
-  fs.writeFileSync(join(f.env.HOME, 'release-blocked'), '');
-  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.blocked === false, t.signal);
+  f.push(job.job, 'working');
+  await until(() => cliState(job.task_dir)?.state === 'working' && cliState(job.task_dir)?.blocked === false, t.signal,
+    'CLI did not return to working');
   assert.equal(notices().length, 0);
   const resumed = workerFor(f, job.job);
   assert.equal(resumed.homeNeedsHuman, false);
   assert.equal(resumed.ask, undefined);
-  fs.writeFileSync(join(f.env.HOME, 'release-turn'), '');
-  await until(() => cliState(job.task_dir)?.state === 'closed', t.signal);
+  writeFixtureFile(join(job.task_dir, 'report.md'), 'Synthetic grok report.\n');
+  f.push(job.job, 'done');
+  await until(() => cliState(job.task_dir)?.state === 'closed', t.signal, 'CLI did not close after reporting');
 });
 
 test('idle and unknown with a live agent settle only a stable new report', { timeout: 45000 }, async (t) => {

@@ -165,7 +165,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
   });
   const rpc = rpcClient(child);
   let cliSocket, listening, piStatus = () => 'idle';
-  const socketRequests = [], launches = new Map(), agents = new Set();
+  const socketRequests = [], launches = new Map(), agents = new Set(), metadataReported = new Set();
   const subscribers = new Set(), sockets = new Set(), vanishedTabs = new Set();
   const emitTabClosed = (tab_id) => {
     for (const client of subscribers) client.socket.write(JSON.stringify({ event: 'tab.closed', data: { tab_id, workspace_id: 'w4E' } }) + '\n');
@@ -237,6 +237,9 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
           return;
         }
         if (req.method === 'pane.report_metadata') {
+          // Direct dispatch does not await this background RPC. The requester closes
+          // its one-shot connection after reading the reply.
+          socket.once('close', () => metadataReported.add(req.params.pane_id));
           reply({ type: 'ok' });
           return;
         }
@@ -368,6 +371,8 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     // Rename replaces the fixture symlink itself, never the shared executable it points to.
     overrideBin: (name, body) => writeFixtureFile(join(bin, name), body, { mode: 0o700 }),
     socketRequests,
+    waitForWorkerMetadata: (job, signal) => until(
+      () => metadataReported.has(launches.get(`${job.job}-primary`)?.pane_id), signal, 'worker metadata RPC did not finish'),
     startCliSocket,
     piStatus: (get) => { piStatus = get; },
     push: (id, state) => { for (const client of subscribers) if (client.id === id) push(client, state); },
