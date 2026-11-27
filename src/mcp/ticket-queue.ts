@@ -23,7 +23,7 @@ import { BUNDLED_ROOT, jobFiles } from './paths.js';
 import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
-  blockerHandbackItem, cancelTicketQueue, claimQueueTask, clearItemHold, clearQueueTask, escalatedQuestion, isTicketQueueId, MAX_REPAIR_ROUNDS, prepareTicketQueueRepair,
+  blockerHandbackItem, cancelTicketQueue, claimQueueTask, clearItemHold, clearQueueTask, escalatedQuestion, isTicketQueueId, prepareTicketQueueRepair,
   questionReply, QUEUE_TASK_TTL_MS, queueIds, readTicketQueue, recordDecision, syncBlockerHandback, ticketQueueNotice, ticketQueueView,
   writeTicketQueue, type RunDecision, type TicketQueue, type TicketQueueItem,
 } from './ticket-queue-state.js';
@@ -179,24 +179,6 @@ function admissionQueues(home: string, root: string, feature: string, objective?
     .filter(q => q.root === root && (objective ? q.unattended?.objective === objective : !q.unattended && q.feature === feature));
 }
 
-function endedWithFinishVerdict(q: TicketQueue): boolean {
-  return q.state === 'completed' && /^finish(?::|\s|$)/i.test(q.verdict?.trim() ?? '');
-}
-
-/** Inherit repair rounds from the latest prior run unless it ended with a finish verdict (fresh milestone). */
-export function inheritedRepairRounds(previous: TicketQueue | undefined): number {
-  if (!previous || endedWithFinishVerdict(previous)) return 0;
-  const base = previous.repair_rounds ?? 0;
-  if (base >= MAX_REPAIR_ROUNDS) return base;
-  const lastAccept = previous.decisions?.filter(d => d.step === 'accept' && d.kind === 'accept').at(-1);
-  const acceptState = previous.steps?.accept?.state;
-  const unadmittedRepair = (acceptState === 'failed' || acceptState === 'asking')
-    && lastAccept?.decision === 'repair'
-    && !lastAccept.close_error
-    && previous.handback?.job === lastAccept.job;
-  return unadmittedRepair ? base + 1 : base;
-}
-
 export async function startTicketQueue(home: string, cwd: string, pane: string | null, task: boolean,
   args: Record<string, unknown>, dispatcher?: TicketQueue['dispatcher'],
   unattended?: { flow: string; objective: string; ready?: readonly { ticket: string; path: string }[] }) {
@@ -240,10 +222,8 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     if (unattended || declaredReadyTickets(root, target).some(t => t.repo === undefined || registeredTicketRepo(home, t.repo) === root)) {
       validLandConfig(home, root);
     }
-    const latestRun = queues.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.updated_at.localeCompare(a.updated_at))[0];
-    const latest = unattended ? undefined : latestRun;
+    const latest = unattended ? undefined : queues.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.updated_at.localeCompare(a.updated_at))[0];
     const resumed = latest && !latest.superseded_by && (latest.state === 'failed' || latest.state === 'paused') ? latest : undefined;
-    const repairRounds = inheritedRepairRounds(latestRun);
     const effectiveHandbackTo = unattended ? 'lead' : handback_to ?? resumed?.handback_to;
     if (!unattended) {
       const ticketGaps = checkFeatureTickets(root, target);
@@ -288,12 +268,13 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       ...(effectiveRule && { escalation_rule: effectiveRule }),
       ...(resumed?.todo?.length && { todo: resumed.todo }),
       ...(resumed?.decisions?.length && { decisions: resumed.decisions }),
-      ...(repairRounds > 0 && { repair_rounds: repairRounds }),
+      repair_rounds: 0,
       epoch: 0, settled: 0, streak: 0, failures: 0, notices: {},
       steps: Object.fromEntries(Object.keys(graph.steps).map(id => [id, { state: 'waiting' as const }])),
       dispatcher: resumed ? resumed.dispatcher : dispatcher,
       state: 'working', tickets: resumed?.tickets.flatMap(item => {
-        const next = { ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow };
+        // Carried work is the successor's baseline, not work admitted by its repair decisions.
+        const next = { ...item, round: 0, dispatch_queue: item.dispatch_queue ?? resumed.flow };
         const recorded = item.land ? readLand(home, item.land) : null;
         const attempt = item.job ? landAttempt(home, item.job).prior : null;
         const land = (attempt?.job === item.job ? attempt : null) ?? (recorded?.job === item.job ? recorded : null);
@@ -493,9 +474,6 @@ export async function answerTicketQueueHandback(
       return { ok: true, queue: cur, resumed: true };
     }
     if (parsed.choice === 'stop') {
-      // Preserve any unadmitted repair round before clearing the hand-back and recording stop.
-      const repairRounds = inheritedRepairRounds(cur);
-      if (repairRounds > (cur.repair_rounds ?? 0)) cur.repair_rounds = repairRounds;
       const at = new Date().toISOString();
       const handback = cur.handback;
       const decisionKind: RunDecision['kind'] = handback.kind === 'blocker' ? 'blocker'
@@ -527,7 +505,7 @@ export async function answerTicketQueueHandback(
     }
     if (parsed.choice === 'repair') {
       const repair = prepareTicketQueueRepair(cur, handbackStepKeys(home, cur),
-        () => ticketReadiness(cur.root, jobCache, cur.feature, { home }), parsed.reason);
+        () => ticketReadiness(cur.root, jobCache, cur.feature, { home }));
       if (repair.kind === 'no_work') {
         return {
           ok: false,
@@ -546,17 +524,6 @@ export async function answerTicketQueueHandback(
       });
       cur.epoch = (cur.epoch ?? 0) + 1;
       clearQueueTask(home, id);
-      if (repair.kind === 'cap') {
-        cur.steps ??= {};
-        cur.steps[step] = { state: 'asking', reason: repair.reason, changed_at: at };
-        cur.reason = repair.reason;
-        cur.queued = undefined;
-        cur.remaining = cur.remaining ?? [];
-        cur.handback = { step, choices: ['resume', 'stop'], kind: 'escalate' };
-        cur.notices = { [`pause-${cur.epoch}`]: ticketQueueNotice(cur).replace(/\r?\n/g, ' | ') };
-        writeTicketQueue(home, cur);
-        return { ok: true, queue: cur, resumed: false };
-      }
       delete cur.handback;
       delete cur.reason;
       delete cur.pid;

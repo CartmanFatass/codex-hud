@@ -250,7 +250,7 @@ export function ticketQueueView(q: TicketQueue) {
     ...(queued?.length && { queued }), ...(blocked?.length && { blocked }), ...(max_parallel && { max_parallel }),
     ...(base_moves && { base_moves }),
     ...(verdict && { verdict }), ...(todo?.length && { todo }), ...(decisions?.length && { decisions }),
-    ...(reviews?.length && { reviews }), ...(repair_rounds && { repair_rounds }),
+    ...(reviews?.length && { reviews }), ...(repair_rounds !== undefined && { repair_rounds }),
     ...(handback && { handback }), ...(held && { held }),
     ...(heldItems.length && { held_items: heldItems }),
     ...(failedItems.length && { failed_items: failedItems }),
@@ -259,15 +259,10 @@ export function ticketQueueView(q: TicketQueue) {
     landed: q.tickets.filter(item => item.landed).map(item => item.ticket),
     jobs: q.tickets.map(({ ticket, job, land }) => ({ ticket, job, land })) };
 }
-export const MAX_REPAIR_ROUNDS = 2;
-
 /** Check admission and reset the workflow steps for another repair round. Callers own hand-back and lead closure. */
 export function prepareTicketQueueRepair(q: TicketQueue, stepKeys: readonly string[], workset: () => {
   tickets: readonly { ticket: string }[]; queued?: readonly unknown[];
-}, reason?: string) {
-  if ((q.repair_rounds ?? 0) >= MAX_REPAIR_ROUNDS) {
-    return { kind: 'cap', reason: `max repair rounds (${MAX_REPAIR_ROUNDS}) reached${reason ? `: ${reason}` : ''}` } as const;
-  }
+}) {
   const { tickets, queued } = workset();
   if (!queued?.length && !tickets.some(t => !q.tickets.some(own => own.ticket === t.ticket))) return { kind: 'no_work' } as const;
   q.repair_rounds = (q.repair_rounds ?? 0) + 1;

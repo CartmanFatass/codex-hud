@@ -1353,7 +1353,7 @@ test('hud_respond stop cancels an ordinary lead escalation without undoing the l
   assert.deepEqual(stopped.decisions.map(d => [d.job, d.decision]), [[lead, 'escalate'], ['main', 'stop']]);
 });
 
-test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, escalate) and rejects invalid choices or non-asking runs', { timeout: 60_000 }, async t => {
+test('hud_respond answers main hand-back (finish, repair, escalate) and rejects invalid choices or non-asking runs', { timeout: 60_000 }, async t => {
   // 1. finish (colon reason) + invalid choice + wrong step + unknown run + already-completed run.
   const f = await setupWorkflowProject(t, { tickets: { '01-finish.md': goodTicket(1) } });
   const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' });
@@ -1439,14 +1439,14 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
   assert.equal(afterEsc.verdict, 'finish: escalation overridden by main');
   assert.deepEqual(afterEsc.decisions.map(d => d.decision), ['escalate', 'resume']);
 
-  // 3. repair loops tickets -> review -> accept in the SAME run, bounded to 2 repair rounds.
+  // 3. Main can repair past two rounds in the same run.
   f.writeJsonTicket(1, {}, 'rep');
   f.git(f.root, 'add', '.hud/tickets/rep.json');
   f.git(f.root, 'commit', '-qm', 'repair feature');
   const { flow: repFlow } = await f.call('hud_tickets', { op: 'run', feature: 'rep', max_parallel: 1, cwd: f.root, handback_to: 'main' });
   let prevReview;
   let repChangeNotices = 0;
-  for (let round = 0; round < 3; round++) {
+  for (let round = 0; round <= 3; round++) {
     const ticketJobs = await f.jobs(repFlow, round + 1);
     await f.settle(ticketJobs[round]);
     await until(() => f.flow(repFlow).review_job && f.flow(repFlow).review_job !== prevReview, 15_000);
@@ -1462,35 +1462,27 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
     const roundNotices = [...roundChanges, ...promptNotices(f, repFlow)];
     assert.equal(repChangeNotices + promptNotices(f, repFlow).length, round + 1, JSON.stringify(readPaused));
     assert.ok(roundNotices.some(line => line.includes(`hud_respond job=${repFlow} answer=<finish|repair|escalate>`)), JSON.stringify(roundNotices));
-    if (round < 2) {
-      await f.call('hud_tickets', {
-        op: 'add', cwd: f.root, feature: 'rep',
-        tickets: [{ title: `Repair ${round + 1}`, blocked_by: [], what: `Fix round ${round + 1}.`, acceptance: ['Fixed'], live_try: 'none' }],
-      });
-      const sep = round === 0 ? ': ' : '\n';
-      const repaired = await f.call('hud_respond', { job: repFlow, answer: `repair${sep}Round ${round + 1} fix.` });
-      assert.equal(repaired.ok, true);
-      assert.equal(repaired.flow, repFlow);
-      assert.equal(repaired.state, 'working');
-      assert.equal(repaired.repair_rounds, round + 1);
-    } else {
-      // Round 2 already used both repair rounds: a 3rd repair escalates like a lead decision.
-      const bounded = await f.call('hud_respond', { job: repFlow, answer: 'repair: Still broken.' });
-      assert.equal(bounded.ok, true);
-      assert.equal(bounded.state, 'paused');
-      assert.equal(bounded.repair_rounds, 2);
-      assert.equal(bounded.handback.kind, 'escalate');
-      assert.match(bounded.reason, /max repair rounds \(2\) reached: Still broken\./);
-      assert.equal(f.flow(repFlow).steps.accept.state, 'asking');
-    }
+    if (round === 3) break;
+    await f.call('hud_tickets', {
+      op: 'add', cwd: f.root, feature: 'rep',
+      tickets: [{ title: `Repair ${round + 1}`, blocked_by: [], repairs: ['rep/01'], what: `Fix round ${round + 1}.`, acceptance: ['Fixed'], live_try: 'none' }],
+    });
+    const sep = round === 0 ? ': ' : '\n';
+    const repaired = await f.call('hud_respond', { job: repFlow, answer: `repair${sep}Round ${round + 1} fix.` });
+    assert.equal(repaired.ok, true);
+    assert.equal(repaired.flow, repFlow);
+    assert.equal(repaired.state, 'working');
+    assert.equal(repaired.repair_rounds, round + 1);
   }
-  assert.equal(f.flow(repFlow).reviews.length, 3);
+  assert.equal(f.flow(repFlow).reviews.length, 4);
   assert.equal(f.flow(repFlow).decisions.length, 3);
-  const stopped = await f.call('hud_respond', { job: repFlow, answer: 'stop' });
-  assert.equal(stopped.ok, true);
-  assert.equal(stopped.state, 'cancelled');
-  assert.equal(stopped.repair_rounds, 2);
-  assert.equal(f.flow(repFlow).steps.accept.state, 'cancelled');
+  assert.deepEqual(f.flow(repFlow).tickets.map(({ ticket, round }) => [ticket, round]), [
+    ['rep/01', 0], ['rep/02', 1], ['rep/03', 2], ['rep/04', 3],
+  ]);
+  const afterRepairs = await f.call('hud_respond', { job: repFlow, answer: 'finish: Verified the repairs.' });
+  assert.equal(afterRepairs.ok, true, JSON.stringify(afterRepairs));
+  assert.equal(afterRepairs.state, 'completed');
+  assert.equal(afterRepairs.repair_rounds, 3);
 });
 
 test('restarting a paused run clears its Execution wait and hud_respond cannot revive it', { timeout: 45_000 }, async t => {
@@ -1536,7 +1528,7 @@ test('restarting a paused run clears its Execution wait and hud_respond cannot r
   assert.equal(old.state, 'superseded');
   assert.equal(old.superseded_by, successor);
   assert.equal(f.flow(flow).steps.accept.state, 'asking');
-  assert.equal(f.flow(flow).repair_rounds, undefined);
+  assert.equal(f.flow(flow).repair_rounds, 0);
   assert.deepEqual(working(), [successor]);
 
   // A simultaneous answer and explicit start can choose either path, but not both.
@@ -1629,43 +1621,47 @@ test('hud_tickets run and unattended on refuse to start when a needed role is no
   await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
 });
 
-test('repair rounds are bounded to at most 2, then escalate and wake main once', { timeout: 60_000 }, async t => {
+test('lead admits third and fourth acceptance repairs and can escalate a repeated finding', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-first.md': goodTicket(1) } });
   const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
   let prevReview;
   let prevLead;
-  for (let round = 0; round < 3; round++) {
+  for (let round = 0; round <= 4; round++) {
     const ticketJobs = await f.jobs(flow, round + 1);
+    assert.equal(f.flow(flow).tickets[round].round, round);
     await f.settle(ticketJobs[round]);
     await until(() => f.flow(flow).review_job && f.flow(flow).review_job !== prevReview, 15_000);
     prevReview = f.flow(flow).review_job;
     await f.settleReview(prevReview);
     await until(() => f.flow(flow).active_lead?.kind === 'accept' && f.flow(flow).active_lead.job !== prevLead, 15_000);
     prevLead = f.flow(flow).active_lead.job;
-    if (round < 2) {
-      await f.call('hud_tickets', {
-        op: 'add', cwd: f.root, feature: 'sample',
-        tickets: [{ title: `Repair ${round + 1}`, blocked_by: [], what: `Fix round ${round + 1}.`, acceptance: ['Fixed'], live_try: 'none' }],
-      });
-    }
-    await f.settleLead(prevLead, `Decision: repair\nReason: Still needs repair ${round + 1}.\n`);
+    const packet = fs.readFileSync(join(f.dir(prevLead), 'brief.md'), 'utf8');
+    assert.match(packet, /Declared choices: finish, repair, escalate\n/);
+    assert.ok(packet.includes(`Current repair round: ${round} `));
+    if (round === 4) break;
+    await f.call('hud_tickets', {
+      op: 'add', cwd: f.root, feature: 'sample',
+      tickets: [{ title: `Repair ${round + 1}`, blocked_by: [], repairs: ['sample/01'], what: `Fix finding ${round + 1}.`, acceptance: ['Fixed'], live_try: 'none' }],
+    });
+    await f.settleLead(prevLead, `Decision: repair\nReason: Fix finding ${round + 1}.\n`);
   }
+  await f.settleLead(prevLead, 'Decision: escalate\nReason: Finding from the initial review recurred after repair.\n');
   const escalated = await f.end(flow);
   assert.equal(escalated.state, 'paused');
-  assert.equal(escalated.repair_rounds, 2);
+  assert.equal(escalated.repair_rounds, 4);
   assert.equal(escalated.handback.kind, 'escalate');
-  assert.match(escalated.reason, /max repair rounds \(2\) reached/);
+  assert.deepEqual(escalated.tickets.filter(t => t.landed).map(t => t.ticket), ['sample/01', 'sample/02', 'sample/03', 'sample/04', 'sample/05']);
   assert.ok(f.job(prevLead).reaped_at);
   const readEsc = await f.call('hud_read', { job: flow });
   const escNotices = await collectDeliveredNotices(f, flow, readEsc, 1);
   assert.equal(escNotices.length, 1);
-  assert.match(escNotices[0], /max repair rounds \(2\) reached/);
+  assert.match(escNotices[0], /Finding from the initial review recurred after repair/);
   assert.equal(escalated.steps.accept.state, 'asking');
   const resumed = await f.call('hud_respond', { job: flow, answer: 'resume' });
   assert.equal(resumed.ok, true);
   assert.equal(resumed.state, 'completed');
-  assert.equal(resumed.repair_rounds, 2);
-  assert.deepEqual(resumed.decisions.map(d => d.decision), ['repair', 'repair', 'repair', 'resume']);
+  assert.equal(resumed.repair_rounds, 4);
+  assert.deepEqual(resumed.decisions.map(d => d.decision), ['repair', 'repair', 'repair', 'repair', 'escalate', 'resume']);
 });
 
 test('repair ticket repairs ref is admitted onto q.tickets[] and archived on ticket_queue event naming B, not A', { timeout: 60_000 }, async t => {
@@ -1728,10 +1724,11 @@ test('repair ticket repairs ref is admitted onto q.tickets[] and archived on tic
   assert.equal('repairs' in ev.tickets.find(item => item.ticket === 'jsonfeat/02'), false);
 });
 
-test('lead.md and buildAcceptPacket require repair tickets to set repairs on Decision: repair', () => {
+test('lead instructions and acceptance packets explain the repair rule and packets include earlier reviews and repairs', () => {
   const leadMd = fs.readFileSync(resolve('packages/hud-mcp/instructions/lead.md'), 'utf8');
   assert.match(leadMd, /Decision: repair/);
   assert.match(leadMd, /`repairs`[^.\n]*slice/);
+  assert.match(leadMd, /no fixed cap;.*escalate to main when the review repeats a kind of finding an earlier round already repaired/);
 
   const baseQueue = {
     flow: 'q0000000000000009', root: '/tmp/synthetic', feature: 'sample', pane: '', task: false,
@@ -1742,8 +1739,22 @@ test('lead.md and buildAcceptPacket require repair tickets to set repairs on Dec
   const ordinaryPacket = buildAcceptPacket(baseQueue, step);
   assert.match(ordinaryPacket, /`repairs`[^.\n]*slice/);
   assert.match(ordinaryPacket, /Decision: repair/);
+  assert.match(ordinaryPacket, /escalate to main when the review repeats a kind of finding an earlier round already repaired/);
   const unattendedPacket = buildAcceptPacket({ ...baseQueue, unattended: { objective: 'obj-1' } }, step);
   assert.match(unattendedPacket, /unattended repair[^.\n]*`repairs`[^.\n]*slice/i);
+
+  const history = buildAcceptPacket({ ...baseQueue, repair_rounds: 2, reviews: [
+    { round: 0, job: 'j0000000000000001', summary: 'Parsing needed a fix.', findings: { blocker: 0, major: 1, minor: 2 } },
+    { round: 1, job: 'j0000000000000002', summary: 'Parsing fixed; notices need work.', findings: { blocker: 1, major: 0, minor: 0 } },
+    { round: 2, job: 'j0000000000000003', findings: { blocker: 0, major: 0, minor: 0 } },
+  ], tickets: [
+    { round: 0, ticket: 'sample/01' }, { round: 1, ticket: 'sample/02' },
+    { round: 2, ticket: 'sample/03' }, { round: 2, ticket: 'sample/04' },
+  ] }, step);
+  assert.match(history, /Current repair round: 2\b/);
+  assert.match(history, /Round 0 review: Parsing needed a fix\. \| findings: blocker=0, major=1, minor=2[^\n]*\n  Repair tickets admitted in round 1: sample\/02\n/);
+  assert.match(history, /Round 1 review: Parsing fixed; notices need work\. \| findings: blocker=1, major=0, minor=0[^\n]*\n  Repair tickets admitted in round 2: sample\/03, sample\/04\n/);
+  assert.doesNotMatch(history, /Round 2 review:/);
 });
 
 test('subject-bearing tickets handback records worker_job while run-wide accept handback omits it', async t => {
@@ -1783,10 +1794,9 @@ test('subject-bearing tickets handback records worker_job while run-wide accept 
   assert.equal('worker_job' in resAccept.queue.decisions[0], false);
 });
 
-test('restarted runs carry repair_rounds across repair restarts (showing 2/2 in lead packet) and reset to 0 after a finish verdict', { timeout: 90_000 }, async t => {
+test('a lead repair without new tickets escalates without counting an extra round', { timeout: 45_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-first.md': goodTicket(1) } });
 
-  // Run 1: ticket 01 lands -> review -> lead 1 requests repair without adding tickets -> pauses/escalates.
   const { flow: flow1 } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
   const [job1] = await f.jobs(flow1, 1);
   await f.settle(job1);
@@ -1794,83 +1804,16 @@ test('restarted runs carry repair_rounds across repair restarts (showing 2/2 in 
   await f.settleReview(f.flow(flow1).review_job);
   await until(() => f.flow(flow1).active_lead?.kind === 'accept', 15_000);
   const lead1 = f.flow(flow1).active_lead.job;
-  assert.match(fs.readFileSync(join(f.dir(lead1), 'brief.md'), 'utf8'), /repair round 0\/2/);
   await f.settleLead(lead1, 'Decision: repair\nReason: Needs repair ticket 02.\n');
   const paused1 = await f.end(flow1);
   assert.equal(paused1.state, 'paused');
   assert.equal(paused1.handback.kind, 'escalate');
   assert.match(paused1.reason, /no ready tickets/);
 
-  // Restart 1: add ticket 02 and start a new run -> inherits repair_rounds = 1.
-  await f.call('hud_tickets', {
-    op: 'add', cwd: f.root, feature: 'sample',
-    tickets: [{ title: 'Repair 1', blocked_by: [], what: 'Apply first repair.', acceptance: ['First repair fixed'], live_try: 'none' }],
-  });
-  const { flow: flow2 } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
-  assert.notEqual(flow2, flow1);
-  assert.equal(f.flow(flow2).repair_rounds, 1);
-  assert.deepEqual(f.flow(flow2).decisions, paused1.decisions);
-  const [, job2] = await f.jobs(flow2, 2);
-  assert.equal(f.job(job2).ticket, 'sample/02');
-  await f.settle(job2);
-  await until(() => Boolean(f.flow(flow2).review_job), 15_000);
-  await f.settleReview(f.flow(flow2).review_job);
-  await until(() => f.flow(flow2).active_lead?.kind === 'accept', 15_000);
-  const lead2 = f.flow(flow2).active_lead.job;
-  assert.match(fs.readFileSync(join(f.dir(lead2), 'brief.md'), 'utf8'), /repair round 1\/2/);
-
-  // Lead 2 adds ticket 03 and declares repair (repair_rounds -> 2); then Run 2 is cancelled before ticket 03 lands.
-  await f.call('hud_tickets', {
-    op: 'add', cwd: f.root, feature: 'sample',
-    tickets: [{ title: 'Repair 2', blocked_by: [], what: 'Apply second repair.', acceptance: ['Second repair fixed'], live_try: 'none' }],
-  });
-  await f.settleLead(lead2, 'Decision: repair\nReason: Needs second repair ticket 03.\n');
-  const [, , job3Cancelled] = await f.jobs(flow2, 3);
-  assert.equal(f.flow(flow2).repair_rounds, 2);
-  await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
-  const cancelled2 = await f.end(flow2);
-  assert.equal(cancelled2.state, 'cancelled');
-  assert.equal(cancelled2.repair_rounds, 2);
-  writeFixtureFile(join(f.dir(job3Cancelled), 'STATUS.json'), JSON.stringify({ state: 'stopped', ended_at: new Date().toISOString() }));
-
-  // Restart 2 after cancelled run: Run 3 keeps repair_rounds = 2 and lead packet shows 2/2 limit reached.
-  const { flow: flow3 } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
-  assert.notEqual(flow3, flow2);
-  assert.equal(f.flow(flow3).repair_rounds, 2);
-  const [job3] = await f.jobs(flow3, 1);
-  assert.equal(f.job(job3).ticket, 'sample/03');
-  await f.settle(job3);
-  await until(() => Boolean(f.flow(flow3).review_job), 15_000);
-  await f.settleReview(f.flow(flow3).review_job);
-  await until(() => f.flow(flow3).active_lead?.kind === 'accept', 15_000);
-  const lead3 = f.flow(flow3).active_lead.job;
-  const packet3 = fs.readFileSync(join(f.dir(lead3), 'brief.md'), 'utf8');
-  assert.match(packet3, /Declared choices: finish, escalate \(repair limit 2\/2 reached\)/);
-  await f.settleLead(lead3, 'Decision: finish\nReason: Second repair verified.\n');
-  const done3 = await f.end(flow3);
-  assert.equal(done3.state, 'completed');
-  assert.equal(done3.verdict, 'finish: Second repair verified.');
-
-  // Fresh milestone after a finish verdict starts at 0.
-  await f.call('hud_tickets', {
-    op: 'add', cwd: f.root, feature: 'sample',
-    tickets: [{ title: 'Next milestone', blocked_by: [], what: 'Start next milestone.', acceptance: ['Next milestone works'], live_try: 'none' }],
-  });
-  const { flow: flow4 } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
-  assert.equal(f.flow(flow4).repair_rounds, undefined);
-  const [job4] = await f.jobs(flow4, 1);
-  assert.equal(f.job(job4).ticket, 'sample/04');
-  await f.settle(job4);
-  await until(() => Boolean(f.flow(flow4).review_job), 15_000);
-  await f.settleReview(f.flow(flow4).review_job);
-  await until(() => f.flow(flow4).active_lead?.kind === 'accept', 15_000);
-  const lead4 = f.flow(flow4).active_lead.job;
-  assert.match(fs.readFileSync(join(f.dir(lead4), 'brief.md'), 'utf8'), /Declared choices: finish, repair, escalate \(repair round 0\/2\)/);
-  await f.settleLead(lead4, 'Decision: finish\nReason: Fresh milestone verified.\n');
-  assert.equal((await f.end(flow4)).state, 'completed');
+  assert.equal(paused1.repair_rounds, 0);
 });
 
-test('startTicketQueue inherits repair_rounds across failed, cancelled, paused/escalated and unattended objective runs unless finished', { timeout: 30_000 }, async t => {
+test('startTicketQueue starts at repair round zero after prior feature and Objective runs', { timeout: 30_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-seed.md': goodTicket(1) } });
   const flowsDir = join(f.home, 'flows');
   fs.mkdirSync(flowsDir, { recursive: true });
@@ -1881,29 +1824,37 @@ test('startTicketQueue inherits repair_rounds across failed, cancelled, paused/e
   }, true);
 
   for (const [idx, prior] of [
-    { state: 'failed', repair_rounds: 1, expect: 1 },
-    { state: 'cancelled', repair_rounds: 2, expect: 2 },
-    { state: 'paused', handback: { step: 'accept', choices: ['resume', 'stop'], kind: 'escalate' }, repair_rounds: 2, expect: 2 },
-    { state: 'completed', verdict: 'finish: Verified.', repair_rounds: 2, expect: undefined },
+    { state: 'failed', repair_rounds: 1 },
+    { state: 'cancelled', repair_rounds: 2 },
+    { state: 'paused', handback: { step: 'accept', choices: ['resume', 'stop'], kind: 'escalate' }, repair_rounds: 2 },
+    { state: 'completed', verdict: 'finish: Verified.', repair_rounds: 2 },
   ].entries()) {
     const prevId = `q000000000000010${idx}`;
     const createdAt = `2026-01-0${idx + 1}T00:00:00.000Z`;
     seed(prevId, {
       created_at: createdAt, updated_at: createdAt,
       state: prior.state, repair_rounds: prior.repair_rounds,
-      ...(prior.handback && { handback: prior.handback }),
+      ...(prior.handback && { handback: prior.handback,
+        tickets: [{ ticket: 'sample/02', path: join(f.root, f.ticketPath(2)), role: 'imp', landed: true, round: 2 }],
+      }),
       ...(prior.verdict && { verdict: prior.verdict }),
     });
     const next = await startTicketQueue(f.home, f.root, f.env.HERDR_PANE_ID, false, { feature: 'sample', max_parallel: 1 });
     assert.ok(next);
-    assert.equal(next.repair_rounds, prior.expect, `state=${prior.state} verdict=${prior.verdict}`);
+    assert.notEqual(next.flow, prevId);
+    assert.equal(next.repair_rounds, 0, `state=${prior.state} verdict=${prior.verdict}`);
+    assert.equal(f.flow(prevId).repair_rounds, prior.repair_rounds);
+    if (prior.handback) {
+      assert.deepEqual(next.tickets.map(({ ticket, round }) => [ticket, round]), [['sample/02', 0]]);
+      assert.equal(f.flow(prevId).tickets[0].round, 2);
+    }
     await cancelTicketQueueRun(f.home, next.flow, { pane: f.env.HERDR_PANE_ID, root: f.root, waitMs: 5_000 });
     fs.rmSync(join(flowsDir, `${next.flow}.json`), { force: true });
     fs.rmSync(join(flowsDir, next.flow), { recursive: true, force: true });
   }
 
-  // Unattended objective runs inherit repair_rounds for the same objective unless finished with a finish verdict.
-  writeFixtureFile(join(f.root, '.hud', 'objectives.md'), '# Objectives\n\n## obj-a — Objective A\n- State: active\n- Features: sample\n\n## obj-b — Objective B\n- State: active\n- Features: other\n');
+  // An unattended run also starts at zero for the same Objective after cancellation.
+  writeFixtureFile(join(f.root, '.hud', 'objectives.md'), '# Objectives\n\n## obj-a — Objective A\n- State: active\n- Features: sample\n');
   seed('q0000000000000201', {
     feature: 'obj-a', pane: '', unattended: { objective: 'obj-a' },
     created_at: '2026-02-01T00:00:00.000Z', updated_at: '2026-02-01T00:00:00.000Z',
@@ -1912,26 +1863,6 @@ test('startTicketQueue inherits repair_rounds across failed, cancelled, paused/e
   const u1 = await startTicketQueue(f.home, f.root, null, false, { feature: 'obj-a' }, undefined, {
     flow: 'q0000000000000202', objective: 'obj-a',
   });
-  assert.equal(u1.repair_rounds, 2);
+  assert.equal(u1.repair_rounds, 0);
   await cancelTicketQueueRun(f.home, u1.flow, { unattendedOnly: true, waitMs: 5_000 });
-
-  // Different objective does not inherit obj-a's repair_rounds.
-  const uOther = await startTicketQueue(f.home, f.root, null, false, { feature: 'obj-b' }, undefined, {
-    flow: 'q0000000000000203', objective: 'obj-b',
-  });
-  assert.equal(uOther.repair_rounds, undefined);
-  await cancelTicketQueueRun(f.home, uOther.flow, { unattendedOnly: true, waitMs: 5_000 });
-
-  // Unattended objective finished with a finish verdict resets to 0.
-  const finishedAt = new Date(Date.now() + 1_000).toISOString();
-  seed('q0000000000000204', {
-    feature: 'obj-a', pane: '', unattended: { objective: 'obj-a' },
-    created_at: finishedAt, updated_at: finishedAt,
-    state: 'completed', verdict: 'finish: Objective milestone verified.', repair_rounds: 2,
-  });
-  const uReset = await startTicketQueue(f.home, f.root, null, false, { feature: 'obj-a' }, undefined, {
-    flow: 'q0000000000000205', objective: 'obj-a',
-  });
-  assert.equal(uReset.repair_rounds, undefined);
-  await cancelTicketQueueRun(f.home, uReset.flow, { unattendedOnly: true, waitMs: 5_000 });
 });

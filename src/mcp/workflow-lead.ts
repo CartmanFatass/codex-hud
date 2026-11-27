@@ -11,11 +11,11 @@ import { parseRemovalList, ticketApprovedRemovals } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { landReportJob, readLand } from './land-state.js';
 import { directory, findJob, hudHome, readCachedStatus, save } from './store/job-store.js';
-import { MAX_REPAIR_ROUNDS, recordDecision, type RunTodoItem, type TicketQueue, type TicketQueueItem } from './ticket-queue-state.js';
+import { recordDecision, type RunTodoItem, type TicketQueue, type TicketQueueItem } from './ticket-queue-state.js';
 import type { OwnerApproval } from '../unattended/state.js';
 import { declaresNone, extractAssumedLines, extractReportNotes } from './report-notes.js';
 
-export { extractAssumedLines, extractReportNotes, MAX_REPAIR_ROUNDS, recordDecision };
+export { extractAssumedLines, extractReportNotes, recordDecision };
 
 const approvalFormat = 'For escalate, include `Owner approval: feature-deletion` or `Owner approval: spec-change` and explain the specific change in Reason. Do not use escalate for operational failures.';
 
@@ -178,21 +178,24 @@ export function buildReviewBrief(q: TicketQueue, stepTask: string) {
 }
 
 export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'handback' }>): string {
-  const rounds = q.repair_rounds ?? 0;
+  const round = q.repair_rounds ?? 0;
   const escalationRule = step.escalation_rule ?? q.escalation_rule ?? DEFAULT_ESCALATION_RULE;
   const landed = q.tickets.filter(t => t.landed);
   const held = q.tickets.filter(t => t.held);
   const failed = q.tickets.filter(t => t.failed);
   const latestReview = q.reviews?.at(-1);
-  const choices = rounds >= MAX_REPAIR_ROUNDS ? step.options.filter(o => o !== 'repair') : step.options;
+  const earlierReviews = q.reviews?.filter(review => review.round < round) ?? [];
+  const choices = step.options;
 
   const lines: string[] = [
     `# Workflow Acceptance Packet (${q.flow})`,
     '',
     q.unattended ? `Objective: ${q.unattended.objective}` : `Feature: ${q.feature}`,
     `Question: ${step.ask}`,
-    `Declared choices: ${choices.join(', ')}${rounds >= MAX_REPAIR_ROUNDS ? ` (repair limit ${MAX_REPAIR_ROUNDS}/${MAX_REPAIR_ROUNDS} reached)` : ` (repair round ${rounds}/${MAX_REPAIR_ROUNDS})`}`,
-    `Escalation rule: ${escalationRule}`,
+    `Declared choices: ${choices.join(', ')}`,
+    `Current repair round: ${round} (0 = initial acceptance)`,
+    `Owner escalation rule: ${escalationRule}`,
+    'Also escalate to main when the review repeats a kind of finding an earlier round already repaired.',
     '',
     '## Tickets, Live Try & Reports',
     ...(landed.length ? landed.map(item => {
@@ -223,6 +226,18 @@ export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'h
       : '';
     lines.push('', '## Milestone Reviewer Report', `- ${latestReview.job}${findings}: ${revReport}`);
   }
+  if (earlierReviews.length) {
+    lines.push('', '## Earlier Reviews and Resulting Repairs');
+    for (const review of earlierReviews) {
+      const repairs = q.tickets.filter(t => t.round === review.round + 1).map(t => t.ticket);
+      const counts = review.findings;
+      const findings = counts ? `blocker=${counts.blocker}, major=${counts.major}, minor=${counts.minor}` : 'not reported';
+      lines.push(
+        `- Round ${review.round} review: ${review.summary ?? '(no summary)'} | findings: ${findings} | report: ${join(directory(review.job), jobFiles.report)}`,
+        `  Repair tickets admitted in round ${review.round + 1}: ${repairs.join(', ') || 'none'}`,
+      );
+    }
+  }
   if (q.decisions?.length) {
     lines.push('', '## Prior Decisions', ...q.decisions.slice(-10).map(d => `- [${d.step}/${d.kind}] ${d.decision}${d.reason ? `: ${d.reason}` : ''} (${d.job})`));
   }
@@ -235,7 +250,10 @@ export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'h
     `Respond via hud_report with \`Decision: <${choices.join('|')}>\`, \`Reason: <one line>\`, and optional \`Todo: <item>\` lines for non-blocking doubts/follow-ups.`,
     'If choosing `repair`, you must add the repair ticket(s) via `hud_tickets` with `repairs` set to the `<feature>/<NN>` slice(s) they fix (and `live_try`) before declaring `Decision: repair` so this run admits and lands them before re-reviewing.',
     'Do not edit docs/spec.md or land outside this run.',
-    ...(q.unattended ? [`For unattended repair, add ready repair ticket(s) linked to Objective \`${q.unattended.objective}\` with \`repairs\` set to the \`<feature>/<NN>\` slice(s) they fix (and \`live_try\`) so this run admits them directly (bounded to ${MAX_REPAIR_ROUNDS} rounds). Never create an Objective or edit docs/spec.md.`, approvalFormat] : []),
+    ...(q.unattended ? [
+      `For unattended repair, add ready repair ticket(s) linked to Objective \`${q.unattended.objective}\` with \`repairs\` set to the \`<feature>/<NN>\` slice(s) they fix (and \`live_try\`) so this run admits them directly. Never create an Objective or edit docs/spec.md.`,
+      'For an escalation requiring owner approval, include `Owner approval: feature-deletion` or `Owner approval: spec-change` and explain the specific change in Reason.',
+    ] : []),
   );
   return lines.join('\n') + '\n';
 }

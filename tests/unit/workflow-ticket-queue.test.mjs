@@ -910,7 +910,7 @@ test('unattended deterministic gates hold spec edits and unapproved removals wit
   );
 });
 
-test('unattended repair admits repair tickets inside the same run, bounded to 2 rounds then holds for owner; failed ticket dependents show in blocked', { timeout: 60_000 }, async t => {
+test('unattended repair admits a third repair in the same run, holds on lead escalation, and preserves blocked dependents', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, {
     tickets: {
       '01-synthetic.md': goodTicket(1),
@@ -934,35 +934,34 @@ test('unattended repair admits repair tickets inside the same run, bounded to 2 
   assert.ok(f.flow(flow).tickets.find(x => x.ticket === 'sample/02')?.failed);
   assert.ok(f.flow(flow).blocked?.some(b => b.ticket === 'sample/03'), JSON.stringify(f.flow(flow).blocked));
 
-  // Run 2 repair rounds inside the SAME run, then 3rd repair hits the bound and holds for owner (not completed).
+  // Admit three repairs, then let the lead hand back a repeated finding.
   let prevReview;
   let prevLead;
-  for (let round = 0; round < 3; round++) {
+  for (let round = 0; round <= 3; round++) {
     await until(() => f.flow(flow).review_job && f.flow(flow).review_job !== prevReview, 15_000);
     prevReview = f.flow(flow).review_job;
     await f.settleReview(prevReview);
     await until(() => f.flow(flow).active_lead?.kind === 'accept' && f.flow(flow).active_lead.job !== prevLead, 15_000);
     prevLead = f.flow(flow).active_lead.job;
-    if (round < 2) {
-      await f.call('hud_tickets', {
-        op: 'add', cwd: f.root, feature: 'sample', objective: 'selected',
-        tickets: [{ title: `Repair ${round + 1}`, blocked_by: [], what: `Fix round ${round + 1}.`, acceptance: ['Fixed'], live_try: 'none' }],
-      });
-    }
+    if (round === 3) break;
+    await f.call('hud_tickets', {
+      op: 'add', cwd: f.root, feature: 'sample', objective: 'selected',
+      tickets: [{ title: `Repair ${round + 1}`, blocked_by: [], repairs: ['sample/01'], what: `Fix round ${round + 1}.`, acceptance: ['Fixed'], live_try: 'none' }],
+    });
     await f.settleLead(prevLead, `Decision: repair\nReason: Repair round ${round + 1}.\n`);
-    if (round < 2) {
-      const repairTicket = `sample/0${round + 4}`;
-      const rw = await u.ticketJob(flow, repairTicket);
-      assert.equal(f.flow(flow).tickets.find(x => x.job === rw).round, round + 1);
-      await f.settle(rw);
-    }
+    const repairTicket = `sample/0${round + 4}`;
+    const rw = await u.ticketJob(flow, repairTicket);
+    assert.equal(f.flow(flow).tickets.find(x => x.job === rw).round, round + 1);
+    await f.settle(rw);
   }
+  await f.settleLead(prevLead, 'Decision: escalate\nReason: A finding already addressed by the first repair has recurred.\n');
   const held = await f.end(flow);
   assert.equal(held.state, 'paused', JSON.stringify(held));
-  assert.equal(held.repair_rounds, 2);
-  assert.ok(held.held, 'run held for owner after 2 repair rounds');
-  assert.match(held.held.reason, /max repair rounds \(2\) reached/);
-  assert.ok(u.status().handbacks.some(h => h.flow === flow && /max repair rounds/.test(h.reason)));
+  assert.equal(held.repair_rounds, 3);
+  assert.equal(held.held.kind, 'escalate');
+  assert.equal(held.held.owner_approval, undefined);
+  assert.match(held.held.reason, /first repair has recurred/);
+  assert.ok(u.status().handbacks.some(h => h.flow === flow && /first repair has recurred/.test(h.reason)));
 });
 
 test('to: main question hand-back auto-resumes on hud_respond; the successor can be cancelled by run ID', { timeout: 45_000 }, async t => {
@@ -1214,9 +1213,9 @@ test('unattended cancel stops a paused or working run without signalling, keeps 
   writeFixtureFile(join(f.dir(heldJob), 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: at }));
   writeFixtureFile(join(f.home, 'flows', `${pausedFlow}.json`), JSON.stringify({
     flow: pausedFlow, root: f.root, project_root: f.root, feature: 'selected', pane: '', task: false, max_parallel: 1,
-    created_at: at, updated_at: at, state: 'paused', reason: 'max repair rounds (2) reached',
+    created_at: at, updated_at: at, state: 'paused', reason: 'lead escalated a repeated finding',
     unattended: { objective: 'selected' },
-    held: { reason: 'max repair rounds (2) reached', at, kind: 'escalate' },
+    held: { reason: 'lead escalated a repeated finding', at, kind: 'escalate' },
     tickets: [{
       ticket: 'sample/01', path: join(f.root, f.ticketPath(1)), role: 'imp', job: heldJob,
       held: { reason: 'Unapproved removal declared: legacy-banner', at, kind: 'escalate', owner_approval: 'feature-deletion' },
@@ -1239,7 +1238,7 @@ test('unattended cancel stops a paused or working run without signalling, keeps 
   assert.equal(f.flow(pausedFlow).state, 'cancelled');
   // Holds (item-level + run-level) and evidence remain visible and pinned.
   assert.ok(cancelPaused.handbacks.some(h => h.flow === pausedFlow && h.ticket === 'sample/01' && h.owner_approval === 'feature-deletion'));
-  assert.ok(cancelPaused.handbacks.some(h => h.flow === pausedFlow && !h.ticket && /max repair rounds/.test(h.reason)));
+  assert.ok(cancelPaused.handbacks.some(h => h.flow === pausedFlow && !h.ticket && /repeated finding/.test(h.reason)));
   assert.ok(pinnedQueueJobs(f.home).held.has(heldJob));
   const logged = () => fs.existsSync(f.env.FAKE_LOG) ? f.fakeLog() : [];
   assert.equal(logged().some(c => c.command === 'hud-reap'), false, 'cancel never reaps or signals');

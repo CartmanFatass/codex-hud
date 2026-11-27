@@ -305,7 +305,7 @@
     {
       "number": 62,
       "title": "Acceptance repairs have no fixed round cap; the lead escalates on repeated findings",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [
@@ -318,27 +318,64 @@
         {
           "id": 1,
           "text": "Test: a run accepts a third and fourth lead `repair` decision and admits the repair tickets; a land gate still stops after two automatic repairs",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: a new run for a feature whose previous run was cancelled or escalated after two rounds starts with repair_rounds 0",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: the lead packet lists earlier rounds' review summaries, finding counts and admitted repair tickets",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "lead.md and docs/reference.md state the rule; no text still promises a two-round acceptance cap",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T15:07:28.059Z",
+        "job": "j50b0a71ab047fb43",
+        "flow": "f50b0a71ab047fb43",
+        "replay_base": "6bd934160ad51fa6a2ec6f729db29e697807d52f",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T14:43:44.447Z",
+      "updated_at": "2026-11-27T15:07:28.059Z"
+    },
+    {
+      "number": 63,
+      "title": "Decision-picked Sonic thinking maps by relative position onto each model's own levels",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "Dispatch a sonic job whose Decision pick is `high` on the qwen3.8-flash preset and on the deepseek preset: job.json shows `thinking: medium` for qwen and `high` for deepseek; a failover from one to the next shows each model's own mapping.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Today `nearestThinking()` (`src/mcp/launch-thinking.ts`) picks by absolute distance on the global 8-level `thinkingOrder`, so the Decision API's four intent levels (`thinking_choices` none/low/high/max in `packages/hud-mcp/roles/sonic.json`) collapse on models with other ladders: on [off, low, medium, high] both high and max become high and medium is never used; on [low..max, ultra] ultra is never used. Also `src/mcp/dispatch/orchestrator.ts` (~1387-1396) writes the mapped value back to `job.thinking`, so a failover to the next candidate maps from the previous model's level instead of the original pick. Fix: keep `nearestThinking` for `thinking_source` `explicit` and `default` (literal level, nearest only when unsupported). For `thinking_source: 'decision'` add `adaptDecisionThinking(picked, supported)`: sort `supported` by `thinkingOrder`, split `hasOff` and `active` (non-off). `none` -> `off` if supported, else `active[0]`. Otherwise intent index k in [low, high, max] (m = 3): no active -> `off`; one active -> `active[0]`; else endpoints aligned, `active[round_up(k * (len - 1) / (m - 1))]` (owner/main 2026-11-27: the middle intent rounds toward the stronger level; thinking follows difficulty). Results: [off, low, medium, high] -> off/low/medium/high; [off, low, high, max] -> off/low/high/max; [low, medium, high, xhigh, max] -> low/low/high/max; [low..max, ultra] -> low/low/xhigh/ultra; [off, high] -> off/high/high/high; [off] -> off. Keep the original Decision pick on the job (e.g. `thinking_pick`) and map from it for every failover candidate; record the mapped level per attempt as today. Read the levels from the existing sources only (pi probe of the model's `thinkingLevelMap`, `cliThinking` in `src/models/models-catalog.json`); no model names in code. Update docs/reference.md where Sonic thinking selection is described.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Unit tests in tests/unit/model-catalog.test.mjs (or the launch-thinking test) cover every row above plus [off, minimal, low, medium, high]",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Unit test: a failover from a [off, low, medium, high] model to a [low..max] model maps the original `high` pick to medium then high, not from the first model's mapped value",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Explicit and default thinking still go through nearestThinking unchanged (existing tests pass)",
           "done": false
         }
       ],
       "comments": [],
-      "created_at": "2026-11-27T14:43:44.447Z",
-      "updated_at": "2026-11-27T14:43:44.447Z"
+      "created_at": "2026-11-27T15:03:07.459Z",
+      "updated_at": "2026-11-27T15:03:07.459Z"
     }
   ]
 }

@@ -1756,10 +1756,9 @@ function tickHandbackStep(
               const fresh = tickets.filter(t => !cur.tickets.some(own => own.ticket === t.ticket));
               const invalid = new Set(checkTicketPaths(cur.root, fresh).map(g => g.ticket));
               return { tickets: fresh.filter(t => !invalid.has(t.ticket)) };
-            }, parsed.reason);
-            if (repair.kind !== 'ready') {
-              const msg = repair.kind === 'cap' ? repair.reason
-                : `lead requested repair with no ready tickets${parsed.reason ? `: ${parsed.reason}` : ''}`;
+            });
+            if (repair.kind === 'no_work') {
+              const msg = `lead requested repair with no ready tickets${parsed.reason ? `: ${parsed.reason}` : ''}`;
               if (cur.unattended) holdRun(cur, msg, 'escalate');
               state.problem = { kind: 'escalate', step: key, job: leadJob.job, reason: msg };
             }
