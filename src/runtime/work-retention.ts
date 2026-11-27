@@ -264,7 +264,7 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
               // Terminal queue IDs are never reused. Archive the full receipt and its facts before cleanup.
               const receipt = readJsonBounded(path, stat.size) as TicketQueue | null;
               if (!unattended.has(flowId) && !hasOpenHold(receipt) && (receipt?.state === 'completed' || receipt?.state === 'failed' ||
-                  receipt?.state === 'cancelled' || (receipt?.state === 'paused' && 'unattended' in receipt))) {
+                  receipt?.state === 'cancelled' || receipt?.state === 'superseded' || (receipt?.state === 'paused' && 'unattended' in receipt))) {
                 const entries: TarInput[] = [];
                 const receiptPinned = statPinnedRegular(path, name);
                 if (!receiptPinned || !sameInode(stat, receiptPinned.stat) || stat.ctimeMs !== receiptPinned.stat.ctimeMs) continue;

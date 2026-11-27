@@ -7,6 +7,9 @@ import test from 'node:test';
 import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { answerTicketQueueHandback, cancelTicketQueueRun, startTicketQueue } from '../../dist/mcp/ticket-queue.js';
 import { writeTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
+import { countProjectWaitingRuns, executionSnapshot } from '../../dist/collectors/execution.js';
+import { stripAnsi } from '../../dist/render/colors.js';
+import { executionRows } from '../../dist/render/execution-view.js';
 import { buildAcceptPacket, extractReportNotes } from '../../dist/mcp/workflow-lead.js';
 import { pinnedQueueJobs } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
@@ -1192,11 +1195,11 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
   assert.equal(f.flow(repFlow).decisions.length, 3);
 });
 
-test('hud_respond cannot revive a superseded main hand-back', { timeout: 45_000 }, async t => {
+test('restarting a paused run clears its Execution wait and hud_respond cannot revive it', { timeout: 45_000 }, async t => {
   const f = await setupWorkflowProject(t, { count: 1 });
   const start = () => f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, handback_to: 'main' });
   const pauseAtAccept = async (flow, jobs) => {
-    await f.settle((await f.jobs(flow, jobs)).at(-1));
+    await f.settle((await f.jobs(flow, jobs)).at(-1), { report: 'Done.\nAssumed: keep the default.\n' });
     await until(() => Boolean(f.flow(flow).review_job), 15_000);
     await f.settleReview(f.flow(flow).review_job);
     assert.equal((await f.end(flow)).steps.accept.state, 'asking');
@@ -1209,15 +1212,29 @@ test('hud_respond cannot revive a superseded main hand-back', { timeout: 45_000 
   const working = () => fs.readdirSync(join(f.home, 'flows')).filter(file => /^q[a-f0-9]{16}\.json$/.test(file))
     .map(file => f.flow(file.slice(0, -5))).filter(q => q.feature === 'sample' && q.state === 'working').map(q => q.flow);
 
+  const execution = () => executionSnapshot(f.home, { workers: [], lanes: [] },
+    { root: f.root, pane: null, complete: true });
+  const readout = (view) => executionRows(view, undefined, 80, Date.now()).map(row => stripAnsi(row.text)).join('\n');
   const { flow } = await start();
   await pauseAtAccept(flow, 1);
   await addRepair('First repair');
-  const { flow: successor } = await start();
+  const waitingBefore = countProjectWaitingRuns(f.home, f.root);
+  assert.equal(waitingBefore, 1);
+  assert.match(readout(execution()), /1 waiting/);
+  const restarted = await start();
+  const successor = restarted.flow;
   assert.notEqual(successor, flow);
+  assert.deepEqual(restarted.todo.map(({ text }) => text), ['keep the default.']);
+  assert.equal(countProjectWaitingRuns(f.home, f.root), waitingBefore - 1);
+  const view = execution();
+  assert.deepEqual(view.runs.filter(run => run.kind === 'queue').map(run => run.flow), [successor]);
+  assert.doesNotMatch(readout(view), /1 waiting/);
   const rejected = await repair(flow);
   assert.equal(rejected.code, 'superseded_run');
   assert.match(rejected.error, new RegExp(successor));
-  assert.equal(f.flow(flow).state, 'paused');
+  const old = await f.call('hud_read', { job: flow });
+  assert.equal(old.state, 'superseded');
+  assert.equal(old.superseded_by, successor);
   assert.equal(f.flow(flow).steps.accept.state, 'asking');
   assert.equal(f.flow(flow).repair_rounds, undefined);
   assert.deepEqual(working(), [successor]);
@@ -1232,7 +1249,7 @@ test('hud_respond cannot revive a superseded main hand-back', { timeout: 45_000 
     assert.equal(answered.flow, successor);
   } else {
     assert.equal(answered.code, 'superseded_run');
-    assert.equal(f.flow(successor).state, 'paused');
+    assert.equal(f.flow(successor).state, 'superseded');
   }
 });
 
@@ -1486,6 +1503,7 @@ test('restarted runs carry repair_rounds across repair restarts (showing 2/2 in 
   const { flow: flow2 } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
   assert.notEqual(flow2, flow1);
   assert.equal(f.flow(flow2).repair_rounds, 1);
+  assert.deepEqual(f.flow(flow2).decisions, paused1.decisions);
   const [, job2] = await f.jobs(flow2, 2);
   assert.equal(f.job(job2).ticket, 'sample/02');
   await f.settle(job2);

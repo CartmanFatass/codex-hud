@@ -6,13 +6,14 @@ import { headerScanner, type HeaderPass } from '../workflows/header-scan.js';
 import { isComposedId, type ComposedRun } from '../workflows/composed-state.js';
 import { stopRequested } from '../workflows/store.js';
 import { activeLand, isFlowId, isLandWait, readLand, type LandFlow } from '../mcp/land-state.js';
-import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { isTicketQueueId } from '../mcp/ticket-queue-state.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.js';
 import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { isProcAlive, isValidPid, procStat } from '../utils/proc.js';
 import { jobRow } from './thin-jobs.js';
+import { displayTicketQueues } from './ticket-queue-display.js';
 import { unattendedOn } from '../unattended/state.js';
 
 export const WORK_SUMMARY_FILE = 'display/work-summary.v1.json';
@@ -70,6 +71,7 @@ function collectFlowSummary(home: string, pass?: HeaderPass): { land?: MachineLa
   let count = 0, oldest: LandFlow | undefined, oldestAt = Infinity, landValid = true, pausedMain = 0;
   try {
     pass ??= scanSummaryFlows(home);
+    const queues = displayTicketQueues(pass);
     for (const file of pass.files) {
       if (!file.endsWith('.json')) continue;
       const id = file.slice(0, -5);
@@ -85,8 +87,8 @@ function collectFlowSummary(home: string, pass?: HeaderPass): { land?: MachineLa
         }
       } else if (isTicketQueueId(id)) {
         try {
-          const q = pass.header<TicketQueue>(file);
-          if (q && !q.superseded_by && !stopRequested(home, id) &&
+          const q = queues.get(file);
+          if (q && !stopRequested(home, id) &&
               (q.state === 'paused' || (q.state === 'working' && q.handback?.kind === 'blocker'))) {
             pausedMain++;
           }

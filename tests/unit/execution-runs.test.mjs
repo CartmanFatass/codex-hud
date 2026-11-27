@@ -8,6 +8,8 @@ import { executionJobs, fakeFork, IDS, NOW, PANE } from '../fixtures/execution-p
 import { putTicketFeature, ticketRecord } from '../fixtures/ticket-store.mjs';
 import { viewFor, withState } from '../fixtures/state-helpers.mjs';
 import { PanelExecution } from '../../dist/panel/execution.js';
+import { countProjectWaitingRuns, executionSnapshot } from '../../dist/collectors/execution.js';
+import { collectWorkSummary } from '../../dist/collectors/work-summary-snapshot.js';
 import { handleMonitorInput, initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
@@ -212,6 +214,42 @@ test('Execution collects paused, working, and recently ended runs (including pan
   // Painting never calls herdr.
   for (const width of [36, 40, 56, 60, 100, 140]) render(view, { width });
   assert.equal(f.fork.requests.length, 0);
+});
+
+test('Execution shows only the current attempt, not older failed or paused feature queues', (t) => {
+  const hud = fs.mkdtempSync(join(tmpdir(), 'exec-queue-restarts-'));
+  t.after(() => fs.rmSync(hud, { recursive: true, force: true }));
+  const root = join(hud, 'project');
+  const run = (n, state, created, fields = {}) => {
+    const flow = `q${String(n).padStart(16, '0')}`;
+    putJson(join(hud, 'flows', `${flow}.json`), {
+      flow, root, feature: 'sample', state, created_at: ago(created), updated_at: ago(1), tickets: [], ...fields,
+    });
+    return flow;
+  };
+  const failed = run(1, 'failed', 30);
+  const olderPause = run(2, 'paused', 20);
+  const legacy = run(3, 'paused', 15, { feature: 'legacy', superseded_by: 'q0000000000000099' });
+  const latest = run(4, 'paused', 10);
+  const otherProject = join(hud, 'another-project');
+  run(5, 'working', 5, { root: otherProject });
+  const unrelated = run(6, 'failed', 30, { feature: 'unrelated' });
+  run(7, 'completed', 5, { feature: 'unrelated', root: otherProject });
+  run(8, 'completed', 5, { feature: 'unrelated', unattended: { objective: 'unrelated' } });
+
+  assert.equal(countProjectWaitingRuns(hud, root), 1);
+  assert.equal(collectWorkSummary(hud).global.pausedMain, 1);
+  const view = executionSnapshot(hud, { workers: [], lanes: [] }, { root, pane: PANE, complete: true }, NOW);
+  assert.deepEqual(view.runs.find(run => run.state === 'paused').flow, latest);
+  const frame = render(view);
+  assert.match(text(frame), /0 running\s+1 waiting\s+0 queued/);
+  const rows = frame.workboard.rows.map(row => row.item);
+  assert.ok(rows.includes(`project:exec-run:${latest}`));
+  assert.ok(rows.includes(`project:exec-run:${unrelated}`), 'a latest failure remains in Recently ended');
+  for (const old of [failed, olderPause, legacy]) {
+    assert.ok(!view.runs.some(run => run.flow === old));
+    assert.ok(!rows.some(item => item?.startsWith(`project:exec-run:${old}`)));
+  }
 });
 
 test('queued stations get titles and dependency waves from JSON even without jobs or header blockers', async (t) => {

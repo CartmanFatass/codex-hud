@@ -275,7 +275,7 @@
     {
       "number": 33,
       "title": "A restarted queue run supersedes the older run of the same feature",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "Restart a paused feature run with hud_tickets run and confirm Execution shows only the new run",
       "approved_removals": [],
@@ -285,22 +285,29 @@
         {
           "id": 1,
           "text": "Test: starting a run for a feature with a paused run marks the old one terminal `superseded`, and the Execution waiting count drops by one",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: a failed run older than a newer run of the same feature is not counted as waiting and does not render as a flow on Execution",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T09:19:35.176Z",
+        "job": "j9aa920934905884b",
+        "flow": "f9aa920934905884b",
+        "replay_base": "c1d1c5570ed78f1ac0f14b4df985309f5bc713a6",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T06:39:27.936Z",
-      "updated_at": "2026-11-27T06:39:27.936Z"
+      "updated_at": "2026-11-27T09:19:35.176Z"
     },
     {
       "number": 34,

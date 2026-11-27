@@ -319,18 +319,20 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     }
     fs.mkdirSync(runDir(home, flow), { mode: 0o700, recursive: true });
     freezeGraph(home, flow, graph);
-    if (resumed?.state === 'paused') {
-      await runLock(home, resumed.flow, () => {
-        const predecessor = readTicketQueue(home, resumed.flow);
-        writeTicketQueue(home, q, true);
-        // Publish the successor first; the answer path also checks receipts if the marker is missing.
-        if (predecessor?.state === 'paused') {
+    // Publish the successor first; the answer path also checks receipts if the marker is missing.
+    writeTicketQueue(home, q, true);
+    if (!unattended) {
+      for (const old of queues) {
+        if (old.state !== 'paused' || old.superseded_by) continue;
+        await runLock(home, old.flow, () => {
+          const predecessor = readTicketQueue(home, old.flow);
+          if (predecessor?.state !== 'paused') return;
+          predecessor.state = 'superseded';
           predecessor.superseded_by = q.flow;
+          predecessor.notices = {};
           writeTicketQueue(home, predecessor);
-        }
-      });
-    } else {
-      writeTicketQueue(home, q, true);
+        });
+      }
     }
     wakeWorkflow(home, q);
     return q;
@@ -397,16 +399,18 @@ export async function answerTicketQueueHandback(
       writeTicketQueue(home, cur);
       return { ok: true, queue: cur, resumed: false };
     }
+    const superseded = (successor: string): HandbackAnswerResult => ({
+      ok: false, code: 'superseded_run', error: `Ticket queue ${id} was superseded by ${successor}; its hand-back is no longer answerable`,
+    });
+    if (cur.superseded_by) return superseded(cur.superseded_by);
     const step = cur.handback?.step;
     if (cur.state !== 'paused' || !step || !cur.handback?.choices?.length || cur.steps?.[step]?.state !== 'asking') {
       const detail = cur.state === 'paused' && cur.handback?.kind ? `paused for ${cur.handback.kind}` : `state: ${cur.state}`;
       return { ok: false, code: 'no_pending_handback', error: `Ticket queue ${id} has no pending hand-back (${detail})` };
     }
-    const successor = cur.superseded_by ?? admissionQueues(home, cur.root, cur.feature, cur.unattended?.objective)
+    const successor = admissionQueues(home, cur.root, cur.feature, cur.unattended?.objective)
       .find(q => q.flow !== id && (q.state === 'working' || q.created_at > cur.created_at))?.flow;
-    if (successor) {
-      return { ok: false, code: 'superseded_run', error: `Ticket queue ${id} was superseded by ${successor}; its hand-back is no longer answerable` };
-    }
+    if (successor) return superseded(successor);
     if (opts.requestId !== undefined && opts.requestId !== step) {
       return { ok: false, code: 'invalid_arguments', error: `Ticket queue ${id} pending hand-back is at step ${step}, not ${opts.requestId}` };
     }
@@ -659,7 +663,7 @@ export function ticketQueueTask(home: string, q: TicketQueue, cancel = false) {
   const text = q.state === 'working'
     ? `${q.flow} (ticket queue ${q.feature}) — ${ticketQueueView(q).reason ?? 'working'}`
     : pauseText ?? ticketQueueNotice(q);
-  const status = q.state === 'paused' ? 'completed' : q.state === 'stopped' ? 'cancelled' : q.state;
+  const status = q.state === 'paused' ? 'completed' : q.state === 'stopped' || q.state === 'superseded' ? 'cancelled' : q.state;
   return { taskId: q.flow, status, statusMessage: text,
     createdAt: q.created_at, lastUpdatedAt: q.updated_at, ttlMs: 3 * 60 * 60_000, pollIntervalMs: 5000,
     ...(q.state !== 'working' && { result: { content: [{ type: 'text', text }] } }) };

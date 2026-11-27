@@ -72,7 +72,7 @@ test('expired ticket queues archive only structured facts before unlinking and n
   const { home } = fixture(t);
   const flow = 'q0000000000000001', worker = 'j0000000000000001';
   const created_at = '2029-12-30T00:00:00.000Z', updated_at = '2029-12-31T00:00:00.000Z';
-  const project = join(home, 'synthetic-project'), feature = 'sample', state = 'completed';
+  const project = join(home, 'synthetic-project'), feature = 'sample', state = 'superseded';
   const tickets = [
     { ticket: 'sample/01', role: 'imp', job: worker, land: 'f0000000000000001', landed: true, round: 0 },
     { ticket: 'sample/02', role: 'imp', job: 'j0000000000000004', land: 'f0000000000000004', landed: true, round: 1, repairs: ['sample/01'] },

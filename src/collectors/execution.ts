@@ -5,7 +5,7 @@ import type { Job, PrewalkScoutKind } from '../mcp/job-contracts.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { readSelectionExcerpts, type SelectionExcerpt } from '../roles/selection-excerpts.js';
-import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { isTicketQueueId } from '../mcp/ticket-queue-state.js';
 import { isComposedId, type ComposedRun } from '../workflows/composed-state.js';
 import { headerScanner } from '../workflows/header-scan.js';
 import { runVisible } from '../workflows/scope.js';
@@ -14,6 +14,7 @@ import { ENDED_MS, isPublishingLandStep, jobTargetFor, readExecutionRuns, type E
 import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
 import type { ProjectSnapshot } from './project-board.js';
 import { targetKey } from './ticket-evidence.js';
+import { displayTicketQueues } from './ticket-queue-display.js';
 import { executionJobDirs, jobRow, worksWithin } from './thin-jobs.js';
 import { workState } from './work-job.js';
 import type { OwnerWorker, WorkboardSnapshot } from './workboard-types.js';
@@ -110,14 +111,15 @@ export function countProjectWaitingRuns(home: string, projectRoot: string): numb
   let count = 0;
   try {
     const pass = scanWaitingRuns(home);
+    const queues = displayTicketQueues(pass);
     for (const file of pass.files) {
       if (!file.endsWith('.json')) continue;
       const id = file.slice(0, -5);
       try {
         if (isTicketQueueId(id)) {
-          const q = pass.header<TicketQueue>(file);
+          const q = queues.get(file);
           const scopeRoot = q?.project_root ?? q?.root;
-          if (q && scopeRoot && !q.superseded_by && !stopRequested(home, id) &&
+          if (q && scopeRoot && !stopRequested(home, id) &&
               (q.state === 'paused' || (q.state === 'working' && q.handback?.kind === 'blocker')) &&
               runVisible({ ...q, project_root: scopeRoot }, null, root)) {
             count++;

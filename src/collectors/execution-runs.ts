@@ -39,6 +39,7 @@ import {
   type ReducedMetroMap,
 } from './execution-metro.js';
 import { targetKey } from './ticket-evidence.js';
+import { displayTicketQueues } from './ticket-queue-display.js';
 import { scanTicketStore } from './ticket-store.js';
 import { workState } from './work-job.js';
 import type { OwnerWorker, WorkBatch, WorkTarget } from './workboard-types.js';
@@ -1257,6 +1258,7 @@ const STATE_RANK: Record<TicketQueue['state'], number> = {
   completed: 2,
   cancelled: 2,
   stopped: 2,
+  superseded: 2,
 };
 
 function endedResult(tickets: readonly ExecutionRunTicket[]): ExecutionRun['result'] {
@@ -1273,6 +1275,7 @@ export function readExecutionRuns(
   now = Date.now(),
 ): ExecutionRun[] {
   const pass = scan(home);
+  const queues = displayTicketQueues(pass);
   const cache = getJobIndexCache(home);
   let ticketFacts: ReturnType<typeof scanTicketStore> | undefined;
   const runs = pass.files.flatMap((file) => {
@@ -1283,8 +1286,8 @@ export function readExecutionRuns(
         const run = readFixedExecutionRun(home, id, pass, scope.root, workers, cache, now);
         return run ? [run] : [];
       }
-      const q = pass.header<TicketQueue>(file);
-      if (!q || `${q.flow}.json` !== file || !Object.hasOwn(STATE_RANK, q.state)) return [];
+      const q = queues.get(file);
+      if (!q) return [];
       const projectRoot = q.project_root ?? q.root;
       // Scope strictly to this project: pane-less unattended runs show for their project, foreign runs stay out.
       if (!projectRoot || !runVisible({ ...q, project_root: projectRoot }, null, scope.root)) return [];

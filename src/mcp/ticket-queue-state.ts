@@ -72,11 +72,13 @@ export interface TicketQueueItem {
   held?: TicketItemHold;
   failed?: TicketItemFailure;
 }
+export const TICKET_QUEUE_STATES = ['working', 'completed', 'failed', 'cancelled', 'paused', 'stopped', 'superseded'] as const;
+
 export interface TicketQueue extends RunScope {
   flow: string; root: string; cwd?: string; feature: string; pane: string; workspace?: string; task: boolean; max_parallel: number;
   created_at: string; updated_at: string; pid?: number; start?: string;
   start_head?: string;
-  superseded_by?: string; // A successor may expire while this paused receipt remains.
+  superseded_by?: string; // A successor may expire while this receipt remains.
   template?: 'ticket-queue'; host?: 'detached'; cost?: 'cheap' | 'costly'; cost_reasons?: string[];
   unattended?: UnattendedRun;
   handback_to?: 'lead' | 'main';
@@ -96,7 +98,7 @@ export interface TicketQueue extends RunScope {
   pending_answer?: PendingAnswerDelivery;
   unclosed_leads?: UnclosedLead[];
   verdict?: string;
-  state: 'working' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'stopped'; tickets: TicketQueueItem[];
+  state: (typeof TICKET_QUEUE_STATES)[number]; tickets: TicketQueueItem[];
   reason?: string; remaining?: string[];
   /** Display workset, independent of which tickets the queue may dispatch or wait for. */
   future?: { ticket: string; title: string; role: TicketQueueItem['role']; blockers: string[]; waiting_on?: string[] }[];
@@ -150,6 +152,7 @@ export function ticketQueueView(q: TicketQueue) {
   const pause_notice = state === 'paused' && !Object.keys(q.notices ?? {}).length
     ? ticketQueueNotice(q).replace(/\r?\n/g, ' | ') : undefined;
   return { flow, feature, ...(q.unattended && { objective: q.unattended.objective }), state, reason, remaining,
+    ...(q.superseded_by && { superseded_by: q.superseded_by }),
     ...(queued?.length && { queued }), ...(blocked?.length && { blocked }), ...(max_parallel && { max_parallel }),
     ...(base_moves && { base_moves }),
     ...(verdict && { verdict }), ...(todo?.length && { todo }), ...(decisions?.length && { decisions }),
@@ -190,6 +193,9 @@ export function recordDecision(q: TicketQueue, entry: RunDecision): void {
 
 export function ticketQueueNotice(q: TicketQueue) {
   const landed = q.tickets.filter(item => item.landed).map(item => item.ticket);
+  if (q.state === 'superseded') {
+    return `${q.flow} (ticket queue ${q.feature}) — superseded${q.superseded_by ? ` by ${q.superseded_by}` : ''}. Landed: ${landed.join(', ') || 'none'}.`;
+  }
   const base_moves = q.tickets.reduce((total, item) => total + (item.base_moves ?? 0), 0);
   const reason = q.reason ?? (q.queued?.length ? `Queued: ${q.queued.map(({ ticket, blockers }) => `${ticket} waiting on ${blockers.join(', ')}`).join('; ')}` : undefined);
   const verdict = q.state === 'completed' && q.verdict ? ` Verdict: ${q.verdict.replace(/\.+$/, '')}.` : '';
