@@ -9,6 +9,8 @@ export async function listenDock(t, path, { capable = true } = {}) {
   let hidden = false;
   let options = {};
   const subscribers = new Set();
+  const sockets = new Set();
+  let closing = false;
   const applyOptions = (params = {}) => {
     const next = { ...options };
     for (const key of ['mode', 'side', 'width', 'height']) {
@@ -17,8 +19,23 @@ export async function listenDock(t, path, { capable = true } = {}) {
     options = next;
   };
   const server = createServer((socket) => {
+    if (closing) {
+      socket.destroy();
+      return;
+    }
+    sockets.add(socket);
     const lines = createInterface({ input: socket });
+    const drop = () => {
+      lines.close();
+      sockets.delete(socket);
+      subscribers.delete(socket);
+    };
+    socket.once('close', drop);
     lines.once('line', (line) => {
+      if (closing) {
+        socket.destroy();
+        return;
+      }
       const { id, method, params } = JSON.parse(line);
       calls.push({ method, params });
       if (method === 'events.subscribe' && capable) {
@@ -27,8 +44,6 @@ export async function listenDock(t, path, { capable = true } = {}) {
         if (wantsResize) {
           subscribers.add(socket);
           socket.write(JSON.stringify({ id, result: { type: 'subscription_started' } }) + '\n');
-          const drop = () => subscribers.delete(socket);
-          socket.once('close', drop);
           socket.once('error', drop);
           return;
         }
@@ -102,9 +117,12 @@ export async function listenDock(t, path, { capable = true } = {}) {
   server.listen(path);
   await once(server, 'listening');
   t.after(() => {
-    for (const peer of subscribers) peer.destroy();
+    closing = true;
+    const closed = new Promise((resolve) => server.close(resolve));
+    for (const peer of sockets) peer.destroy();
+    sockets.clear();
     subscribers.clear();
-    return new Promise((resolve) => server.close(resolve));
+    return closed;
   });
   return {
     calls,

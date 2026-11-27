@@ -253,6 +253,8 @@ for (const trigger of ['native deadline', 'native one-shot']) test(`pi reap: ${t
   const f = await fixture(t, true, '', 200);
   const worker = fakeCliWithChild(t, f);
   const job = await f.call('hud_create', { role: 'imp', request_key: trigger, task: 'Synthetic task.' });
+  // declareDone runs hud-progress synchronously; let the fixture answer the background sidebar RPC first.
+  await f.waitForWorkerMetadata(job, t.signal);
   const child = await worker.start(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], true);
   const start = procStat(child).start;
   t.after(() => { if (procStat(child)?.start === start) process.kill(child, 'SIGKILL'); });

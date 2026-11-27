@@ -207,7 +207,7 @@ export async function reportDirectWorkerMetadata(paneId: string, job: Job, dir: 
       source: 'hud',
       display_agent: title ? truncateAnsi(monitorText(title.replace(/\s+/g, ' ')), 28) : undefined,
       tokens: workerMetadataTokens(job, icon),
-    }, { timeoutMs: 500 });
+    });
     if (!reply?.result || reply.error) warn(reply?.error?.code ?? 'no response');
   } catch (error) {
     warn(error);

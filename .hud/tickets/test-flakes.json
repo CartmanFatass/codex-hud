@@ -470,7 +470,7 @@
       "number": 28,
       "title": "Gate flakes collected after test-flakes/27",
       "kind": "flake-list",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -514,6 +514,81 @@
         {
           "id": 1,
           "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T14:08:51.030Z",
+        "job": "ja689eb4b6f6f328b",
+        "flow": "fa689eb4b6f6f328b",
+        "replay_base": "5a409aeb8ab864323a829f3029c536eb7fe7ef7d",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T09:30:59.574Z",
+      "updated_at": "2026-11-27T14:08:51.030Z"
+    },
+    {
+      "number": 29,
+      "title": "Gate flakes collected after test-flakes/28",
+      "kind": "flake-list",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/thin-mcp-land-flakes.test.mjs",
+          "case_name": "retention keeps expired pending flake receipt and gate log after source job removal until collected or resolved",
+          "flow": "ffea6c081defe57b4",
+          "log": "~/.hud/flows/ffea6c081defe57b4.json.gate-1.log",
+          "recorded_at": "2026-11-27T14:02:07.656Z"
+        },
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/thin-mcp-ticket-queue.test.mjs",
+          "case_name": "a note sent to a working queue job keeps the job in its queue",
+          "flow": "ffea6c081defe57b4",
+          "log": "~/.hud/flows/ffea6c081defe57b4.json.gate-1.log",
+          "recorded_at": "2026-11-27T14:02:07.656Z"
+        },
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/thin-mcp-ticket-queue.test.mjs",
+          "case_name": "a resumed queue waits for a launch still in flight instead of failing it",
+          "flow": "ffea6c081defe57b4",
+          "log": "~/.hud/flows/ffea6c081defe57b4.json.gate-1.log",
+          "recorded_at": "2026-11-27T14:02:07.656Z"
+        },
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/thin-mcp-quiet-decision.test.mjs",
+          "case_name": "low probability, cap reached, and provider error all fall back to needs-human without prompting worker",
+          "flow": "ffea6c081defe57b4",
+          "log": "~/.hud/flows/ffea6c081defe57b4.json.gate-1.log",
+          "recorded_at": "2026-11-27T14:02:07.656Z"
+        },
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/thin-mcp-land-repair.test.mjs",
+          "case_name": "a CLI land repair ignores pre-turn attention, waits for its answer, then lands the same flow",
+          "flow": "ffea6c081defe57b4",
+          "log": "~/.hud/flows/ffea6c081defe57b4.json.gate-1.log",
+          "recorded_at": "2026-11-27T14:02:07.656Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
           "done": false
         },
         {
@@ -523,8 +598,8 @@
         }
       ],
       "comments": [],
-      "created_at": "2026-11-27T09:30:59.574Z",
-      "updated_at": "2026-11-27T13:43:59.576Z"
+      "created_at": "2026-11-27T14:02:07.656Z",
+      "updated_at": "2026-11-27T14:02:07.656Z"
     }
   ]
 }

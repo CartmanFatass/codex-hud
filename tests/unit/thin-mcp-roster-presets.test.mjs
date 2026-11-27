@@ -1022,6 +1022,7 @@ test('pi dispatch passes role skills and the worker prompt, and records skips', 
   assert.equal(brokenArgv.includes('--append-system-prompt'), false);
   assert.equal((await f.call('hud_read', { job: broken.job, detail: true })).worker_prompt, null);
   assert.equal(JSON.parse(fs.readFileSync(join(broken.task_dir, 'job.json'), 'utf8')).dispatch_exit_code, 0);
+  await f.waitForWorkerMetadata(broken, t.signal);
 });
 
 test('unregistered skill names are skipped and a CLI role is not given skill flags', { timeout: 15000 }, async (t) => {
