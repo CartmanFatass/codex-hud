@@ -300,11 +300,15 @@ export const isTicketWriteKey = (key: string) => key === OBJECTIVE_WRITE_KEY || 
 export const ticketWriteRelPath = (key: string) => key === OBJECTIVE_WRITE_KEY ? '.hud/objectives.md' : `.hud/tickets/${key}.json`;
 
 export function readTicketWrites(home: string, mainRoot: string): Record<string, string> {
+  const path = ticketWritesPath(home, mainRoot);
   try {
-    const { bytes, truncated } = readFileBounded(ticketWritesPath(home, mainRoot), MAX_WRITE_RECORD_BYTES);
+    const { bytes, truncated } = readFileBounded(path, MAX_WRITE_RECORD_BYTES);
     if (truncated) throw new Error('Ticket write record exceeds 128 KiB');
     const value = JSON.parse(bytes.toString('utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid ticket write record');
+    if (Object.hasOwn(value, '@groups')) {
+      throw new Error(`Legacy @groups in ${path}: commit or revert the listed files by hand, then delete the @groups key`);
+    }
     return Object.fromEntries(Object.entries(value).flatMap(([key, digest]) =>
       isTicketWriteKey(key) && typeof digest === 'string' && /^[0-9a-f]{64}$/.test(digest) ? [[key, digest] as const] : []).slice(-MAX_WRITES));
   } catch (error) {
@@ -394,8 +398,10 @@ export function prepareTicketWrites(mainRoot: string, home: string, files: reado
   for (const key of keys.slice(0, Math.max(0, keys.length - MAX_WRITES))) delete writes[key];
   const receipt = Object.keys(writes).length || fs.existsSync(ticketWritesPath(home, mainRoot)) ? ticketWriteRecord(writes) : undefined;
   return () => {
-    for (const file of paths) writeFileAtomic(join(mainRoot, file.rel), file.bytes, { dotPrefix: true, mode: file.mode });
-    if (receipt !== undefined) saveTicketWrites(home, mainRoot, receipt);
+    const saveReceipt = receipt === undefined ? undefined : () => saveTicketWrites(home, mainRoot, receipt);
+    for (const [i, file] of paths.entries()) writeFileAtomic(join(mainRoot, file.rel), file.bytes, {
+      dotPrefix: true, mode: file.mode, beforeRename: i === 0 ? saveReceipt : undefined,
+    });
   };
 }
 

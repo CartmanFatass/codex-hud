@@ -57,7 +57,7 @@ test('production ticket writes go through the archive planner, not the removed r
   assert.deepEqual(rawPublishers.sort(), ['tickets/archive.ts', 'tickets/store.ts']);
   const groupRefs = fs.readdirSync('src', { recursive: true }).filter(rel => rel.endsWith('.ts') &&
     /@groups/.test(fs.readFileSync(join('src', rel), 'utf8')));
-  assert.deepEqual(groupRefs, [], 'no @groups code may remain in src');
+  assert.deepEqual(groupRefs, ['tickets/store.ts'], 'only the ticket ledger reader may handle legacy @groups');
 });
 
 for (const ownerTry of [false, true]) test(`landing a JSON ticket folds landing record, status and ticks into one commit (owner_try=${ownerTry})`, { timeout: 25_000 }, async t => {
@@ -119,6 +119,67 @@ function nearCap(feature, tickets, slack = 16) {
   tickets[0].what += 'x'.repeat(MAX_TICKET_BYTES - slack - Buffer.byteLength(serializeTicketFeature(doc)));
   return doc;
 }
+
+test('archive and sweep preserve a staged owner edit even when worktree bytes match the HUD receipt', { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  seedArchiveProject(f, [nearCap('sample', [record(1, 'done'), record(2, 'ready-for-agent')])]);
+  const rel = '.hud/tickets/sample.json', path = join(f.main, rel);
+  const head = f.git(f.main, 'rev-parse', 'HEAD');
+  await f.call('hud_tickets', { op: 'update', ticket: 'sample/02', title: 'HUD note' });
+  assert.ok(readTicketWrites(f.home, f.main).sample);
+  const hudBytes = fs.readFileSync(path, 'utf8');
+  fs.writeFileSync(path, hudBytes.replace('HUD note', 'Owner edit'));
+  f.git(f.main, 'add', '--', rel);
+  const ownerBlob = f.git(f.main, 'rev-parse', `:${rel}`);
+  fs.writeFileSync(path, hudBytes);
+  assert.match(f.git(f.main, 'status', '--porcelain', '--', rel), /^MM /);
+
+  const { result } = await f.rpc('tools/call', { name: 'hud_tickets', arguments: {
+    op: 'add', feature: 'sample', tickets: [draft('Overflow slice')],
+  } });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /sample\.json: uncommitted hand edit present/);
+  assert.equal(fs.existsSync(ticketFeaturePath(f.main, 'sample-done')), false);
+  const assertPreserved = () => {
+    assert.equal(f.git(f.main, 'rev-parse', `:${rel}`), ownerBlob);
+    assert.equal(fs.readFileSync(path, 'utf8'), hudBytes);
+    assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), head);
+  };
+  assertPreserved();
+  assert.deepEqual(await f.call('hud_tickets', { op: 'commit' }), { ok: true, committed: false, paths: [], skipped: [rel] });
+  assertPreserved();
+});
+
+test('legacy grouped ledger refuses commit, archive and local land without changing ticket files or HEAD', { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  seedArchiveProject(f, [nearCap('sample', [record(1, 'done'), record(2, 'ready-for-agent')])]);
+  const head = f.git(f.main, 'rev-parse', 'HEAD'), remoteHead = f.git(f.remote, 'rev-parse', 'base');
+  await f.call('hud_tickets', { op: 'update', ticket: 'sample/02', title: 'HUD note' });
+  const path = ticketFeaturePath(f.main, 'sample'), bytes = fs.readFileSync(path);
+  const ledger = ticketWritesPath(f.home, f.main);
+  const legacy = JSON.stringify({ ...readTicketWrites(f.home, f.main), '@groups': [['sample', 'sample-done']] });
+  fs.writeFileSync(ledger, legacy);
+  const assertRecovery = message => {
+    assert.ok(message.includes(ledger), message);
+    assert.match(message, /commit or revert the listed files by hand, then delete the @groups key/);
+  };
+  for (const args of [{ op: 'commit' }, { op: 'add', feature: 'sample', tickets: [draft('Overflow slice')] }]) {
+    const { result } = await f.rpc('tools/call', { name: 'hud_tickets', arguments: args });
+    assert.equal(result.isError, true);
+    assertRecovery(result.content[0].text);
+  }
+
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => ['completed', 'failed'].includes(f.flowState(flow).state), t.signal);
+  const state = f.flowState(flow);
+  assert.equal(state.state, 'failed', JSON.stringify(state));
+  assertRecovery(state.error);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), head);
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), remoteHead);
+  assert.deepEqual(fs.readFileSync(path), bytes);
+  assert.equal(fs.existsSync(ticketFeaturePath(f.main, 'sample-done')), false);
+  assert.equal(fs.readFileSync(ledger, 'utf8'), legacy);
+});
 
 for (const fullArchive of [false, true]) test(`an overflowing repair add archives eligible tickets and commits immediately in one commit (full archive=${fullArchive})`, { timeout: 25_000 }, async t => {
   const f = await checkout(t, ['true'], { after: [] });

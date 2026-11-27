@@ -37,7 +37,8 @@ const headOf = (git: GitRunner) =>
     throw error;
   });
 
-const isUnmerged = (xy: string) => /^(?:[DAU]{2}|U.|.U)$/.test(xy);
+// HUD never stages changes on pending files. Reject a nonblank index column (including ignored paths), except untracked files.
+const hasUnsafeIndexStatus = (xy: string) => xy[0] !== ' ' && xy[0] !== '?';
 const isHiddenInGit = async (git: GitRunner, rel: string) =>
   (await git(['ls-files', '-v', '-z', '--', rel])).split('\0').some(row => /^[a-zS] /.test(row));
 const isIgnoredInGit = (git: GitRunner, rel: string) =>
@@ -50,13 +51,13 @@ async function inspectMainPath(realMain: string, rel: string, expectedSha: strin
   const status = await git(['status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=all', '--', rel]);
   if (!status) return { handEdited: await isHiddenInGit(git, rel), untracked: false };
   const xy = status.slice(0, 2);
-  if (xy === '!!' || isUnmerged(xy) || xy.includes('D') || !expectedSha || ticketWriteSha(realMain, rel) !== expectedSha) {
+  if (hasUnsafeIndexStatus(xy) || xy.includes('D') || !expectedSha || ticketWriteSha(realMain, rel) !== expectedSha) {
     return { handEdited: true, untracked: false };
   }
   return xy === '??' ? { handEdited: false, untracked: true } : { handEdited: await isHiddenInGit(git, rel), untracked: false };
 }
 
-/** True when `rel` has uncommitted/untracked/ignored changes in main that do NOT match HUD's recorded digest. */
+/** True when `rel` is unsafe to write in main, even with a matching HUD digest if the path is staged. */
 export async function isHandEditedInMain(mainRoot: string, rel: string, expectedSha: string | undefined, git: GitRunner): Promise<boolean> {
   return (await inspectMainPath(fs.realpathSync(mainRoot), rel, expectedSha, git)).handEdited;
 }
@@ -75,7 +76,7 @@ async function collectPendingWrites(realMain: string, writes: Readonly<Record<st
     const status = await git(['status', '--porcelain=v1', '-z', '--ignored', '--untracked-files=all', '--', rel]);
     if (!status) { clean.set(key, expectedSha); continue; }
     const xy = status.slice(0, 2);
-    if (xy === '!!' || isUnmerged(xy) || (xy !== '??' && await isHiddenInGit(git, rel))) { skipped.push(rel); continue; }
+    if (hasUnsafeIndexStatus(xy) || (xy !== '??' && await isHiddenInGit(git, rel))) { skipped.push(rel); continue; }
     toCommit.push({ key, rel, digest: expectedSha, untracked: xy === '??' });
   }
   return { clean, toCommit, skipped };
@@ -89,9 +90,9 @@ export async function checkArchiveFiles(
   git: GitRunner,
   handEditError = (rel: string) => new Error(`Cannot archive tickets in ${rel}: uncommitted hand edit present; commit or revert it and retry`),
 ) {
-  const realMain = fs.realpathSync(mainRoot), base = await headOf(git);
+  const realMain = fs.realpathSync(mainRoot), writes = readTicketWrites(home, realMain);
+  const base = await headOf(git);
   if (!base) throw new Error('Cannot archive tickets: repository has no commits yet');
-  const writes = readTicketWrites(home, realMain);
   const snapshots: { full: string; existed: boolean; bytes?: Buffer; mode?: number }[] = [];
   const newPaths: string[] = [], preWriteMatched = new Map<string, string>();
   for (const file of files) {

@@ -91,6 +91,37 @@ test('ticket add, update, get and mixed ready work from a linked checkout with t
   assert.deepEqual(readTicketWrites(f.home, f.main), { sample: sha256(bytes) }, 'no-op edit does not claim a hand edit');
 });
 
+test('an ordinary add reports receipt-save failure without changing the feature or duplicating tickets on retry', async t => {
+  const f = await checkout(t, ['true'], { probe: `
+    import fs from 'node:fs';
+    import { syncBuiltinESMExports } from 'node:module';
+    import { join } from 'node:path';
+    const rename = fs.renameSync;
+    fs.renameSync = (from, to) => {
+      if (to.endsWith('/ticket-writes.json') && fs.existsSync(join(process.env.HOME, 'fail-ticket-receipt'))) {
+        throw new Error('synthetic receipt save failure');
+      }
+      return rename(from, to);
+    };
+    syncBuiltinESMExports();
+  ` });
+  const add = title => ({ op: 'add', feature: 'sample', tickets: [draft(title)] });
+  const { tickets: [first] } = await f.call('hud_tickets', add('First'));
+  const before = fs.readFileSync(first.path);
+  const receipt = readTicketWrites(f.home, f.main);
+  const marker = join(f.env.HOME, 'fail-ticket-receipt');
+  fs.writeFileSync(marker, '');
+  const { result } = await f.rpc('tools/call', { name: 'hud_tickets', arguments: add('Second') });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /synthetic receipt save failure/);
+  assert.deepEqual(fs.readFileSync(first.path), before);
+  assert.deepEqual(readTicketWrites(f.home, f.main), receipt);
+  fs.unlinkSync(marker);
+  const { tickets: [second] } = await f.call('hud_tickets', add('Second'));
+  assert.equal(second.number, 2);
+  assert.deepEqual(JSON.parse(fs.readFileSync(first.path, 'utf8')).tickets.map(t => t.title), ['First', 'Second']);
+});
+
 test('a synced GitHub JSON mirror is visible to the collector, hud board and hud_tickets ready', async t => {
   const f = await checkout(t, ['true']);
   assert.ok((await f.rpc('initialize')).result);
@@ -131,14 +162,30 @@ test('a synced GitHub JSON mirror is visible to the collector, hud board and hud
   assert.equal(fs.existsSync(join(f.main, '.hud/tickets/local.json')), false);
 });
 
-test('an add returns its JSON ticket number while the land gate is still running', { timeout: 20_000 }, async t => {
+test('an add and an update after a sweep prunes the digest succeed while land holds main-checkout', { timeout: 20_000 }, async t => {
   const release = 'release-gate';
   const f = await checkout(t, [`while test ! -f "$HOME/${release}"; do sleep .05; done`], { after: [] });
+  const { tickets: [existing] } = await f.call('hud_tickets', { op: 'add', feature: 'swept', tickets: [draft('Existing ticket')] });
+  assert.ok(readTicketWrites(f.home, f.main).swept);
+  assert.equal((await f.call('hud_tickets', { op: 'commit' })).committed, true);
+  assert.equal(readTicketWrites(f.home, f.main).swept, undefined);
+  const head = f.git(f.main, 'rev-parse', 'HEAD');
   const { flow } = await f.call('hud_land', { job });
   await until(() => f.flowState(flow).step.startsWith('gate[1]'), t.signal);
   try {
+    const probe = { cwd: f.main, home: f.home, holder: 'synthetic-contender' };
+    const lease = await takeLease({ name: 'main-checkout', wait_s: 0 }, probe);
+    if (lease.granted) await takeLease({ name: 'main-checkout', release: true }, probe);
+    assert.equal(lease.granted, false, 'land must be holding the lease during the gate');
+
     const add = await fast(() => f.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft('Gate-time ticket')] }));
     assert.deepEqual(add.tickets, [{ number: 1, path: join(f.main, '.hud/tickets/sample.json') }]);
+    const updated = await fast(() => f.call('hud_tickets', { op: 'update', ticket: 'swept/01', status: 'done' }));
+    assert.deepEqual(updated, { ok: true, number: 1, path: existing.path });
+    const bytes = fs.readFileSync(existing.path, 'utf8');
+    assert.equal(JSON.parse(bytes).tickets[0].status, 'done');
+    assert.equal(readTicketWrites(f.home, f.main).swept, sha256(bytes));
+    assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), head);
     assert.ok(f.flowState(flow).step.startsWith('gate[1]'));
     assert.deepEqual(fs.readdirSync(join(f.home, 'flows')).filter(name => /^te/.test(name)), []);
   } finally {
