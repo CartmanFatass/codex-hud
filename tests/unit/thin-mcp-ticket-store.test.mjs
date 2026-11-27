@@ -420,7 +420,7 @@ test('hud_tickets add/update/comment and land-written ticket comments normalize 
   assert.equal(acceptedJson.accepted?.verdict, `finish: verified ~/.hud/jobs/x/report.md and ${outsidePath}`);
 });
 
-test('hud_tickets single-form update accepts numeric, numeric-string and feature/NN targets for Markdown and JSON and matches updates[]', { timeout: 25_000 }, async t => {
+test('hud_tickets single-form update accepts numeric, numeric-string and feature/NN targets for JSON, matches updates[] and refuses unmigrated Markdown', { timeout: 25_000 }, async t => {
   const f = await checkout(t, ['true']);
   const call = (op, args) => f.call('hud_tickets', { op, cwd: f.main, ...args });
   const rpcErr = async (op, args) => {
@@ -496,21 +496,16 @@ test('hud_tickets single-form update accepts numeric, numeric-string and feature
   const jsonRefPath = seedJsonFeature('json-ref');
   f.git(f.main, 'commit', '-qm', 'Seed synthetic JSON features');
 
-  // 1. Single form with feature + numeric ticket + status + tick succeeds for Markdown and JSON.
-  const mdSingleRes = await call('update', { feature: 'md-single', ticket: 31, status: 'done', tick: [1, 2, 3, 4] });
-  assert.deepEqual(mdSingleRes, { ok: true, number: 31, path: mdSinglePath });
+  // 1. Single form with feature + numeric ticket + status + tick succeeds for JSON; unmigrated Markdown is refused.
+  const legacy = /still uses legacy Markdown tickets; run "hud tickets migrate" first/;
+  const mdSingleBytes = fs.readFileSync(mdSinglePath, 'utf8');
+  assert.match((await rpcErr('update', { feature: 'md-single', ticket: 31, status: 'done', tick: [1, 2, 3, 4] })).error, legacy);
   const jsonSingleRes = await call('update', { feature: 'json-single', ticket: 31, status: 'done', tick: [1, 2, 3, 4] });
   assert.deepEqual(jsonSingleRes, { ok: true, number: 31, path: jsonSinglePath });
 
-  // 2. Single form with numeric string ("31") and feature/NN ref (".../31") also succeed for Markdown and JSON.
-  assert.deepEqual(
-    await call('update', { feature: 'md-str', ticket: '31', status: 'done', tick: [1, 2, 3, 4] }),
-    { ok: true, number: 31, path: mdStringPath },
-  );
-  assert.deepEqual(
-    await call('update', { ticket: 'md-ref/31', status: 'done', tick: [1, 2, 3, 4] }),
-    { ok: true, number: 31, path: mdRefPath },
-  );
+  // 2. Numeric string ("31") and feature/NN ref (".../31") resolve the same way: JSON succeeds, Markdown is refused.
+  assert.match((await rpcErr('update', { feature: 'md-str', ticket: '31', status: 'done', tick: [1, 2, 3, 4] })).error, legacy);
+  assert.match((await rpcErr('update', { ticket: 'md-ref/31', status: 'done', tick: [1, 2, 3, 4] })).error, legacy);
   assert.deepEqual(
     await call('update', { feature: 'json-str', ticket: '31', status: 'done', tick: [1, 2, 3, 4] }),
     { ok: true, number: 31, path: jsonStringPath },
@@ -521,18 +516,14 @@ test('hud_tickets single-form update accepts numeric, numeric-string and feature
   );
   assert.equal((await call('get', { feature: 'json-str', ticket: '31' })).ticket.status, 'done');
 
-  // 3. Same edit through updates[] produces identical files for both Markdown and JSON.
+  // 3. Same edit through updates[] produces identical JSON files; a Markdown item is refused per item.
   const mdBatchRes = await call('update', { updates: [{ feature: 'md-batch', ticket: 31, status: 'done', tick: [1, 2, 3, 4] }] });
-  assert.deepEqual(mdBatchRes, { updates: [{ feature: 'md-batch', ok: true, number: 31, path: mdBatchPath }] });
+  assert.equal(mdBatchRes.updates.length, 1);
+  assert.match(mdBatchRes.updates[0].error, legacy);
   const jsonBatchRes = await call('update', { updates: [{ feature: 'json-batch', ticket: 31, status: 'done', tick: [1, 2, 3, 4] }] });
   assert.deepEqual(jsonBatchRes, { updates: [{ feature: 'json-batch', ok: true, number: 31, path: jsonBatchPath }] });
 
-  const mdSingleBytes = fs.readFileSync(mdSinglePath, 'utf8');
-  assert.match(mdSingleBytes, /\*\*Status:\*\* done/);
-  assert.equal((mdSingleBytes.match(/^- \[x\] /gm) ?? []).length, 4);
-  assert.equal(mdSingleBytes, fs.readFileSync(mdBatchPath, 'utf8'), 'Markdown single form and updates[] must produce byte-identical files');
-  assert.equal(mdSingleBytes, fs.readFileSync(mdStringPath, 'utf8'));
-  assert.equal(mdSingleBytes, fs.readFileSync(mdRefPath, 'utf8'));
+  for (const path of [mdSinglePath, mdBatchPath, mdStringPath, mdRefPath]) assert.equal(fs.readFileSync(path, 'utf8'), mdSingleBytes, 'refused Markdown edits leave the file untouched');
 
   const normalizeJsonBytes = (bytes, slug) => bytes
     .replace(`"feature": "${slug}"`, '"feature": "<slug>"')
