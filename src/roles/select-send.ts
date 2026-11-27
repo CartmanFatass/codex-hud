@@ -29,7 +29,6 @@ import { sharedRoot } from './projects.js';
 
 export const SELECT_SEND_PLUGIN_ID = 'hud.select-send';
 export const SELECT_SEND_ACTION_ID = 'send';
-export const SELECT_SEND_INVESTIGATE_ACTION_ID = 'investigate';
 export const SELECT_SEND_COMPOSER_ENTRYPOINT = 'composer';
 export const DEFAULT_INVESTIGATE_LINE = 'Investigate this';
 export const MAX_EXCERPT_CHARS = 8000;

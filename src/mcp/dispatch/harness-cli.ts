@@ -141,7 +141,12 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     if (job.cli && startup.warning) job.cli.mcp_scope_warning = startup.warning;
     if (job.headless) {
       const turn = writeTurn(dir, { restarted: !!resume, callerToken });
-      const prompt = withDonePrompt(resume?.message ?? (advisor ? task : startup.prompt), bundled, dir, turn, place.agent!);
+      const text = resume?.message ?? (advisor ? task : startup.prompt);
+      // Claude still parses @file with tools disabled, and its mention-disable
+      // switch adds a reminder. U+FEFF is invisible whitespace: @ has no operand,
+      // including in the quoted form.
+      const literal = advisor && place.agent === 'claude' ? text.replaceAll('@', '@\uFEFF') : text;
+      const prompt = withDonePrompt(literal, bundled, dir, turn, place.agent!);
       const initialId = !resume && place.agent === 'claude' ? randomUUID() : undefined;
       startHeadlessProcess(dir, job, [...nativeArgs, ...kind.headless!(prompt, resume?.id, initialId)], { id: resume?.id, initialId });
       return { exit_code: 0, stdout: '', stderr: '' };
