@@ -12,8 +12,8 @@ import type { Job } from '../mcp/job-contracts.js';
 
 export const isComposedId = (id: unknown): id is `w${string}` => typeof id === 'string' && /^w[a-f0-9]{16}$/.test(id);
 export const SONIC_INPUT_UNKNOWN = 'Earlier Sonic input bytes could not be accounted for; re-plan';
-/** v1 was unversioned bare-task/prefix accounting; v2 counts the assembled brief, standing brief, declared results and checkout files. */
-export const SONIC_LEDGER_VERSION = 2;
+/** Earlier ledgers did not size the actual launch checkout and could miss paths outside cwd. */
+export const SONIC_LEDGER_VERSION = 3;
 export const workflowGrants = runGrantStore('workflow-grant');
 export type CheckResult = { exit_code: number | null; tail: string; error?: string };
 export type Item = { job?: string; state: 'waiting' | 'running' | 'done' | 'failed'; attempt: number; reason?: string; stall?: string };

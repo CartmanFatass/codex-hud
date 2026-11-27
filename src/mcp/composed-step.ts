@@ -14,9 +14,8 @@ import { failuresByReason, settleBatchItem } from '../workflows/policy.js';
 import { directRecipient } from '../workflows/scope.js';
 import { runDir, runLock, saveHeader } from '../workflows/store.js';
 import { wakeWorkflow } from '../workflows/wake.js';
-import { inputBytes, inputBytesAtHead } from './batch.js';
 import { batchJobOutcome } from './batch-step.js';
-import { assembleDispatchedBrief, type Args } from './dispatch/context.js';
+import { measureInput, measureSonicInput, type Args, type DispatchInput } from './dispatch/context.js';
 import { batchHasRoom, dispatchJob, dispatchLandRepair, releaseLandTurn, workflowSonicHasRoom } from './dispatch/orchestrator.js';
 import type { Job } from './job-contracts.js';
 import { startLand } from './land.js';
@@ -24,12 +23,12 @@ import { repairBaseline, repairSettled } from './land-repair.js';
 import { activeLand, landAttempt, readLand } from './land-state.js';
 import { jobFiles } from './paths.js';
 import { directory, findJob, hudHome, jobs, readRow } from './store/job-store.js';
-import { closeLeadJob, DEFAULT_ESCALATION_RULE, parseLeadReport, WORKFLOW_WORKER_RULE, WORKFLOW_WORKER_RULE_NO_ASK } from './workflow-lead.js';
+import { closeLeadJob, DEFAULT_ESCALATION_RULE, parseLeadReport, workflowTask } from './workflow-lead.js';
 
 const fail = (reason: string): Tick => ({ state: 'failed', reason });
 const wait = (recheckMs?: number): Tick => ({ state: 'running', changed: false, recheckMs });
 const reason = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 300);
-const receipt = (run: ComposedRun, key: string) => jobs().find(job => job.workflow === run.flow && job.request_key === key);
+const receipt = (run: ComposedRun, key: string) => jobs().find(job => job.workflow === run.flow && job.request_key === key && job.dispatch_code !== 'workflow_input_changed');
 const pane = (run: ComposedRun) => directRecipient(run) ? run.pane || undefined : undefined;
 const working = (run: ComposedRun) => readComposed(hudHome, run.flow)?.state === 'working';
 const indexPath = (run: ComposedRun, step: string) => join(runDir(hudHome, run.flow), `${step}.index.json`);
@@ -68,60 +67,66 @@ function verifySonicLedger(run: ComposedRun, steps: Graph['steps']) {
   return false;
 }
 
-function measureSonicInput(
-  run: ComposedRun,
-  step: Extract<Step, { kind: 'job' | 'batch' }>,
-  brief: WorkflowBrief,
-  project: { root: string; registered: boolean },
-): { ok: true; bytes: number } | { ok: false; reason: string } {
-  const assembled = assembleDispatchedBrief(brief.args, project, 'pi');
-  if ('ok' in assembled) return { ok: false, reason: `Sonic input size could not be established (${assembled.error}); re-plan or fix inputs` };
-  const results = [...brief.paths, ...assembled.files];
-  if (step.kind === 'job' && step.isolation === 'worktree') {
-    const measured = inputBytesAtHead(run.cwd, assembled.brief, results);
-    if (!measured.ok) return { ok: false, reason: `${measured.error}; re-plan or fix inputs` };
-    return { ok: true, bytes: measured.input_bytes };
+async function pendingSonicBytes(run: ComposedRun, steps: Graph['steps'], project: ReturnType<typeof registeredProject>) {
+  const ruledOut = new Set<string>();
+  let pending = 0;
+  // The graph is topologically ordered. Do not speculate about unanswered decisions.
+  for (const [id, step] of Object.entries(steps)) {
+    const c = run.steps[id], answer = step.when && run.steps[step.when.step].answer;
+    if (c.state === 'skipped' || (answer !== undefined && answer !== step.when!.is) ||
+        step.needs.some(need => ruledOut.has(need) && !steps[need].optional)) {
+      ruledOut.add(id);
+      continue;
+    }
+    if ((step.kind !== 'job' && step.kind !== 'batch') || step.role !== 'sonic' || !['waiting', 'ready', 'running'].includes(c.state)) continue;
+    const measure = (task: string, cwd: string) => {
+      const { args, paths } = workflowBrief(run, task, step.from, step.ask === true);
+      return measureSonicInput(args, cwd, project, run.project_root ?? project.root, paths);
+    };
+    if (step.kind === 'job') {
+      if (!c.admitted) pending += await measure(step.task!, step.isolation === 'worktree' ? project.root : run.cwd);
+    } else for (const [i, item] of step.items!.entries()) {
+      if (!c.items || c.items[i].state === 'waiting') pending += await measure(item.task!, run.cwd);
+    }
   }
-  return { ok: true, bytes: inputBytes(run.cwd, assembled.brief, undefined, [], results).input_bytes };
+  return pending;
 }
 
-function admitSonicInput(run: ComposedRun, key: string, steps: Graph['steps'], brief: WorkflowBrief, index?: number): number | Tick {
-  if (run.cost !== 'cheap') return 0;
-  const project = registeredProject(hudHome, run.cwd);
-  let admitted = 0, pending = 0;
-  let error: string | undefined;
-  const charge = (id: string, step: Extract<Step, { kind: 'job' | 'batch' }>, task: string, i?: number) => {
-    if (error) return;
-    const current = id === key && i === index;
-    const target = current ? brief : workflowBrief(run, task, step.from, step.ask === true);
-    const measured = measureSonicInput(run, step, target, project);
-    if (!measured.ok) { error = measured.reason; return; }
-    if (current) admitted = measured.bytes;
-    pending += measured.bytes;
+function sonicAdmission(run: ComposedRun, key: string, role: string, steps: Graph['steps'], index?: number) {
+  if (role !== 'sonic' || run.cost !== 'cheap') return;
+  let charged = 0;
+  return {
+    async beforeInput(input: DispatchInput, cwd: string) {
+      return await runLock(hudHome, run.flow, async () => {
+        const latest = readComposed(hudHome, run.flow)!;
+        let why = 'Workflow is no longer accepting input';
+        if (latest.state === 'working') {
+          const project = registeredProject(hudHome, run.cwd);
+          try {
+            const pending = await pendingSonicBytes(latest, steps, project);
+            const bytes = measureInput(input, cwd, [cwd, project.root, run.project_root ?? project.root]).input_bytes;
+            const total = latest.sonic_input_bytes! + pending + bytes;
+            if (total <= SONIC_BYTES_LIMIT) {
+              latest.sonic_input_bytes! += bytes;
+              saveHeader(hudHome, latest);
+              charged = bytes;
+              return;
+            }
+            why = `${total} Sonic input bytes across the run (limit ${SONIC_BYTES_LIMIT}); re-plan or reduce inputs`;
+          } catch (error) { why = `Sonic input size could not be established (${reason(error)}); re-plan or fix inputs`; }
+          pauseComposed(latest, key, why);
+        }
+        // A guard refusal leaves no admitted cursor, only a local dispatch receipt.
+        const cursor = latest.steps[key];
+        if (index === undefined) delete cursor.admitted;
+        else cursor.items![index].state = 'waiting';
+        saveHeader(hudHome, latest);
+        return why;
+      });
+    },
+    // Refund only a witnessed pre-input refusal, never an interrupted launch.
+    refund(latest: ComposedRun) { if (charged) latest.sonic_input_bytes! -= charged; },
   };
-  // Do not give back bytes when a previously dispatched file shrinks, or
-  // forget earlier attempts when retry_failed resets a cursor.
-  for (const [id, step] of Object.entries(steps)) {
-    if ((step.kind !== 'job' && step.kind !== 'batch') || step.role !== 'sonic') continue;
-    const c = run.steps[id];
-    if (!['waiting', 'ready', 'running'].includes(c.state)) continue;
-    if (step.kind === 'job') {
-      if (!c.admitted) charge(id, step, step.task!);
-    } else step.items!.forEach((item, i) => {
-      if (!c.items || c.items[i].state === 'waiting') charge(id, step, item.task!, i);
-    });
-  }
-  if (error) {
-    pauseComposed(run, key, error);
-    return { ...wait(), changed: true };
-  }
-  const used = run.sonic_input_bytes!, total = used + pending;
-  if (total > SONIC_BYTES_LIMIT) {
-    pauseComposed(run, key, `${total} Sonic input bytes across the run (limit ${SONIC_BYTES_LIMIT}); re-plan or reduce inputs`);
-    return { ...wait(), changed: true };
-  }
-  run.sonic_input_bytes = used + admitted;
-  return admitted;
 }
 
 /** A job output means a settled report, not a successful launch. */
@@ -152,20 +157,21 @@ function references(run: ComposedRun, from: string[]) {
 }
 
 function workflowBrief(run: ComposedRun, task: string, from: string[], workerAsk?: boolean) {
-  if (workerAsk !== undefined) task += `\n\n${workerAsk ? WORKFLOW_WORKER_RULE : WORKFLOW_WORKER_RULE_NO_ASK}`;
+  if (workerAsk !== undefined) task = workflowTask(task, workerAsk);
   const { ids, paths } = references(run, from);
   if (paths.length) task += `\n\nWorkflow results: ${paths.join(', ')}`;
   return { args: { task, from_jobs: ids }, paths };
 }
 type WorkflowBrief = ReturnType<typeof workflowBrief>;
 type DispatchOptions = { isolation?: string; member?: true; preset?: string; members?: string[]; synthesizer?: string; ask?: boolean };
-async function create(run: ComposedRun, request: string, role: string, { args: brief }: WorkflowBrief, options: DispatchOptions = {}) {
+async function create(run: ComposedRun, request: string, role: string, { args: brief, paths }: WorkflowBrief, options: DispatchOptions = {},
+  beforeInput?: NonNullable<ReturnType<typeof sonicAdmission>>['beforeInput']) {
   const args: Args = { role, cwd: run.cwd, request_key: request, task: brief.task,
     ...(brief.from_jobs.length && { from_jobs: brief.from_jobs }), ...(role !== 'council' ? { isolation: options.isolation ?? 'none', prewalk: false }
       : { members: options.members, synthesizer: options.synthesizer }) };
   const canAdmit = () => working(run);
   const result = await dispatchJob(args, pane(run), { dispatcher: run.dispatcher, workspace: run.workspace,
-    workflow: { id: run.flow, cheap: run.cost === 'cheap', grant: run.grant, canAdmit, preset: options.preset },
+    workflow: { id: run.flow, cheap: run.cost === 'cheap', grant: run.grant, canAdmit, preset: options.preset, resultFiles: paths, beforeInput },
     ...(options.member && { member: { flow: run.flow, canAdmit } }) });
   const job = 'job' in result && typeof result.job === 'string' ? result.job : undefined;
   const code = 'code' in result && typeof result.code === 'string' ? result.code : undefined;
@@ -190,21 +196,16 @@ function tickJob(run: ComposedRun, key: string, cursor: ComposedCursor, role: st
   if (run.state !== 'working') return wait();
   if (role === 'sonic' && run.cost === 'cheap' && !workflowSonicHasRoom()) return wait(1_000);
   const brief = workflowBrief(run, task, from, steps[key].kind === 'job' ? options.ask === true : undefined);
-  const bytes = role === 'sonic' ? admitSonicInput(run, key, steps, brief) : 0;
-  if (typeof bytes !== 'number') return bytes;
+  const admission = sonicAdmission(run, key, role, steps);
   cursor.admitted = true;
   return effect(run, async () => {
     let result: Awaited<ReturnType<typeof create>>;
-    try { result = await create(run, request, role, brief, options); }
+    try { result = await create(run, request, role, brief, options, admission?.beforeInput); }
     catch (error) { result = { job: undefined, code: undefined, error: reason(error), noLaunch: false }; }
-    await update(run, key, (c, latest) => {
-      if (result.code === 'queue_stopped' || result.code === 'role_busy') {
-        delete c.admitted;
-        if (bytes) latest.sonic_input_bytes! -= bytes;
-      } else {
-        c.job = result.job; c.reason = result.error;
-        if (bytes && result.noLaunch) latest.sonic_input_bytes! -= bytes;
-      }
+    if (result.code !== 'workflow_input_changed') await update(run, key, (c, latest) => {
+      if (result.code === 'queue_stopped' || result.code === 'role_busy') delete c.admitted;
+      else { c.job = result.job; c.reason = result.error; }
+      if (result.noLaunch) admission?.refund(latest);
     });
     return result.code === 'role_busy' ? 1_000 : 0;
   });
@@ -244,29 +245,30 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
     if (!items.some(item => item.state === 'failed')) return { state: 'done' };
     cursor.failure_groups ??= failuresByReason(evidence());
     const why = 'batch items failed; see step index';
-    if (!step.optional && run.state === 'working') pause(why);
+    if (!step.optional) {
+      // Keep the drained failure pending if another decision owns the pause.
+      if (run.state === 'paused' && run.handback?.step !== key) return { ...wait(), changed };
+      if (run.state === 'working') pause(why);
+    }
     return { ...fail(why), itemsSettled: true };
   }
   if (run.state !== 'working') return { ...wait(running ? 1_000 : undefined), changed };
   // While a pilot is pending, no other item may be admitted.
   if (items[0].state === 'running' || next < 0 || running >= step.max_parallel! || !batchHasRoom(step.role)) return { ...wait(1_000), changed };
   const brief = workflowBrief(run, step.items![next].task!, step.from, step.ask === true);
-  const bytes = step.role === 'sonic' ? admitSonicInput(run, key, graph.steps, brief, next) : 0;
-  if (typeof bytes !== 'number') return bytes;
+  const admission = sonicAdmission(run, key, step.role, graph.steps, next);
   items[next].state = 'running';
   return effect(run, async () => {
     let result: Awaited<ReturnType<typeof create>>;
-    try { result = await create(run, request(next), step.role, brief, { member: true, isolation: ['imp', 'frontend-imp'].includes(step.role) ? 'worktree' : 'none' }); }
-    catch (error) { result = { job: undefined, code: undefined, error: reason(error), noLaunch: false }; }
-    await update(run, key, (c, latest) => {
+    try {
+      result = await create(run, request(next), step.role, brief,
+        { member: true, isolation: ['imp', 'frontend-imp'].includes(step.role) ? 'worktree' : 'none' }, admission?.beforeInput);
+    } catch (error) { result = { job: undefined, code: undefined, error: reason(error), noLaunch: false }; }
+    if (result.code !== 'workflow_input_changed') await update(run, key, (c, latest) => {
       const item = c.items![next];
-      if (result.code === 'batch_wait' || result.code === 'queue_stopped') {
-        item.state = 'waiting';
-        if (bytes) latest.sonic_input_bytes! -= bytes;
-      } else {
-        item.job = result.job; item.reason = result.error;
-        if (bytes && result.noLaunch) latest.sonic_input_bytes! -= bytes;
-      }
+      if (result.code === 'batch_wait' || result.code === 'queue_stopped') item.state = 'waiting';
+      else { item.job = result.job; item.reason = result.error; }
+      if (result.noLaunch) admission?.refund(latest);
     });
     return result.code === 'batch_wait' ? 1_000 : 0;
   });

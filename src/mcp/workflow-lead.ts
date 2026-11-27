@@ -25,6 +25,7 @@ const workerRuleReport = 'Use `Blockers:` only for an owner decision needed befo
 
 export const WORKFLOW_WORKER_RULE = `${workerRuleStart} ask with \`hud_ask\` only when no reasonable default is safe. ${workerRuleReport}`;
 export const WORKFLOW_WORKER_RULE_NO_ASK = `${workerRuleStart} do not call \`hud_ask\`. ${workerRuleReport}`;
+export const workflowTask = (task: string, ask: boolean) => `${task}\n\n${ask ? WORKFLOW_WORKER_RULE : WORKFLOW_WORKER_RULE_NO_ASK}`;
 
 export const MAX_ANSWER_RETRIES = 3;
 const MAX_RUN_TODOS = 200;

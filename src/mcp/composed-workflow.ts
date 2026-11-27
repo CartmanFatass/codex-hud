@@ -8,16 +8,16 @@ import { procStat } from '../utils/proc.js';
 import { composedActive, hashComposedGraph, isComposedId, proposalFresh, readComposed, readComposedGraph, validPlanHash, workflowGrants,
   type ComposedGraph, type ComposedRun, type Scale } from '../workflows/composed-state.js';
 import { controlRun, type Control } from '../workflows/engine.js';
-import { checkArgv, loadGraph } from '../workflows/graph.js';
+import { checkArgv, loadGraph, SONIC_BYTES_LIMIT } from '../workflows/graph.js';
 import { runVisible } from '../workflows/scope.js';
 import { freezeGraph, runLock, saveHeader } from '../workflows/store.js';
 import { wakeWorkflow } from '../workflows/wake.js';
-import { inputBytes } from './batch.js';
-import { jobCwd, required, type Args } from './dispatch/context.js';
+import { jobCwd, measureInput, measureSonicInput, required, type Args } from './dispatch/context.js';
 import { registry } from './dispatch/places.js';
 import { prepareCouncil } from './dispatch/council.js';
 import { workspaceFromPaneId } from './dispatch/proc.js';
 import type { Job } from './job-contracts.js';
+import { workflowTask } from './workflow-lead.js';
 
 const reserved = new Set(['batch', 'prewalk', 'land', 'council', 'ticket-queue']);
 const MAX_PLAN_BYTES = 8 * 1024 ** 2;
@@ -43,7 +43,7 @@ function templateText(home: string, root: string, name: string): string {
   return invalid(`template not found: ${name}`);
 }
 
-function plan(home: string, args: Args, cwd: string, root: string): ComposedGraph {
+async function plan(home: string, args: Args, cwd: string, root: string): Promise<ComposedGraph> {
   if ((args.graph === undefined) === (args.template === undefined)) invalid('provide graph or template');
   if (typeof args.graph === 'string' && Buffer.byteLength(args.graph) > MAX_PLAN_BYTES) invalid('graph too large');
   const source = args.template === undefined ? args.graph : templateText(home, root, required(args, 'template'));
@@ -62,9 +62,12 @@ function plan(home: string, args: Args, cwd: string, root: string): ComposedGrap
     files.set(name, text);
     return text;
   };
-  const bytes = (item: Brief) => inputBytes(cwd, task(item), item.brief_file, []).input_bytes;
+  const project = found.project();
+  const bytes = async (item: Brief, role: string, ask?: boolean, isolation?: string) => role === 'sonic'
+    ? measureSonicInput({ task: workflowTask(task(item), ask === true) }, isolation === 'worktree' ? project.root : cwd, project, root)
+    : measureInput({ brief: task(item), files: [] }, cwd, [project.root], item.brief_file).input_bytes;
   const graph = loadGraph(source, args.template === undefined ? 'json' : 'toml', { roles, caps, composed: true,
-    bindings: args.params as Args | undefined, inputBytes: bytes });
+    bindings: args.params as Args | undefined });
   if (reserved.has(graph.name)) invalid('shipped workflow names are reserved');
   const scale: Scale = {};
   for (const [key, step] of Object.entries(graph.steps)) {
@@ -78,13 +81,15 @@ function plan(home: string, args: Args, cwd: string, root: string): ComposedGrap
         step.synthesizer = council.synthesizer === 'main' ? 'main' : council.synthesizer.preset;
         count = step.members.length + Number(step.synthesizer !== 'main');
       }
-      scale[key] = { role, count, input_bytes: bytes(step) };
+      scale[key] = { role, count, input_bytes: await bytes(step, role, step.kind === 'job' && step.ask, step.kind === 'job' ? step.isolation : undefined) };
       step.task = task(step); delete step.brief_file;
     } else if (step.kind === 'batch') {
       const items = step.items!;
       const cap = caps[step.role];
       step.max_parallel = Math.min(items.length, step.max_parallel ?? (cap ? cap - 2 : items.length));
-      scale[key] = { role: step.role, count: items.length, input_bytes: items.reduce((sum, i) => sum + bytes(i), 0), max_parallel: step.max_parallel };
+      let input_bytes = 0;
+      for (const item of items) input_bytes += await bytes(item, step.role, step.ask);
+      scale[key] = { role: step.role, count: items.length, input_bytes, max_parallel: step.max_parallel };
       step.items = items.map(item => ({ task: task(item) }));
     } else if (step.kind === 'check' && step.use) {
       if (!registeredProject(home, root).registered) invalid('named check requires a registered project');
@@ -92,6 +97,11 @@ function plan(home: string, args: Args, cwd: string, root: string): ComposedGrap
       if (!config.commands || !Object.hasOwn(config.commands, step.use)) invalid(`unknown check command ${step.use}`);
       step.run = checkArgv(config.commands[step.use]);
     } else if (step.kind === 'handback' && step.to !== 'main') scale[key] = { role: 'lead', count: 1, input_bytes: 0 };
+  }
+  const sonicBytes = Object.values(scale).reduce((n, s) => n + (s.role === 'sonic' ? s.input_bytes : 0), 0);
+  if (sonicBytes > SONIC_BYTES_LIMIT) {
+    graph.cost = 'costly';
+    graph.cost_reasons.push(`${sonicBytes} Sonic input bytes across the run`);
   }
   const frozen = { ...graph, scale };
   if (Buffer.byteLength(JSON.stringify(frozen)) > MAX_PLAN_BYTES) invalid('frozen graph too large');
@@ -108,7 +118,7 @@ export async function callWorkflow(home: string, pane: string | null, args: Args
   if (typeof args.op !== 'string' || !Object.hasOwn(allowed, args.op) || Object.keys(args).some(k => k !== 'op' && !allowed[args.op as string].includes(k)))
     throw Error('invalid_arguments: workflow operation or arguments');
   if (args.op === 'plan') {
-    const cwd = fs.realpathSync(jobCwd(args)), root = sharedRoot(cwd), graph = plan(home, args, cwd, root);
+    const cwd = fs.realpathSync(jobCwd(args)), root = sharedRoot(cwd), graph = await plan(home, args, cwd, root);
     const flow = `w${randomBytes(8).toString('hex')}`, origin = procStat(process.pid);
     const run: ComposedRun = { flow, pane: pane ?? '', cwd, project_root: root, ...(origin && { origin_mcp: { pid: process.pid, start: origin.start } }), dispatcher,
       workspace: workspaceFromPaneId(pane),

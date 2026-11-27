@@ -74,11 +74,8 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
   if (!entries.length || entries.length > 32) invalid('expected 1–32 steps');
   const steps: Record<string, Step> = Object.create(null);
   const reasons: string[] = [];
-  const aggregate = new Map<string, { count: number; bytes: number }>();
-  const add = (role: string, count: number, bytes = 0) => {
-    const prev = aggregate.get(role) ?? { count: 0, bytes: 0 };
-    aggregate.set(role, { count: prev.count + count, bytes: prev.bytes + bytes });
-  };
+  const aggregate = new Map<string, number>();
+  const add = (role: string, count: number) => aggregate.set(role, (aggregate.get(role) ?? 0) + count);
   for (const [id, value] of entries) {
     if (!identifier.test(id) || Object.hasOwn(Object.prototype, id)) invalid(`bad step id ${id}`);
     const rawStep = object(value), kind = text(rawStep.kind);
@@ -107,7 +104,7 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
         const isolation = row.isolation;
         if (isolation !== undefined && isolation !== 'none' && isolation !== 'worktree') return invalid('job isolation');
         work = { kind, role, ...brief(row), isolation, ...(ask !== undefined && { ask }) };
-        if (inputs.composed) add(role, 1, role === 'sonic' ? inputs.inputBytes?.(work) ?? (work.task ? Buffer.byteLength(work.task) : invalid('unresolved file input')) : 0);
+        if (inputs.composed) add(role, 1);
       } else {
         const max = row.max_parallel;
         if (max !== undefined && (typeof max !== 'number' || !Number.isSafeInteger(max) || max < 1)) invalid('max_parallel');
@@ -142,12 +139,13 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
             if (!Array.isArray(row.items) || !row.items.length || row.items.length > 512) return invalid('expected 1–512 items');
             batch.items = row.items.map(v => { const item = object(v); keys(item, ['task','brief_file']); return brief(item); });
             count = batch.items.length;
-            bytes = batch.items.reduce((n, i) => n + (inputs.inputBytes?.(i) ?? (i.task ? Buffer.byteLength(i.task) : invalid('unresolved file input'))), 0);
+            // Composed plans size the assembled dispatch inputs after graph validation.
+            bytes = inputs.composed ? 0 : batch.items.reduce((n, i) => n + (inputs.inputBytes?.(i) ?? (i.task ? Buffer.byteLength(i.task) : invalid('unresolved file input'))), 0);
           }
           if (!Number.isInteger(count) || count < 1 || count > 512 || !Number.isSafeInteger(bytes) || bytes < 0) invalid('fan-out limits');
         }
         work = batch;
-        if (inputs.composed) add(role, count, bytes);
+        if (inputs.composed) add(role, count);
         else {
           if (count > fanoutLimit(role)) reasons.push(`${id}: ${count} ${role} items`);
           if (role === 'sonic' && bytes > SONIC_BYTES_LIMIT) reasons.push(`${id}: ${bytes} Sonic input bytes`);
@@ -214,10 +212,9 @@ export function loadGraph(source: unknown, format: 'toml' | 'json', inputs: Inpu
       if (!all.has(step.when.step) || parent?.kind !== 'handback' || !parent.options.includes(step.when.is)) invalid(`invalid branch at ${id}`);
     }
   }
-  const sonic = aggregate.get('sonic');
-  if (sonic && sonic.count > fanoutLimit('sonic')) reasons.push(`${sonic.count} sonic items across the run`);
-  if (sonic && sonic.bytes > SONIC_BYTES_LIMIT) reasons.push(`${sonic.bytes} Sonic input bytes across the run`);
-  const other = [...aggregate].reduce((total, [role, { count }]) => total + (role === 'sonic' ? 0 : count), 0);
+  const sonic = aggregate.get('sonic') ?? 0;
+  if (sonic > fanoutLimit('sonic')) reasons.push(`${sonic} sonic items across the run`);
+  const other = [...aggregate].reduce((total, [role, count]) => total + (role === 'sonic' ? 0 : count), 0);
   if (other > fanoutLimit('ordinary')) reasons.push(`${other} non-Sonic items across the run`);
   // DFS insertion order is topological; independent ties retain declaration order.
   return { version: 1, name, policy: { breaker }, steps: Object.fromEntries([...ancestors.keys()].map(id => [id, steps[id]])), cost: reasons.length ? 'costly' : 'cheap', cost_reasons: reasons };

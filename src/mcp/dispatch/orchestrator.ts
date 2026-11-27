@@ -70,7 +70,7 @@ import {
 import { keyLock } from '../store/key-lock.js';
 import { readTicketQueue } from '../ticket-queue-state.js';
 import { DEFAULT_RESUME_S, resumeDeadline, resumeIdentity, closedReport, type NativeResume } from '../worker-resume.js';
-import { jobCwd, required, readBriefFile, assembleContext, formatBriefText, type Args } from './context.js';
+import { jobCwd, required, readBriefFile, assembleContext, formatBriefText, type Args, type DispatchInput } from './context.js';
 import { cleanupDirectResume } from './direct-exec.js';
 import { dispatchBro } from './harness-bro.js';
 import { failCli, dispatchCli, supervisorPid, supervisorAlive, spawnCliSupervisor } from './harness-cli.js';
@@ -200,7 +200,8 @@ function continuationWorktreeSource(jobId: string | undefined, fallback?: Job): 
 }
 
 type BatchMember = { flow: string; route?: JobRoute; canAdmit: () => boolean };
-type WorkflowDispatch = { id: string; cheap: boolean; grant?: OwnerGrant; canAdmit: () => boolean; preset?: string };
+type WorkflowDispatch = { id: string; cheap: boolean; grant?: OwnerGrant; canAdmit: () => boolean; preset?: string;
+  resultFiles?: readonly string[]; beforeInput?: (input: DispatchInput, cwd: string) => Promise<string | undefined> };
 type SlotGate = { wait: Promise<void>; release: () => void };
 
 export interface TicketDispatchInput {
@@ -567,7 +568,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   }
   const now = Date.now();
   const existing = jobs().find((job) =>
-    job.request_key === request_key && (!windowedKey || withinRetryWindow(job.created_at, now)));
+    job.request_key === request_key && job.dispatch_code !== 'workflow_input_changed' && (!windowedKey || withinRetryWindow(job.created_at, now)));
   if (existing) {
     ensureWatcher();
     if (!session.taskClient) void ensureQueueWatcher(pane, hudHome);
@@ -636,8 +637,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const contextCwd = scoutContextCwd ?? cwd;
   let pool: Awaited<ReturnType<typeof pickRolePool>> | undefined;
   const contextFor = (targetArgs: Args, inline: boolean): ReturnType<typeof assembleContext> => advisor
-    ? Promise.resolve({ block: '', metadata: {}, contextInputs: [], standing: undefined })
-    : assembleContext(targetArgs, contextCwd, inline, project, repairOf, pool?.pool_files);
+    ? Promise.resolve({ block: '', metadata: {}, contextInputs: [], files: [], standing: undefined })
+    : assembleContext(targetArgs, contextCwd, inline, project, repairOf, pool?.pool_files, workflow?.resultFiles);
   if (role === 'council') {
     const allowed = ['role', 'task', 'cwd', 'request_key', 'members', 'synthesizer', 'context_files', 'from_jobs', 'retry_of'];
     const extra = Object.keys(args).find(k => args[k] !== undefined && !allowed.includes(k));
@@ -931,6 +932,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     let taskEntry: HudTask | undefined;
     const { job, result, reason } = await launchAttempts(base, { cwd: landCwd ?? cwd, args, retryInput, chain, plan, worktree }, {
       even, modelSource: modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSourceFor(onName) : undefined,
+      beforeInput: workflow?.beforeInput,
       async prepare(job, browser, first) {
         if (first) {
           fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -940,11 +942,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           }
         }
         const briefContext = inline === browser ? context! : await contextFor(args, browser);
-        if (!('code' in briefContext)) {
-          Object.assign(job, briefContext.metadata);
-          writeBrief(job, dir, task, briefContext.block, first);
-        }
-        return briefContext;
+        if (briefContext.code) return briefContext;
+        Object.assign(job, briefContext.metadata);
+        return { ...briefContext, brief: writeBrief(job, dir, task, briefContext.block, first) };
       },
       onFirst(job) {
         publishWorkSummary();
@@ -962,6 +962,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       onUsedPlace: memberStarted, // Pre-input failures also have job IDs; only a used place spends the grant.
     });
     const launchRow = finishLaunch(job, dir, result, reason);
+    if (result.code === 'workflow_input_changed') return { ok: false as const, code: result.code, reason };
     if (batch) {
       registerBatchTask(taskEntry, job, result.exit_code === 0);
       return created(job, launchRow);
@@ -1172,12 +1173,10 @@ async function launchReservedJob(base: Job, launch: ReservedLaunch, scoutOutcome
         if (applied.scoutError) job.scout_error = applied.scoutError;
         else delete job.scout_error;
       }
-      if (!('code' in briefContext)) {
-        Object.assign(job, briefContext.metadata);
-        writeBrief(job, dir, task, scoutNote + briefContext.block, false);
-      }
       job.launcher = launcherId();
-      return briefContext;
+      if (briefContext.code) return briefContext;
+      Object.assign(job, briefContext.metadata);
+      return { ...briefContext, brief: writeBrief(job, dir, task, scoutNote + briefContext.block, false) };
     },
     onFirst(job) {
       if (scoutOutcomes) {
@@ -1199,7 +1198,8 @@ function observeRetrySource(job: Job) {
 /** Shared place selection and retry/fallback policy for an admitted job. */
 async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, worktree }: ReservedLaunch, hooks: {
   even?: ReturnType<typeof evenPlanner>; callerToken?: string; modelSource?: string;
-  prepare(job: Job, browser: boolean, first: boolean): Promise<Awaited<ReturnType<typeof assembleContext>>>;
+  prepare(job: Job, browser: boolean, first: boolean): Promise<Extract<Awaited<ReturnType<typeof assembleContext>>, { code: string }> | (DispatchInput & { standing?: StandingBriefRef })>;
+  beforeInput?: WorkflowDispatch['beforeInput'];
   onFirst(job: Job): void;
   onUsedPlace?: () => void;
 }) {
@@ -1210,21 +1210,13 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
   let result: DispatchResult = launchError('no launch attempted');
   let reason = '';
   let sonicPick: Promise<string | undefined> | undefined;
+  let inputAdmitted = false;
   const skipped = new Map<string, string>();
   for (const [index, { candidate, prepared, effective, route }] of candidates.entries()) {
     const launchArgs = argsForPlace(args, candidate.place, retryInput);
     if ('code' in prepared) continue; // Explicit harness-only options still constrain this dispatch.
     if (base.workflow_cheap && prepared.place.harness === 'bro') { reason = 'Workflow role now has a browser place; re-plan'; break; }
     const { place, options } = prepared;
-    let thinking_source: Job['thinking_source'];
-    if (role === 'sonic' && place.harness !== 'bro') {
-      if (args.thinking !== undefined) thinking_source = 'explicit';
-      else {
-        const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, chain.thinking_choices));
-        if (picked !== undefined) place.thinking = picked;
-        thinking_source = picked === undefined ? 'default' : 'decision';
-      }
-    }
     // A plan can outlive the quota snapshot it was built with (e.g. while scouting).
     const exhausted = readExhausted(hudHome);
     const mark = exhausted.get(candidate.key);
@@ -1258,7 +1250,6 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
       ...(job.worktree ? { worktree: job.worktree, cwd: job.cwd } : {}),
       ...(place.harness === 'bro' ? { bro: place } : {
         model: candidate.model.value, thinking: place.thinking ?? candidate.thinking.value,
-        ...(thinking_source ? { thinking_source } : {}),
         model_source: route ? candidate.model.source : hooks.modelSource ?? candidate.model.source,
       }),
       ...(place.harness === 'cli' ? { cli: {
@@ -1269,6 +1260,22 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
     };
     if ((base.overflow_from ?? role) === 'imp') job.imp_preset = effective.preset;
     const briefContext = await hooks.prepare(job, place.harness === 'bro', first);
+    if (hooks.beforeInput && !inputAdmitted && !('code' in briefContext)) {
+      // This is the real checkout, not a reconstruction from Git objects.
+      try { if (worktree && !job.worktree) await prepareWorktree(job, worktree); }
+      catch (error) { return { job, result: rejectLaunch(launchError(String(error))), reason: String(error) }; }
+      const refusal = await hooks.beforeInput(briefContext, job.cwd);
+      if (refusal) return { job, result: rejectLaunch(launchError(refusal, 'workflow_input_changed')), reason: refusal };
+      inputAdmitted = true;
+    }
+    if (role === 'sonic' && place.harness !== 'bro' && !('code' in briefContext)) {
+      if (args.thinking !== undefined) job.thinking_source = 'explicit';
+      else {
+        const picked = await (sonicPick ??= pickSonicThinking(hudHome, task, chain.thinking_choices));
+        if (picked !== undefined) job.thinking = place.thinking = picked;
+        job.thinking_source = picked === undefined ? 'default' : 'decision';
+      }
+    }
     // Persist before dispatch: an interrupted launch must not dispatch again on retry.
     save(job, !first);
     if (first) hooks.onFirst(job);
@@ -1321,6 +1328,7 @@ function writeBrief(job: Job, dir: string, task: string, block: string, first: b
   const brief = formatBriefText(task, block, place.harness, { preview: job.preview, cliFooter });
   // Standing brief and context references follow the task; labels read the brief's opening lines.
   writePrivateFile(join(dir, jobFiles.brief), brief, { exclusive: first, mkdir: false });
+  return brief;
 }
 
 async function prepareWorktree(job: Job, worktree: ManagedWorktree) {

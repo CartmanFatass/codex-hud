@@ -114,60 +114,51 @@ export function formatBriefText(
   return brief;
 }
 
-/** Shared non-inline brief assembly for workflow admission and sizing against the exact dispatched brief. */
-export function assembleDispatchedBrief(
-  args: { task: string; from_jobs?: string[] },
-  project: { root: string; registered: boolean },
-  harness: 'pi' | 'cli' | 'bro' = 'pi',
-): { brief: string; files: string[]; standing?: StandingBriefRef } | { ok: false; error: string } {
-  const files: string[] = [];
-  const sections: string[] = [];
-  let reference = '';
-  let standing: StandingBriefRef | undefined;
-  if (project.registered) {
-    const standingPath = join(project.root, '.hud', 'brief.md');
+function extractReferencedPaths(task: string): string[] {
+  const refs = task.matchAll(/`([^`\n]+)`|"([^"\n]+)"|(?<!\w)'([^'\n]+)'|(?:^|[\s(])([\w./-]+)/gm);
+  return Array.from(refs).flatMap(m => {
+    // An existing output is not input merely because the task says to write to it.
+    if (/(?:\boutput(?:\s+(?:file|path))?\s*:|\b(?:write|save)\b[^.\n`;:]{0,80}\b(?:to|in))\s*$/i.test(task.slice(Math.max(0, m.index - 96), m.index))) return [];
+    if (m[4] && !/[./]/.test(m[4])) return [];
+    return [m[1] ?? m[2] ?? m[3] ?? m[4].replace(/[.]$/, '')];
+  });
+}
+
+export type DispatchInput = { brief: string; files: readonly string[] };
+
+/** Measure the assembled brief and its unique file references in the checkout the worker sees. */
+export function measureInput({ brief, files }: DispatchInput, cwd: string, roots: readonly string[], sourceBrief?: string) {
+  const seen = new Set(sourceBrief ? [fs.realpathSync(resolve(cwd, sourceBrief))] : []);
+  const inputs: { path: string; bytes: number }[] = [];
+  const explicit = new Set(files);
+  for (const name of [...explicit, ...extractReferencedPaths(brief)]) {
+    if (!name || name.length > 4096 || name.includes('\0')) continue;
     try {
-      const path = fs.realpathSync(standingPath);
-      inside(project.root, path);
-      if (!fs.statSync(path).isFile()) throw new Error('not a regular file');
-      reference = standingBriefReference(standingPath);
-      standing = { path, label: standingPath };
-      files.push(path);
+      const path = fs.realpathSync(resolve(cwd, name));
+      if (seen.has(path) || (!explicit.has(name) && !roots.some(root => {
+        const rel = relative(root, path);
+        return rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+      }))) continue;
+      const stat = fs.statSync(path);
+      if (stat.isFile()) { inputs.push({ path: relative(cwd, path), bytes: stat.size }); seen.add(path); }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
-        return { ok: false, error: `${standingPath} must resolve to a readable text file inside ${project.root}` };
+      if (!['ENOENT', 'ENOTDIR', 'ENAMETOOLONG'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
     }
   }
-  const fromJobs = args.from_jobs ?? [];
-  if (fromJobs.length) {
-    const sonicPrefix = sonicFactsPrefix(args.task);
-    let source = 'from_jobs';
-    try {
-      const base = fs.realpathSync(jobsRoot);
-      for (const value of fromJobs) {
-        source = `from_jobs: ${JSON.stringify(value)}`;
-        if (!/^j[0-9a-f]{16}$/.test(value)) throw new Error('invalid job id');
-        const path = fs.realpathSync(resolve(jobsRoot, join(value, jobFiles.report)));
-        inside(base, path);
-        if (!fs.statSync(path).isFile()) throw new Error('not a regular file');
-        let sonic = false;
-        try { sonic = findJob(value)?.role === 'sonic'; } catch { /* Corrupt receipt leaves sonic false. */ }
-        if (path !== standing?.path) {
-          const label = `${value} report: ${JSON.stringify(path)}`;
-          sections.push(contextReferenceLine(label, sonic ? sonicPrefix : undefined));
-        }
-        files.push(path);
-      }
-    } catch {
-      return { ok: false, error: `${source} must resolve to a readable UTF-8 text file inside ${jobsRoot}` };
-    }
-  }
-  const block = contextBlock(reference, sections, false);
-  return { brief: formatBriefText(args.task, block, harness), files, standing };
+  return { input_bytes: inputs.reduce((n, file) => n + file.bytes, Buffer.byteLength(brief)), inputs };
+}
+
+/** Estimate a not-yet-dispatched Sonic brief against the available checkout. */
+export async function measureSonicInput(args: { task: string; from_jobs?: string[] }, cwd: string,
+  project: { root: string; registered: boolean }, projectRoot: string, resultFiles?: readonly string[]) {
+  const context = await assembleContext(args, cwd, false, project, undefined, undefined, resultFiles);
+  if ('code' in context) throw Error(context.error);
+  return measureInput({ brief: formatBriefText(args.task, context.block, 'pi'), files: context.files }, cwd, [project.root, projectRoot]).input_bytes;
 }
 
 export async function assembleContext(args: Args, cwd: string, inline: boolean, project: { root: string; registered: boolean },
-  repairOf?: string, poolFiles: readonly string[] = []) {
+  repairOf?: string, poolFiles: readonly string[] = [], resultFiles: readonly string[] = []) {
+  const references = [...resultFiles];
   const metadata: Pick<Job, 'context_files' | 'from_jobs'> = {};
   const sections: string[] = [];
   const contextInputs: { name: string; bytes: number }[] = [];
@@ -181,7 +172,10 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
       for (const run of file.content.matchAll(/`+/g)) length = Math.max(length, run[0].length + 1);
       const fence = '`'.repeat(length);
       sections.push(`${prefix ? `${prefix}\n\n` : ''}### ${label}\n\n${fence}\n${file.content}${file.content.endsWith('\n') ? '' : '\n'}${fence}`);
-    } else sections.push(contextReferenceLine(label, prefix));
+    } else {
+      sections.push(contextReferenceLine(label, prefix));
+      references.push(path);
+    }
     return file.bytes;
   };
   let standing: string | undefined;
@@ -198,6 +192,7 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
       } else {
         if (!(await fs.promises.stat(path)).isFile()) throw new Error('not a regular file');
         reference = standingBriefReference(standingPath);
+        references.push(path);
       }
       standing = path;
       standingLabel = standingPath;
@@ -260,6 +255,7 @@ export async function assembleContext(args: Args, cwd: string, inline: boolean, 
   return {
     metadata,
     contextInputs,
+    files: references,
     block: contextBlock(reference, sections, inline),
     standing: standing && standingLabel ? { path: standing, label: standingLabel } satisfies StandingBriefRef : undefined,
   };
