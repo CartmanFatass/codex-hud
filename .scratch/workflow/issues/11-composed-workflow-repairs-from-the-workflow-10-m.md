@@ -1,0 +1,17 @@
+# 11: Composed workflow repairs from the workflow/10 milestone review
+
+**Status:** ready-for-agent
+**Live try:** Via the real stdio MCP in a temp home (tmp/env.sh): plan a cheap graph with a Sonic step at the exact 2 MiB bare-task boundary and confirm hud_workflow status shows the cost pause; plan a breaker-first batch with max_parallel 2 where two post-pilot items fail a few seconds apart, confirm status lists both failures, no tail job, and retry_failed reruns both.
+**Blocked by:** none
+**Objective:** engine
+
+**What to build:** Fix the four major findings of the workflow/10 milestone review (report /home/fires/.hud/jobs/j24aa78a55385cd7d/report.md) in the composed workflow code landed by workflow/10 (044cc3eb). (1) Cheap Sonic accounting charges the bare `step.task`/`item.task` in `admitSonicInput` (`src/mcp/composed-step.ts`), but the dispatched job gets the workflow worker rule appended and `create` adds `Workflow results:` paths and `from_jobs` reports. Measure the task and declared inputs actually being admitted, with one shared definition of the dispatched Sonic brief (no second copy); measure prerequisite outputs (from-step reports) once they exist. (2) A composed Sonic job that is queued behind a role cap (`src/mcp/dispatch/orchestrator.ts` queued launch path) can start on a project file that grew past what was charged: at dequeue, re-measure for `workflow_cheap` jobs and refuse/hold with the cost reason when the run's aggregate would cross 2 MiB (or hold at workflow admission until it can start). Keep the existing queued browser fence. (3) A cheap run resumed after the upgrade with Sonic steps already admitted but no `sonic_input_bytes` field must not treat earlier bytes as zero: pause for re-plan with the reason instead; a fresh run with no earlier Sonic admission still starts at zero. (4) A breaker pause must not freeze already-admitted batch siblings: while paused, keep reconciling composed batch members that are running (as the fixed batch does with `batchActive` in `src/mcp/batch-state.ts`) without admitting the tail, so `hud_workflow status`, `failure_groups` and `retry_failed` see every settled failure. Keep the fresh keyed in-place repair, shared `repairSettled`/`settledJobReport`, per-item settlement policy, run/hash grant recheck and retiring-driver handoff. Out of scope: workflow/06 findings 1, 4, 5.
+
+- [ ] A cheap Sonic step whose bare task plus named file is exactly at 2 MiB but whose dispatched brief (worker rule, result refs) exceeds it is paused with the cost reason; a dependent step with a substantial `from` report is charged that report.
+- [ ] A cheap composed Sonic job queued behind a full role cap whose input file grows past the limit while queued does not start over budget; the browser fence still holds.
+- [ ] A cheap run with an admitted Sonic step and no recorded `sonic_input_bytes` pauses for re-plan on resume; a fresh run starts at zero.
+- [ ] With `max_parallel: 2` and `breaker: first`, two post-pilot items failing seconds apart both appear in `failure_groups` after settling, `retry_failed` selects both, and no tail item is admitted while paused.
+- [ ] Regression test for the quiet notice-cache branch: a notice primed while another reader holds the claim marker is delivered once on the next tick after the marker is released without changes under `flows/`.
+- [ ] Existing workflow-composed, workflow-engine, batch, land-repair and ticket-queue tests still pass; land gate passes.
+
+## Comments
