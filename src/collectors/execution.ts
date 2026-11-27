@@ -67,6 +67,8 @@ export interface EndedExecutionJob {
   readonly dir: string;
   readonly endedAt: number;
   readonly result?: 'failed' | 'stopped' | 'landed' | 'not landed' | 'done';
+  /** Settled child jobs folded into this parent row (newest first). */
+  readonly children?: readonly EndedExecutionJob[];
 }
 export type LiveTicketJobState = 'working' | 'asking' | 'waiting' | 'queued' | 'stalled';
 export type TicketActivity = {
@@ -334,16 +336,61 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
   const runJobs = new Set(runs.flatMap((run) => [
     ...run.jobIds ?? [], ...run.tickets.map((ticket) => ticket.jobId), ...run.reviews.map((review) => review.job), ...run.decisions.map((decision) => decision.job),
   ]));
-  const ended = [...workers].flatMap(([jobId, worker]) => {
-    const endedAt = worker.settledAt;
-    return endedAt !== null && recent(endedAt) && !runJobs.has(jobId) ? [{ jobId, worker, endedAt }] : [];
-  }).sort((a, b) => b.endedAt - a.endedAt || a.jobId.localeCompare(b.jobId));
-  const endedJobs: EndedExecutionJob[] = [];
-  for (const entry of ended) {
-    const { jobId, worker } = entry, job = receipt(jobId);
-    if ([job.ticket_queue, job.workflow, job.batch_flow, job.council?.id, job.land_turn].some((id) => id && runIds.has(id))) continue;
-    endedJobs.push({ ...entry, dir: join(home, 'jobs', jobId), result: endedJobResult(worker, job) });
+  const belongsToRun = (jobId: string) => {
+    if (runJobs.has(jobId)) return true;
+    const job = receipt(jobId);
+    return [job.ticket_queue, job.workflow, job.batch_flow, job.council?.id, job.land_turn].some((id) => id && runIds.has(id));
+  };
+  const hasOpenQuestion = (jobId: string, worker: OwnerWorker): boolean => {
+    if (worker.homeNeedsHuman || worker.files?.some((f) => f.kind === 'question' && f.state === 'open')) return true;
+    try { return cache.readQa(jobId).openIds.length > 0; }
+    catch { return false; }
+  };
+  const childNeedsOwnRow = (jobId: string, worker: OwnerWorker): boolean =>
+    worker.state === 'failed' || worker.state === 'error' || Boolean(worker.work?.failed) || hasOpenQuestion(jobId, worker);
+  const standaloneEnded: EndedExecutionJob[] = [...workers]
+    .flatMap(([jobId, worker]) => {
+      const endedAt = worker.settledAt;
+      if (endedAt === null || !recent(endedAt) || belongsToRun(jobId)) return [];
+      return [{ jobId, worker, dir: join(home, 'jobs', jobId), endedAt, result: endedJobResult(worker, receipt(jobId)) }];
+    })
+    .sort((a, b) => b.endedAt - a.endedAt || a.jobId.localeCompare(b.jobId));
+  const standaloneById = new Map(standaloneEnded.map((entry) => [entry.jobId, entry]));
+  const foldedChildren = new Map<string, EndedExecutionJob[]>();
+  const foldedIds = new Set<string>();
+  const foldTarget = (entry: EndedExecutionJob): string | 'suppress' | null => {
+    if (childNeedsOwnRow(entry.jobId, entry.worker)) return null;
+    let parentId = jobIdOf(entry.worker.parentJobId);
+    if (!parentId || parentId === entry.jobId) return null;
+    const seen = new Set<string>([entry.jobId]);
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId);
+      if (liveSet.has(parentId) || belongsToRun(parentId)) return 'suppress';
+      const parentEntry = standaloneById.get(parentId);
+      if (!parentEntry) return null;
+      const nextParent = jobIdOf(parentEntry.worker.parentJobId);
+      if (!nextParent || nextParent === parentId || childNeedsOwnRow(parentId, parentEntry.worker)) return parentId;
+      if (!standaloneById.has(nextParent) && !liveSet.has(nextParent) && !belongsToRun(nextParent)) return parentId;
+      parentId = nextParent;
+    }
+    return null;
+  };
+  for (const entry of standaloneEnded) {
+    const target = foldTarget(entry);
+    if (!target) continue;
+    foldedIds.add(entry.jobId);
+    if (target !== 'suppress') {
+      let list = foldedChildren.get(target);
+      if (!list) foldedChildren.set(target, list = []);
+      list.push(entry);
+    }
   }
+  const endedJobs: EndedExecutionJob[] = standaloneEnded
+    .filter((entry) => !foldedIds.has(entry.jobId))
+    .map((entry) => {
+      const folded = foldedChildren.get(entry.jobId);
+      return folded?.length ? { ...entry, children: folded } : entry;
+    });
   const ordered = live.map((id) => ({ ...jobs.get(id)!, children: children.get(id)?.map((child) => jobs.get(child)!).sort(byStart) }))
     .sort((a, b) => PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase] || byStart(a, b));
   const excerpts = readSelectionExcerpts(home, cache, { project: scope.root });

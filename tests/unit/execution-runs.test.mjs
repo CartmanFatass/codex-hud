@@ -575,7 +575,111 @@ test('the recent job list includes every settlement within 24 hours even past th
   await execution.refresh(undefined, NOW);
   const view = execution.view(project);
   assert.equal(view.complete, true);
-  assert.deepEqual(view.endedJobs.map((job) => job.jobId), Array.from({ length: 201 }, (_, i) => id(202 - i)));
+  assert.deepEqual(view.endedJobs.map((job) => job.jobId), Array.from({ length: 199 }, (_, i) => id(200 - i)));
+  assert.deepEqual(view.endedJobs[0].children?.map((child) => child.jobId), [id(202), id(201)]);
+});
+
+test('Recent folds settled sonic children into their parent row, keeps failed/asking/orphan children, and strips short leading labels on child titles', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-recent-fold-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const project = join(root, 'project'), hud = join(root, 'hud');
+  const id = (n) => `j${n.toString(16).padStart(16, '0')}`;
+  const writeJob = (n, brief, minutes, { role = 'sonic', state = 'done', worktree, qa, ...receipt } = {}) => {
+    const jobId = id(n), dir = join(hud, 'jobs', jobId);
+    putJson(join(dir, 'job.json'), {
+      job: jobId, role, cwd: project, project_root: project, created_at: ago(minutes + 5),
+      ...(role === 'sonic' && { headless: true }),
+      ...(worktree && { worktree: { root: join(root, 'wt'), main_root: project, branch: 'wt/fold' } }),
+      ...receipt,
+    });
+    putJson(join(dir, 'STATUS.json'), { state, settled_at: ago(minutes), ended_at: ago(minutes) });
+    fs.writeFileSync(join(dir, 'brief.md'), brief);
+    if (qa) {
+      fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+      fs.writeFileSync(join(dir, 'qa', 'q1.md'), qa);
+    }
+    return jobId;
+  };
+
+  // 1. Settled parent with three settled sonic children (including leading labels and hyphenated asks).
+  const parent = writeJob(1, '# 45: Fix recent execution rows\n', 10, { role: 'imp', worktree: true, ticket: 'chores/45' });
+  const c1 = writeJob(2, 'Read-only: inspect thin-jobs title derivation\n', 12, { parent_job: parent });
+  const c2 = writeJob(3, 'Read-only survey: explain X\n', 13, { parent_job: parent });
+  const c3 = writeJob(4, '# Read-only code survey: cross-check execution-view callers\n', 14, { parent_job: parent });
+
+  // 2. Failed child and child with an open question still get their own Recent rows.
+  const failedChild = writeJob(5, 'Read-only: inspect failing cache path\n', 8, { parent_job: parent, state: 'failed' });
+  const askingChild = writeJob(6, 'Read-only survey: confirm fallback scope\n', 6, {
+    parent_job: parent, state: 'done',
+    qa: '# Question\n\nKeep the legacy helper?\n\nDefault if unanswered: yes\n',
+  });
+
+  // 3. Child whose parent is outside the 24-hour Recent window keeps its own row.
+  const oldParent = writeJob(7, '# 44: Earlier settled worker\n', 1500, { role: 'imp' });
+  const orphanChild = writeJob(8, 'Read-only survey: check older callers\n', 20, { parent_job: oldParent });
+
+  // 4. Child with 4-word prefix or file path before colon keeps its full line.
+  const longPrefix = writeJob(9, 'One two three four: keep full label\n', 25, { parent_job: oldParent });
+  const pathPrefix = writeJob(10, 'src/collectors/thin-jobs.ts: check line 854\n', 26, { parent_job: oldParent });
+
+  const execution = new PanelExecution(hud, PANE, {}, () => {});
+  t.after(() => execution.dispose());
+  execution.sync(project, false);
+  await execution.refresh(undefined, NOW);
+  const view = execution.view(project);
+
+  // Only top-level rows remain in endedJobs: askingChild, failedChild, parent (+3 sonic), orphanChild, longPrefix, pathPrefix.
+  assert.deepEqual(view.endedJobs.map((j) => j.jobId), [askingChild, failedChild, parent, orphanChild, longPrefix, pathPrefix]);
+  const parentEntry = view.endedJobs.find((j) => j.jobId === parent);
+  assert.deepEqual(parentEntry.children?.map((c) => c.jobId), [c1, c2, c3]);
+
+  // Title derivation: "Read-only survey: explain X" -> "explain X", and no child gets "Read-only" as its displayId/title.
+  const byId = new Map(execution.board().workers.map((w) => [w.id.replace(/^thin-job:/, ''), w]));
+  assert.equal(byId.get(c1).task, 'inspect thin-jobs title derivation');
+  assert.equal(byId.get(c1).displayId, undefined);
+  assert.equal(byId.get(c2).task, 'explain X');
+  assert.equal(byId.get(c2).briefTitle, 'explain X');
+  assert.equal(byId.get(c3).task, 'cross-check execution-view callers');
+  assert.equal(byId.get(c3).displayId, undefined);
+  assert.equal(byId.get(longPrefix).task, 'One two three four: keep full label');
+  assert.equal(byId.get(pathPrefix).task, 'src/collectors/thin-jobs.ts: check line 854');
+
+  // Rendering in EN and ZH across widths: parent carries muted child count, no folded child rows, no "Read-only" title.
+  for (const lang of ['en', 'zh']) for (const width of [40, 62, 100]) {
+    const frame = render(view, { lang, width, theme: 'none' });
+    const shown = text(frame);
+    for (const line of frame.lines) {
+      assert.equal(visualLength(line), width, `${lang} ${width}: ${line}`);
+      assert.equal(line, stripAnsi(line), 'none theme emits no ANSI');
+    }
+    const items = frame.workboard.rows.map((r) => r.item).filter(Boolean);
+    assert.deepEqual(items, [askingChild, failedChild, parent, orphanChild, longPrefix, pathPrefix].map((j) => `project:exec:${j}`));
+    assert.doesNotMatch(shown, /Read-only/);
+    const parentRow = frame.workboard.rows.find((r) => r.item === `project:exec:${parent}`);
+    if (width >= 62) {
+      assert.ok(parentRow.text.includes(lang === 'zh' ? '+3 个 sonic' : '+3 sonic'), `${lang} ${width}: ${parentRow.text}`);
+    }
+    if (width === 100) {
+      assert.match(shown, /inspect failing cache path/);
+      assert.match(shown, /confirm fallback scope/);
+      assert.match(shown, /check older callers/);
+    }
+    for (const line of render(view, { lang, width, theme: 'mocha' }).lines) {
+      assert.equal(visualLength(line), width, `mocha ${lang} ${width}`);
+    }
+  }
+
+  // Opening the settled parent's Inspector from Recent lists its sonic helpers with their cleaned asks.
+  const parentFrame = render(view, { state: onExecution({ cursor: `project:exec:${parent}` }), width: 100, height: 40 });
+  const inspector = handleMonitorInput(parentFrame.state, { type: 'key', key: 'enter' }, { frame: parentFrame, nowMs: NOW }).state;
+  assert.equal(inspector.subpage?.kind, 'inspector');
+  assert.equal(inspector.subpage?.target.workerId, `thin-job:${parent}`);
+  const detail = text(render(view, { state: inspector, width: 100, height: 40, workboard: execution.board() }));
+  assert.match(detail, /Sonic children/);
+  assert.match(detail, /inspect thin-jobs title derivation/);
+  assert.match(detail, /explain X/);
+  assert.match(detail, /cross-check execution-view callers/);
+  assert.doesNotMatch(detail, /Read-only/);
 });
 
 test('fixed and graph workflows render from cached records; Enter and batch control use the selected row', async (t) => {

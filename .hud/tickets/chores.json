@@ -906,7 +906,7 @@
     {
       "number": 48,
       "title": "Execution Recent folds worker-started sonic children into their parent row",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "With a ticket worker that has started three hud_sonic helpers and settled, open the panel's Execution tab: Recent shows one row for the worker with a child count, no separate rows titled \"Read-only\", and the parent's Inspector lists each helper with its ask after the leading label.",
       "approved_removals": [],
@@ -916,27 +916,34 @@
         {
           "id": 1,
           "text": "Test: a settled parent with three settled sonic children renders one Recent row with the child count and no child rows",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: a failed child, or a child with an open question, still renders its own row",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: a child brief starting \"Read-only survey: explain X\" gets the title \"explain X\"",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "docs/reference.md describes the fold",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T11:07:26.193Z",
+        "job": "jb530db98b1d36593",
+        "flow": "fb530db98b1d36593",
+        "replay_base": "d874dc5e20992924b2e377a231296904270ac24a",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T10:35:37.569Z",
-      "updated_at": "2026-11-27T10:35:37.569Z"
+      "updated_at": "2026-11-27T11:07:26.193Z"
     }
   ]
 }

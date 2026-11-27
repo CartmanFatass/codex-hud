@@ -144,7 +144,16 @@ function endedRow(entry: EndedExecutionJob | (ExecutionRun & { endedAt: number }
   const landedLabel = landed ? t('{n} landed', { n: landed }) : '';
   const detailedOutcome = !landedLabel ? '' : interruptedQueue ? `${outcome}${muted(` · ${landedLabel}`)}` : state.ink(landedLabel);
   const detail = detailedOutcome ? `${detailedOutcome} ${age}` : '';
+  const folded = 'flow' in entry ? undefined : entry.children;
+  const childTag = folded?.length
+    ? folded.every((child) => child.worker.role === 'sonic')
+      ? t('+{n} sonic', { n: folded.length })
+      : t(folded.length === 1 ? '+{n} child' : '+{n} children', { n: folded.length })
+    : '';
+  const childFacts = childTag ? `${muted(`${childTag} · `)}${facts}` : '';
+  const minTitle = Math.min(visualLength(title), 14);
   const right = detail && visualLength(left + title + detail) + 1 <= width ? detail
+    : childFacts && visualLength(left) + minTitle + 2 + visualLength(childFacts) <= width ? childFacts
     : visualLength(left + facts) + 2 <= width ? facts : interruptedQueue ? outcome : age;
   return { ...at, text: fit(pair(left + theme.board.text(title), right, width), width) };
 }

@@ -168,6 +168,9 @@ const first = (text: string) =>
     ?.replace(/^#{1,6}\s+/, '')
     .trim() ?? '';
 export const stripJobPrefix = (s: string) => s.replace(/^(?:slice|ticket|task|package)\s+(?=\S)/i, '');
+/** Skip a short leading label ending in a colon (1–3 words, e.g. "Read-only:", "Read-only survey:") on child briefs. */
+export const stripChildLabel = (s: string) =>
+  s.replace(/^[\p{L}][\p{L}-]*(?:\s+[\p{L}][\p{L}-]*){0,2}(?::\s+|：\s*)(?=\S)/u, '');
 const number = (name: string) => Number.parseInt(name.match(/\d+/)?.[0] ?? '0', 10);
 function latestSession(directory: string): OwnerWorker['sessionFile'] {
   const root = join(directory, 'sessions');
@@ -851,9 +854,17 @@ export function readThinJobs(
     const briefFile = readArt(join(directory, 'brief.md')),
       brief = briefFile?.text ?? '',
       task = typeof job.task_length === 'number' ? brief.slice(0, job.task_length) : brief;
-    const briefTitle = stripJobPrefix(first(task.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? ''));
-    const title = briefTitle || stripJobPrefix(first(task) || first(word(job.title) ?? '')) || id.slice(-6);
-    const displayId = title.match(/^([\w]+(?:[-/#][\w]+)+|[A-Z][A-Z\d_]+(?=:)|\d+)(?=[:\s]|$)/)?.[1] ?? word(job.slice) ?? word(job.ticket) ?? undefined;
+    const isChild = Boolean(word(job.parent_job));
+    const briefTitle = isChild
+      ? stripChildLabel(stripJobPrefix(first(task)))
+      : stripJobPrefix(first(task.split(/\r?\n/).find((line) => /^#{1,6}\s/.test(line)) ?? ''));
+    const title =
+      briefTitle ||
+      (isChild ? stripChildLabel(stripJobPrefix(first(word(job.title) ?? ''))) : stripJobPrefix(first(task) || first(word(job.title) ?? ''))) ||
+      id.slice(-6);
+    const displayId = isChild
+      ? (word(job.slice) ?? word(job.ticket) ?? undefined)
+      : (title.match(/^([\w]+(?:[-/#][\w]+)+|[A-Z][A-Z\d_]+(?=:)|\d+)(?=[:\s]|$)/)?.[1] ?? word(job.slice) ?? word(job.ticket) ?? undefined);
     const label = stripJobPrefix(word(job.package) ?? displayId ?? title.split(':', 1)[0]);
     return [{ id, job, created, jobAt, directory, status, s, state, at, settledAt, briefFile, briefTitle, title, displayId, label, land }];
   });

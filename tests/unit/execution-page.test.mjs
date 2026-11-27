@@ -64,7 +64,7 @@ test('each live job has one card without screen rows or read-interval notes in E
       assert.equal(line, stripAnsi(line), 'the none theme paints no colour');
     }
     assert.deepEqual(itemsOf(frame).slice(0, 5), cards('reviewer', 'imp', 'sonic', 'quiet', 'queued'));
-    assert.equal(itemsOf(frame).length, 7, 'five cards and two recent jobs');
+    assert.equal(itemsOf(frame).length, 6, 'five cards and one recent job (settled scout folds into live imp)');
     assert.equal(frame.workboard.rows.filter((row) => row.item === cards('imp')[0] && row.text.includes('┌')).length, 1);
     // Compact tab worker cards: no screen divider or 3-row thumbnail (4 rows freed per tab card).
     assert.equal(frame.workboard.rows.filter((row) => row.item === cards('reviewer')[0]).length, 4, `${width} ${lang} reviewer card height`);
