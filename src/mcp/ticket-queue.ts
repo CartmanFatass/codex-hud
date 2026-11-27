@@ -16,15 +16,15 @@ import { freezeGraph, noticeEvents, runDir, runLock } from '../workflows/store.j
 import { wakeWorkflow } from '../workflows/wake.js';
 import { ESCALATION_RULE, isOpenTicketRun, ticketClosed } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
-import { activeLand, landAttempt, readLand, type LandFlow } from './land-state.js';
+import { activeLand, landAttempt, landFile, readLand, type LandFlow } from './land-state.js';
 import { checkFeatureTickets, checkTicketPaths, declaredReadyTickets, registeredTicketRepo, ticketObjectiveOwner, ticketReadiness } from './local-tickets.js';
 import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
 import { BUNDLED_ROOT, jobFiles } from './paths.js';
 import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
-  blockerHandbackItem, cancelTicketQueue, clearItemHold, escalatedQuestion, isTicketQueueId, MAX_REPAIR_ROUNDS, prepareTicketQueueRepair,
-  questionReply, queueIds, readTicketQueue, recordDecision, syncBlockerHandback, ticketQueueNotice, ticketQueueView,
+  blockerHandbackItem, cancelTicketQueue, claimQueueTask, clearItemHold, clearQueueTask, escalatedQuestion, isTicketQueueId, MAX_REPAIR_ROUNDS, prepareTicketQueueRepair,
+  questionReply, QUEUE_TASK_TTL_MS, queueIds, readTicketQueue, recordDecision, syncBlockerHandback, ticketQueueNotice, ticketQueueView,
   writeTicketQueue, type RunDecision, type TicketQueue, type TicketQueueItem,
 } from './ticket-queue-state.js';
 
@@ -325,6 +325,7 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     }
     fs.mkdirSync(runDir(home, flow), { mode: 0o700, recursive: true });
     freezeGraph(home, flow, graph);
+    if (task) claimQueueTask(home, q, Date.parse(now) + QUEUE_TASK_TTL_MS);
     // Publish the successor first; the answer path also checks receipts if the marker is missing.
     writeTicketQueue(home, q, true);
     if (!unattended) {
@@ -400,7 +401,7 @@ export async function answerTicketQueueHandback(
   home: string,
   id: string,
   answer: string,
-  opts: { pane: string | null; cwd?: string; requestId?: string },
+  opts: { pane: string | null; cwd?: string; requestId?: string; claimTask?: boolean },
 ): Promise<HandbackAnswerResult> {
   const queue = readTicketQueue(home, id);
   if (!queue || !runVisible({ ...queue, project_root: queue.project_root ?? queue.root }, opts.pane, opts.cwd)) {
@@ -486,6 +487,8 @@ export async function answerTicketQueueHandback(
         at,
       });
       reopenPausedQueue(cur, step, at);
+      clearQueueTask(home, id);
+      if (opts.claimTask && cur.task) claimQueueTask(home, cur, Date.now() + QUEUE_TASK_TTL_MS);
       writeTicketQueue(home, cur);
       return { ok: true, queue: cur, resumed: true };
     }
@@ -518,6 +521,7 @@ export async function answerTicketQueueHandback(
       cur.queued = undefined;
       cur.notices = {};
       cur.state = 'cancelled';
+      clearQueueTask(home, id);
       writeTicketQueue(home, cur);
       return { ok: true, queue: cur, resumed: false };
     }
@@ -541,6 +545,7 @@ export async function answerTicketQueueHandback(
         at,
       });
       cur.epoch = (cur.epoch ?? 0) + 1;
+      clearQueueTask(home, id);
       if (repair.kind === 'cap') {
         cur.steps ??= {};
         cur.steps[step] = { state: 'asking', reason: repair.reason, changed_at: at };
@@ -559,6 +564,7 @@ export async function answerTicketQueueHandback(
       cur.streak = 0; cur.settled = 0; cur.failures = 0;
       cur.notices = {};
       cur.state = 'working';
+      if (opts.claimTask && cur.task) claimQueueTask(home, cur, Date.now() + QUEUE_TASK_TTL_MS);
       writeTicketQueue(home, cur);
       return { ok: true, queue: cur, resumed: true };
     }
@@ -574,6 +580,7 @@ export async function answerTicketQueueHandback(
         at,
       });
       cur.epoch = (cur.epoch ?? 0) + 1;
+      clearQueueTask(home, id);
       cur.steps ??= {};
       cur.steps[step] = { state: 'asking', reason: msg, changed_at: at };
       cur.reason = msg;
@@ -606,6 +613,7 @@ export async function answerTicketQueueHandback(
       at,
     });
     cur.epoch = (cur.epoch ?? 0) + 1;
+    clearQueueTask(home, id);
     cur.steps ??= {};
     cur.steps[step] = { state: 'done', answer: choice, changed_at: at };
     cur.verdict = verdict;
@@ -624,6 +632,7 @@ export async function answerTicketQueueHandback(
     delete cur.start;
     cur.notices = {};
     cur.state = 'working';
+    if (opts.claimTask && cur.task) claimQueueTask(home, cur, Date.now() + QUEUE_TASK_TTL_MS);
     writeTicketQueue(home, cur);
     return { ok: true, queue: cur, resumed: true };
   };
@@ -662,6 +671,7 @@ export async function resumeQueueAfterAnswer(home: string, jobId: string, reques
       recordDecision(cur, { step: handback.step, kind: 'question', job: 'main', decision: 'answer', worker_job: jobId,
         ...(handback.ticket && { ticket: handback.ticket }), question: request, at });
       reopenPausedQueue(cur, handback.step, at);
+      clearQueueTask(home, cur.flow);
       writeTicketQueue(home, cur);
       return cur;
     }));
@@ -710,15 +720,16 @@ export function ticketQueueTask(home: string, q: TicketQueue, cancel = false) {
     wakeWorkflow(home, q);
     ensureJobWatcher(home);
   }
-  const pauseKey = `pause-${q.epoch ?? 0}`;
-  const pauseText = q.state === 'paused' ? q.notices?.[pauseKey] : undefined;
-  if (pauseText) {
-    try { noticeEvents(home, { flow: q.flow, notices: { [pauseKey]: pauseText } }); }
-    catch { /* Best-effort claim so a later mode switch does not duplicate the pause notice. */ }
+  const epoch = q.epoch ?? 0;
+  const noticeKey = q.state === 'paused' ? `pause-${epoch}` : `end-${epoch}`;
+  const noticeText = q.state !== 'working' ? q.notices?.[noticeKey] : undefined;
+  if (noticeText) {
+    try { noticeEvents(home, { flow: q.flow, notices: { [noticeKey]: noticeText } }, false, landFile(home, q.flow)); }
+    catch { /* Best-effort claim so a later mode switch or task expiry does not duplicate the notice. */ }
   }
   const text = q.state === 'working'
     ? `${q.flow} (ticket queue ${q.feature}) — ${ticketQueueView(q).reason ?? 'working'}`
-    : pauseText ?? ticketQueueNotice(q);
+    : noticeText ?? ticketQueueNotice(q);
   const status = q.state === 'paused' ? 'completed' : q.state === 'stopped' || q.state === 'superseded' ? 'cancelled' : q.state;
   return { taskId: q.flow, status, statusMessage: text,
     createdAt: q.created_at, lastUpdatedAt: q.updated_at, ttlMs: 3 * 60 * 60_000, pollIntervalMs: 5000,

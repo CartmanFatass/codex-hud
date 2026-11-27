@@ -17,7 +17,7 @@ import { recordQuestionAnswer, recordStopOrigin } from '../../roles/job-archive.
 import { JOB_ID_RE } from '../../roles/job-index-cache.js';
 import { packageJobFilter, projectJobFilter } from '../../roles/job-project.js';
 import { takeLease } from '../../roles/lease.js';
-import { ensureQueueWatcher, paneInfo, watching, notify } from '../../roles/notify.js';
+import { ensureQueueWatcher, notifyOutcome, paneInfo, watching, notify } from '../../roles/notify.js';
 import { piSwitches } from '../../roles/roster.js';
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import { reapWorkerTree, tabTreeGrant } from '../../roles/worker-tree.js';
@@ -48,7 +48,7 @@ import { commitTickets, editTickets, getTickets } from '../ticket-store-ops.js';
 import { editObjectives, type RequestCaller } from '../local-objectives.js';
 import { callSchedule } from '../local-schedule.js';
 import { answerTicketQueueHandback, resumeQueueAfterAnswer, startTicketQueue, ticketQueueTask } from '../ticket-queue.js';
-import { isTicketQueueId, readTicketQueue, ticketQueueView } from '../ticket-queue-state.js';
+import { claimQueueTask, isTicketQueueId, liveQueueTask, readTicketQueue, ticketQueueView } from '../ticket-queue-state.js';
 import { gitSummary } from '../managed-worktree.js';
 import { panelDelivery } from '../panel-delivery.js';
 import { binScript, jobFiles } from '../paths.js';
@@ -588,8 +588,10 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
       publishWorkSummary();
       ensureWatcher();
       if (q.task && session.taskCapable && args.cancel !== true) {
+        const marker = liveQueueTask(hudHome, q) ?? claimQueueTask(hudHome, q, Date.now() + TASK_TTL);
+        const expiresAt = marker?.expires ?? (Date.parse(q.created_at) + TASK_TTL);
         rememberLandTask(landTasks, q.flow, landActive);
-        saveTaskReceipt({ id: q.flow, expiresAt: Date.parse(q.created_at) + TASK_TTL });
+        saveTaskReceipt({ id: q.flow, expiresAt, epoch: q.epoch ?? 0 });
         return { resultType: 'task', ...ticketQueueTask(hudHome, q) };
       }
       if (!q.task && callerPane) void ensureQueueWatcher(callerPane, hudHome);
@@ -892,17 +894,23 @@ async function respondTicketQueue(args: Args, batch: boolean) {
     if (typeof args.request_id !== 'string' || !args.request_id.trim()) throw new Error('invalid_arguments: request_id');
     requestId = args.request_id.trim();
   }
-  const res = await answerTicketQueueHandback(hudHome, id, answer, { pane: callerPane, requestId });
+  const claimTask = !batch && session.taskClient && session.taskCapable;
+  const res = await answerTicketQueueHandback(hudHome, id, answer, { pane: callerPane, requestId, claimTask });
   if (!res.ok) return res;
   publishWorkSummary();
   if (res.resumed) {
     ensureWatcher();
-    if (!batch && res.queue.task && session.taskCapable) {
+    if (claimTask && res.queue.task) {
+      const marker = liveQueueTask(hudHome, res.queue) ?? claimQueueTask(hudHome, res.queue, Date.now() + TASK_TTL);
+      const expiresAt = marker?.expires ?? (Date.now() + TASK_TTL);
       rememberLandTask(landTasks, res.queue.flow, landActive);
-      saveTaskReceipt({ id: res.queue.flow, expiresAt: Date.parse(res.queue.created_at) + TASK_TTL });
+      saveTaskReceipt({ id: res.queue.flow, expiresAt, epoch: res.queue.epoch ?? 0 });
       return { resultType: 'task', ...ticketQueueTask(hudHome, res.queue) };
     }
-    if (!res.queue.task && callerPane) void ensureQueueWatcher(callerPane, hudHome);
+    landTasks.delete(res.queue.flow);
+    if (callerPane) void ensureQueueWatcher(callerPane, hudHome);
+  } else if (res.queue.state !== 'working') {
+    landTasks.delete(res.queue.flow);
   }
   return { ok: true, ...ticketQueueView(res.queue) };
 }
@@ -1158,7 +1166,7 @@ export async function syncPanelDelivery() {
         return !!job && ownsJob(job) && matches(job);
       }, async message => {
         const sent = await notify(callerPane, message, hudHome);
-        return sent.status === 0 || sent.uncertain === true;
+        return notifyOutcome(sent) !== 'refused';
       }, () => watching(callerPane, hudHome) ? [] : taskNotices());
     }
     ensureBatchTimer();

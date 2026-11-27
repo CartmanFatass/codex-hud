@@ -6,7 +6,7 @@ import { isAutoLandFlakeJob } from '../mcp/flake-admission.js';
 import { pruneFlakeBlockJobs, readFlakeBlockJobs } from '../mcp/flake-block-index.js';
 import type { Job } from '../mcp/job-contracts.js';
 import { activeLand, isFlowId, landFile, landNoticeLine, readLand } from '../mcp/land-state.js';
-import { isTicketQueueId, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { isTicketQueueId, liveQueueTask, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
@@ -14,7 +14,7 @@ import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { reportReadHint } from '../utils/report-summary.js';
 import { composedActive, isComposedId, type ComposedRun } from './composed-state.js';
 import { workflowHeaders } from './header-scan.js';
-import { directRecipient, runNoticeRecipient, runVisible } from './scope.js';
+import { runNoticeRecipient, runVisible } from './scope.js';
 import { noticeEvents } from './store.js';
 
 const MAX_FLAKE_JOB_BYTES = 4 * 1024 * 1024;
@@ -101,7 +101,7 @@ export function taskNoticeSource(home: string, pane: string | null, cwd: string)
   let previous: string | undefined, composed: ComposedRun[] = [], queues: { id: string; q: TicketQueue }[] = [];
   const queueEvents = (id: string, q: TicketQueue) => {
     if (!q.notices || !runNoticeRecipient(queueScope(q), pane, cwd)) return [];
-    if (q.task && q.state !== 'working' && directRecipient(q)) return [];
+    if (q.state !== 'working' && liveQueueTask(home, q)) return [];
     return noticeEvents(home, { flow: id, notices: q.notices }, false, landFile(home, id));
   };
   const flowEvents = () => {
@@ -203,7 +203,7 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
         if (q.notices) events.push(...noticeEvents(home, { flow: id, notices: q.notices }, all, path));
         continue;
       }
-      if (q.task && directRecipient(q)) continue; // Live task clients collect their paused/terminal queue result via tasks/get.
+      if (liveQueueTask(home, q)) continue; // Live task clients collect their paused/terminal queue result via tasks/get.
       const outbox = q.template && q.notices !== undefined
         ? { flow: id, notices: q.notices }
         : q.notices && Object.keys(q.notices).length ? { flow: id, notices: q.notices }

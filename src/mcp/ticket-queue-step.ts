@@ -42,12 +42,10 @@ import {
   extractRemovalsDeclaration, extractReportNotes, MAX_ANSWER_RETRIES, parseLeadReport,
   recordDecision, WORKFLOW_WORKER_RULE, WORKFLOW_WORKER_RULE_NO_ASK,
 } from './workflow-lead.js';
-import { permissionBlockAt, permissionNotice, permissionPredatesBlock, permissionStatus, permissionTarget, PERMISSION_ID } from './worker-permissions.js';
+import { permissionNotice, permissionRecheckMs as workerPermissionRecheckMs, permissionStatus, PERMISSION_ID } from './worker-permissions.js';
 
 const cleanStates = ['idle_grace', 'done', 'closed'];
 const LAUNCH_GRACE_MS = 120_000, LAUNCH_RECHECK_MS = 5_000, ANSWER_RETRY_MS = 1_000;
-// Allow the watcher's 30 s safety check plus capture, classification, and a fresh menu check.
-const PERMISSION_GRACE_MS = 45_000;
 const errorLine = (error: unknown) => (error instanceof Error ? error.message : String(error)).split('\n')[0];
 const owner = (q: TicketQueue, item: TicketQueueItem) => item.dispatch_queue ?? q.flow;
 const requestKey = (q: TicketQueue, item: TicketQueueItem) => `ticket-queue:${owner(q, item)}:${item.ticket}`;
@@ -62,21 +60,29 @@ const leadEnabled = (root: string) =>
   roleRegistry(hudHome, root, process.env, undefined, undefined, BUNDLED_ROOT).roles().has('lead');
 
 function permissionRecheckMs(job: Job, status: JobStatus | null, statusAt: number | null) {
-  if ((!status?.blocked && status?.state !== 'blocked') || !job.cli || job.reaped_at || job.headless || job.bro || job.jev ||
-      !permissionTarget(jobCache.readSession(job.job))) return 0;
-  const blockAt = permissionBlockAt(status, statusAt);
-  // A menu may clear before the supervisor publishes that the worker is running again.
-  const latest = permissionStatus(directory(job.job), jobCache).latest;
-  const resolvedAt = latest?.resolved_at && !permissionPredatesBlock(latest, blockAt) ? Date.parse(latest.resolved_at) : -Infinity;
-  const left = Math.max(blockAt, resolvedAt) + PERMISSION_GRACE_MS - Date.now();
-  return left > 0 ? Math.min(left, LAUNCH_RECHECK_MS) : 0;
+  return workerPermissionRecheckMs(directory(job.job), job, status, statusAt, jobCache, LAUNCH_RECHECK_MS);
+}
+
+function activeLandRepairJob(item: TicketQueueItem): string | undefined {
+  if (!item.job || item.landed || item.failed) return undefined;
+  const land = item.land ? readLand(hudHome, item.land) : landAttempt(hudHome, item.job).prior;
+  return land?.job === item.job && activeLand(land) ? land.repairs?.at(-1)?.job : undefined;
 }
 
 // Pane-less runs have no direct recipient. Use their project-scoped, once-claimed outbox.
 function syncPermissionNotices(q: TicketQueue) {
   if (q.pane) return false;
   const current = new Map<string, string>();
-  const ids = [...q.tickets.filter(item => !item.landed && !item.failed).map(item => item.job), q.review_job, q.active_lead?.job];
+  const ids = new Set<string>();
+  for (const item of q.tickets) {
+    if (item.landed || item.failed) continue;
+    if (item.job) ids.add(item.job);
+    if (item.repair_job) ids.add(item.repair_job);
+    const activeRepair = activeLandRepairJob(item);
+    if (activeRepair) ids.add(activeRepair);
+  }
+  if (q.review_job) ids.add(q.review_job);
+  if (q.active_lead?.job) ids.add(q.active_lead.job);
   for (const id of ids) {
     const job = id && findJob(id);
     if (!job || jobCallerPane(job)) continue;
@@ -342,7 +348,7 @@ function computeRemaining(q: TicketQueue): string[] {
 }
 
 function terminalNotice(q: TicketQueue, keyPrefix: 'end' | 'pause' = 'end') {
-  return q.task ? {} : { [`${keyPrefix}-${q.epoch ?? 0}`]: ticketQueueNotice(q).replace(/\r?\n/g, ' | ') };
+  return { [`${keyPrefix}-${q.epoch ?? 0}`]: ticketQueueNotice(q).replace(/\r?\n/g, ' | ') };
 }
 
 function pauseNotice(q: TicketQueue) {
@@ -1905,8 +1911,11 @@ export async function driveTicketQueue(id: string) {
         ] : []),
         ...(q.queued ?? []).flatMap(item => item.blockers.map(ref => ({ dir: join(q.root, '.scratch', ref.split('/')[0].toLowerCase(), 'issues') }))),
         ...(blockerHandbackItem(q) && !q.unattended ? [{ dir: join(q.root, '.scratch', q.feature, 'issues') }] : []),
-        ...q.tickets.flatMap(item => item.job && !item.landed && (!item.held || item.held.request_id) && !item.failed
-          ? [{ dir: directory(item.repair_job ?? item.job), recursive: true, filter: jobDirFilter }] : []),
+        ...[...new Set(q.tickets.flatMap(item => {
+          if (!item.job || item.landed || (item.held && !item.held.request_id) || item.failed) return [];
+          const activeRepair = activeLandRepairJob(item);
+          return activeRepair ? [item.repair_job ?? item.job, activeRepair] : [item.repair_job ?? item.job];
+        }))].map(jobId => ({ dir: directory(jobId), recursive: true, filter: jobDirFilter })),
         ...(q.review_job ? [{ dir: directory(q.review_job), recursive: true, filter: jobDirFilter }] : []),
         ...(q.active_lead?.job ? [{ dir: directory(q.active_lead.job), recursive: true, filter: jobDirFilter }] : []),
         ...(q.pending_answer?.worker_job ? [{ dir: directory(q.pending_answer.worker_job), recursive: true, filter: jobDirFilter }] : []),

@@ -24,10 +24,10 @@ const pane = 'w1:p2', main = 'w1:p1';
 const prompt = (command, highlighted = 1) => `Historical output\n╭─────────────────╮\n Bash command\n\n   ${command}\n\n Do you want to proceed?\n ${highlighted === 1 ? '❯' : ' '} 1. Yes\n ${highlighted === 2 ? '❯' : ' '} 2. Yes, and don't ask again\n ${highlighted === 3 ? '❯' : ' '} 3. No\n\n Esc to cancel · Tab to amend\n╰─────────────────╯\n`;
 const filePrompt = (heading, question, extra = '') => `╭─────────────────╮\n ${heading}\n${extra ? `\n${extra}\n` : ''}\n ${question}\n ❯ 1. Yes\n   2. Yes, allow all edits during this session\n   3. No\n\n Esc to cancel\n╰─────────────────╯\n`;
 
-async function syntheticHerdr(t, f, holdSubscribe) {
+async function syntheticHerdr(t, f, holdSubscribe, opts = {}) {
   const endpoint = join(dirname(f.home), 'permissions.sock');
-  const sockets = new Set(), subscribers = new Set(), keys = [];
-  let reads = 0, state = 'working', visible = '', afterRead, sendMode = 'ok';
+  const sockets = new Set(), subscribers = new Set(), keys = [], prompts = [];
+  let reads = 0, state = 'working', visible = '', afterRead, sendMode = 'ok', promptMode = opts.promptMode ?? 'ok';
   let subscribeAck, tabProbes = 0, tabPresent = true;
   const update = (status, text = visible) => {
     visible = text;
@@ -44,7 +44,7 @@ async function syntheticHerdr(t, f, holdSubscribe) {
       const { id, method, params } = JSON.parse(line);
       let result;
       switch (method) {
-        case 'ping': result = { type: 'pong', version: '1.0-hud' }; break;
+        case 'ping': result = { type: 'pong', version: '1.0-hud', ...(opts.guardedPrompt ? { capabilities: { guarded_prompt: true } } : {}) }; break;
         case 'events.subscribe':
           subscribers.add(socket);
           result = { type: 'subscribed' };
@@ -66,6 +66,11 @@ async function syntheticHerdr(t, f, holdSubscribe) {
           if (sendMode === 'lost') return socket.destroy();
           if (sendMode === 'hold') return;
           result = { type: 'ok' }; break;
+        case 'agent.prompt':
+          prompts.push({ mode: promptMode, target: params.target, text: params.text });
+          if (promptMode === 'draft_present' || promptMode === 'not_ready') return socket.write(JSON.stringify({ id, error: { code: promptMode } }) + '\n');
+          if (promptMode === 'indeterminate') return socket.end();
+          result = { type: 'agent_prompted' }; break;
         default: result = {};
       }
       socket.write(JSON.stringify({ id, result }) + '\n');
@@ -77,14 +82,15 @@ async function syntheticHerdr(t, f, holdSubscribe) {
     for (const socket of sockets) socket.destroy();
     return new Promise(done => server.close(done));
   });
-  return { endpoint, keys, reads: () => reads, update,
+  return { endpoint, keys, prompts, reads: () => reads, update,
     subscribeAck: () => subscribeAck, tabProbes: () => tabProbes, hideTab: () => { tabPresent = false; },
-    changeAfterRead: text => { afterRead = text; }, sendMode: mode => { sendMode = mode; } };
+    changeAfterRead: text => { afterRead = text; }, sendMode: mode => { sendMode = mode; },
+    promptMode: mode => { promptMode = mode; } };
 }
 
 async function permissionWorker(t, opts = {}) {
   const f = fixture(t);
-  const herdr = await syntheticHerdr(t, f, opts.holdSubscribe);
+  const herdr = await syntheticHerdr(t, f, opts.holdSubscribe, opts);
   const worktree = opts.withWorktree ? join(dirname(f.home), 'worktree') : undefined;
   if (worktree) fs.mkdirSync(worktree, { recursive: true });
   const dir = f.job(null, { role: 'imp', created_at: new Date().toISOString(), cwd: opts.jobCwd ?? worktree ?? dirname(f.home), herdr_pane: main,
@@ -810,4 +816,44 @@ test('narrowed proof rejects symlinked scratchpads', t => {
   fs.unlinkSync(join(worktree, 'scratchpad'));
   fs.mkdirSync(join(worktree, 'scratchpad'));
   assert.deepEqual(provePermission(`S=${worktree}/scratchpad; rm -rf $S/out`, { task, worktree })?.roots, ['scratchpad']);
+});
+
+test('direct manual-permission handoff retries confirmed refusal and never repeats indeterminate send', { timeout: 20_000 }, async t => {
+  const { herdr, dir, unblocked, startWatch } = await permissionWorker(t, { guardedPrompt: true, promptMode: 'draft_present' });
+  herdr.update('blocked', prompt('git push'));
+  startWatch();
+
+  // 1. Confirmed refusal (draft_present) keeps the entry pending and releases its delivery claim so the watcher retries.
+  await until(() => permissionStatus(dir).active?.action === 'main' && herdr.prompts.length >= 1, 8_000);
+  const firstEntry = permissionStatus(dir).active;
+  assert.equal(firstEntry.outcome, 'pending');
+  const firstMarker = join(dir, `${firstEntry.id}.noticed`);
+  assert.equal(herdr.prompts[0].target, main);
+  assert.equal(herdr.prompts[0].mode, 'draft_present');
+  await until(() => !fs.existsSync(firstMarker), 4_000);
+
+  // Once main's prompt clears, the watcher retries and delivers once, keeping the marker.
+  herdr.promptMode('ok');
+  await until(() => herdr.prompts.some(p => p.mode === 'ok' && p.text.includes(firstEntry.id)), 8_000);
+  assert.equal(fs.existsSync(firstMarker), true);
+  const okCount = herdr.prompts.filter(p => p.mode === 'ok' && p.text.includes(firstEntry.id)).length;
+  assert.equal(okCount, 1);
+  // Subsequent scans must not repeat the delivered handoff.
+  await new Promise(r => setTimeout(r, 300));
+  assert.equal(herdr.prompts.filter(p => p.mode === 'ok' && p.text.includes(firstEntry.id)).length, 1);
+
+  // 2. Indeterminate send (dropped reply after submit) keeps the claim and is never repeated.
+  await unblocked();
+  herdr.promptMode('indeterminate');
+  herdr.update('blocked', prompt('git fetch'));
+  await until(() => permissionStatus(dir).active?.action === 'main' && herdr.prompts.some(p => p.mode === 'indeterminate'), 8_000);
+  const secondEntry = permissionStatus(dir).active;
+  const secondMarker = join(dir, `${secondEntry.id}.noticed`);
+  assert.equal(fs.existsSync(secondMarker), true, 'indeterminate manual handoff must keep its claim');
+  const secondAttempts = herdr.prompts.filter(p => p.text.includes(secondEntry.id)).length;
+  assert.equal(secondAttempts, 1);
+
+  herdr.promptMode('ok');
+  await new Promise(r => setTimeout(r, 700));
+  assert.equal(herdr.prompts.filter(p => p.text.includes(secondEntry.id)).length, 1, 'indeterminate manual handoff must never repeat');
 });

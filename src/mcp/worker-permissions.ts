@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { basename, isAbsolute, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import { hasLocalHerdrTarget, request } from '../runtime/herdr-socket.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
@@ -265,6 +265,28 @@ export function permissionBlockAt(status: Partial<JobStatus> | null | undefined,
 
 export const permissionPredatesBlock = (entry: PermissionEntry, blockAt: number) =>
   blockAt > Date.parse(entry.resolved_at ?? entry.at);
+
+// Allow the watcher's 30 s safety check plus capture, classification, and a fresh menu check.
+export const PERMISSION_GRACE_MS = 45_000;
+
+export function permissionRecheckMs(
+  dir: string,
+  job: Pick<Job, 'job' | 'cli' | 'reaped_at' | 'headless' | 'bro' | 'jev'>,
+  status: Partial<JobStatus> | null | undefined,
+  statusAt: number | null | undefined,
+  cache?: JobIndexCache,
+  recheckCapMs = 5_000,
+): number {
+  if ((!status?.blocked && status?.state !== 'blocked') || !job.cli || job.reaped_at || job.headless || job.bro || job.jev) return 0;
+  const index = cache ?? getJobIndexCache(dirname(dirname(dir)));
+  if (!permissionTarget(index.readSession(job.job))) return 0;
+  const blockAt = permissionBlockAt(status, statusAt);
+  // A menu may clear before the supervisor publishes that the worker is running again.
+  const latest = permissionStatus(dir, index).latest;
+  const resolvedAt = latest?.resolved_at && !permissionPredatesBlock(latest, blockAt) ? Date.parse(latest.resolved_at) : -Infinity;
+  const left = Math.max(blockAt, resolvedAt) + PERMISSION_GRACE_MS - Date.now();
+  return left > 0 ? Math.min(left, recheckCapMs) : 0;
+}
 
 export function permissionNotice(job: string, entry: PermissionEntry) {
   const options = entry.outcome === 'pending' ? entry.options.filter(option => option.value).map(option => ({ label: option.label,

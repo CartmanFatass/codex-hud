@@ -15,6 +15,7 @@ import { compactResult } from './result-text.js';
 import { ownStatuslineStrip } from '../../statusline-parity/strip.js';
 import { reportMainPaneGroup } from '../../runtime/pane-group.js';
 import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
+import { readQueueTask } from '../ticket-queue-state.js';
 import {
   resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, landTasks, landActive, flowReceipt, tasks,
   evictTask, activeTasks, loadTaskReceipt, TASK_TTL, saveTaskReceipt, stopBatchDelivery, beginHandoff,
@@ -319,8 +320,11 @@ export function openRuntime() {
         for (const id of landTasks) {
           if (loadTaskReceipt(id)) continue;
           try {
-            const flow = flowReceipt(id), expiresAt = flow ? Date.parse(flow.created_at) + TASK_TTL : 0;
-            if (expiresAt > Date.now()) saveTaskReceipt({ id, expiresAt });
+            const flow = flowReceipt(id);
+            if (!flow) continue;
+            const queueTask = 'wt' in flow ? null : readQueueTask(hudHome, id);
+            const expiresAt = queueTask?.expires ?? (Date.parse(flow.created_at) + TASK_TTL);
+            if (expiresAt > Date.now()) saveTaskReceipt({ id, expiresAt, ...(!('wt' in flow) && { epoch: flow.epoch ?? 0 }) });
           } catch { /* A broken flow receipt must not prevent reload. */ }
         }
         resumeTaskReceipts();

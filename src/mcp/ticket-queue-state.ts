@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { readDirSafe, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { isProcAlive, isValidPid, procStat } from '../utils/proc.js';
 import type { Cursor } from '../workflows/engine.js';
 import type { RunScope } from '../workflows/scope.js';
 import { requestStop, stopRequested } from '../workflows/store.js';
@@ -11,6 +12,81 @@ export const isTicketQueueId = (id: unknown): id is string => typeof id === 'str
 export const queueFile = (home: string, id: string) => join(home, 'flows', `${id}.json`);
 export const queueIds = (home: string) => readDirSafe(join(home, 'flows')).filter(file => file.endsWith('.json'))
   .map(file => file.slice(0, -5)).filter(isTicketQueueId);
+
+export const QUEUE_TASK_TTL_MS = 3 * 60 * 60_000;
+export type QueueTaskMarker = {
+  flow: string;
+  epoch: number;
+  pane: string;
+  pid: number;
+  start: string;
+  expires: number;
+};
+
+export const queueTaskFile = (home: string, flow: string) => join(home, 'flows', flow, 'task.json');
+
+export function readQueueTask(home: string, flow: string): QueueTaskMarker | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(queueTaskFile(home, flow), 'utf8')) as Partial<QueueTaskMarker>;
+    if (
+      raw?.flow !== flow ||
+      typeof raw.epoch !== 'number' || !Number.isSafeInteger(raw.epoch) || raw.epoch < 0 ||
+      typeof raw.pane !== 'string' ||
+      !isValidPid(raw.pid) ||
+      typeof raw.start !== 'string' || !raw.start ||
+      typeof raw.expires !== 'number' || !Number.isFinite(raw.expires)
+    ) return null;
+    return raw as QueueTaskMarker;
+  } catch { return null; }
+}
+
+export function claimQueueTask(
+  home: string,
+  q: Pick<TicketQueue, 'flow' | 'epoch' | 'pane'>,
+  expires = Date.now() + QUEUE_TASK_TTL_MS,
+): QueueTaskMarker | null {
+  const start = procStat(process.pid)?.start;
+  if (!start) return null;
+  const marker: QueueTaskMarker = {
+    flow: q.flow,
+    epoch: q.epoch ?? 0,
+    pane: q.pane,
+    pid: process.pid,
+    start,
+    expires,
+  };
+  try {
+    writeJsonPrivate(queueTaskFile(home, q.flow), marker);
+    return marker;
+  } catch { return null; }
+}
+
+export function clearQueueTask(home: string, flow: string, expectedEpoch?: number) {
+  const file = queueTaskFile(home, flow);
+  try {
+    if (expectedEpoch !== undefined) {
+      const existing = readQueueTask(home, flow);
+      if (existing && existing.epoch !== expectedEpoch) return;
+    }
+    fs.unlinkSync(file);
+  } catch { /* gone */ }
+}
+
+/** Reserve queue notices for an active MCP task only when a live task exists for this exact epoch. */
+export function liveQueueTask(
+  home: string,
+  q: Pick<TicketQueue, 'flow' | 'epoch' | 'pane' | 'task'>,
+  now = Date.now(),
+): QueueTaskMarker | null {
+  if (!q.task) return null;
+  const marker = readQueueTask(home, q.flow);
+  if (!marker) return null;
+  if (marker.epoch !== (q.epoch ?? 0)) return null;
+  if (marker.pane !== q.pane) return null;
+  if (marker.expires <= now) return null;
+  if (!isProcAlive(marker.pid, marker.start)) return null;
+  return marker;
+}
 
 export type TicketHandbackKind = 'question' | 'blocker' | 'assumption' | 'escalate' | 'check' | 'review' | 'land' | 'worker' | 'dispatch' | 'queue';
 export interface TicketHandback {

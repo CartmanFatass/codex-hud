@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { notify, watching } from '../roles/notify.js';
+import { notify, notifyOutcome, watching } from '../roles/notify.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
 import { procStat } from '../utils/proc.js';
 import { advance, pauseRun, type Run, type Tick } from './engine.js';
@@ -58,7 +58,7 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
         if (!profile.readerNotices && Object.keys(run.notices).length && directRecipient(run) && !watching(run.pane, home)) for (const { line, marker } of noticeEvents(home, run)) {
           try {
             const sent = await notify(run.pane, line, home);
-            if (!sent.skipped && (sent.status === 0 || sent.uncertain)) continue;
+            if (notifyOutcome(sent) !== 'refused') continue;
           } catch { /* The watcher/MCP can still deliver this notice. */ }
           fs.rmSync(marker, { force: true });
         }

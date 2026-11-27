@@ -96,7 +96,7 @@
     {
       "number": 23,
       "title": "Repair unattended/17+09: wakes and manual-permission handoffs are never lost or repeated",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -111,12 +111,19 @@
         {
           "id": 1,
           "text": "Tests cover each of findings 8-11.",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T14:24:53.664Z",
+        "job": "j3e4febd852881cea",
+        "flow": "f3e4febd852881cea",
+        "replay_base": "4ec0c6b7e4f3868bfded1b73f2e84c9507ed6b1a",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T13:23:16.962Z",
-      "updated_at": "2026-11-27T13:23:16.962Z"
+      "updated_at": "2026-11-27T14:24:53.664Z"
     },
     {
       "number": 24,

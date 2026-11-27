@@ -320,6 +320,150 @@ for (const mode of ['ordinary', 'unattended']) {
   });
 }
 
+for (const mode of ['bound', 'paneless']) {
+  test(`${mode} queue-owned land repair waits for native permission prompts, delivers notice for repair job ID, and lands`, { timeout: 45_000 }, async t => {
+    const f = await setupWorkflowProject(t, { count: 1, fixtureOptions: {
+      clockScale: 1, watcherTickMs: 350,
+      onPermissionKeys: () => fs.unlinkSync(join(f.env.HOME, 'cli-blocked')),
+    } });
+    fs.chmodSync(f.home, 0o700);
+    // Gate fails until the repair worker writes "fixed" to synthetic.txt.
+    fs.writeFileSync(join(f.root, '.hud/project.json'), JSON.stringify({
+      land: { base: 'base', gate: ['grep -q fixed synthetic.txt'], after: [], push: false },
+    }));
+    f.git(f.root, 'add', '.hud/project.json');
+    f.git(f.root, 'commit', '-qm', 'require fixed in land gate');
+    fallbackRole(f, 'imp', [{ harness: 'cli', agent: 'claude', model: 'synthetic-claude' }]);
+
+    const hold = name => writeFixtureFile(join(f.env.HOME, name), '');
+    const release = name => { try { fs.unlinkSync(join(f.env.HOME, name)); } catch {} };
+    hold('hold-turn');
+    hold('missing-report');
+    let flow;
+    if (mode === 'paneless') {
+      const env = { ...f.env };
+      delete env.HERDR_PANE_ID;
+      const started = execFileSync(process.execPath, [
+        '--input-type=module', '-e',
+        `import { startTicketQueue } from ${JSON.stringify(resolve('dist/mcp/ticket-queue.js'))};
+        const q = await startTicketQueue(process.env.HUD_HOME, process.argv[1], null, false, { feature: 'sample', max_parallel: 1 });
+        console.log(JSON.stringify({ flow: q.flow }));`,
+        f.root,
+      ], { env, encoding: 'utf8' });
+      ({ flow } = JSON.parse(started));
+    } else {
+      ({ flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root }));
+    }
+    const [job] = await f.jobs(flow, 1), dir = f.dir(job);
+    await until(() => fs.existsSync(join(dir, 'STATUS.json')) && readJson(join(dir, 'STATUS.json')).state === 'working', 6000);
+
+    // Mark source as tier: 'light' so dispatchLandRepair spawns a replacement repair job ID (repairId !== job).
+    const srcJob = readJson(join(dir, 'job.json'));
+    writeFixtureFile(join(dir, 'job.json'), JSON.stringify({
+      ...srcJob,
+      route: { tier: 'light', mode: 'single', reason: 'synthetic', source: 'default' },
+    }));
+    const wtRoot = f.job(job).worktree.root;
+    writeFixtureFile(join(wtRoot, 'synthetic.txt'), 'Initial draft.\n');
+    f.git(wtRoot, 'add', 'synthetic.txt');
+    f.git(wtRoot, 'commit', '-qm', 'initial draft');
+    writeFixtureFile(join(dir, 'report.md'), 'Synthetic initial report.\nRemoves: none\n');
+    const { seq, sent_at } = readJson(join(dir, 'turn.json'));
+    writeFixtureFile(join(dir, 'done.json'), JSON.stringify({ seq, sent_at, report_sig: reportSignature(dir), at: new Date().toISOString() }));
+    release('hold-turn');
+    await until(() => ['idle_grace', 'done', 'closed'].includes(readJson(join(dir, 'STATUS.json')).state), 10_000);
+
+    // Hold the replacement repair worker turn so we can drive native permission prompts during repairLand.
+    hold('hold-turn');
+    let landId, repairId;
+    await until(() => {
+      const q = f.flow(flow);
+      landId = q.tickets[0]?.land;
+      if (!landId || !fs.existsSync(join(f.home, 'flows', `${landId}.json`))) return false;
+      const land = readJson(join(f.home, 'flows', `${landId}.json`));
+      repairId = land.repairs?.at(-1)?.job;
+      return Boolean(repairId && repairId !== job);
+    }, 15_000);
+
+    const repairDir = f.dir(repairId);
+    const repairStatusFile = join(repairDir, 'STATUS.json');
+    const repairStatus = () => fs.existsSync(repairStatusFile) ? readJson(repairStatusFile) : {};
+    const landState = () => readJson(join(f.home, 'flows', `${landId}.json`));
+    const active = () => permissionStatus(repairDir).active;
+    const watcherReads = () => f.socketRequests.filter(req => req.method === 'pane.read' && req.params.source === 'visible').length;
+    const keys = () => f.socketRequests.filter(req => req.method === 'pane.send_keys').map(req => req.params.keys);
+    await until(() => repairStatus().state === 'working' && repairStatus().supervisor_pid, 8_000);
+
+    const menu = command => `Bash command\n${command}\nDo you want to proceed?\n❯ 1. Yes\n2. No\nEsc to cancel`;
+    const boxed = command => `╭─────────────────╮\n${menu(command)}\n╰─────────────────╯`;
+
+    // 1. Repair worker hits a native permission block before watcher classifies it: repairLand must wait across multiple 250ms polls.
+    const readsBefore = watcherReads();
+    hold('pane-read-timeout');
+    writeFixtureFile(join(f.env.HOME, 'pane-read'), `${boxed('pwd')}\n${boxed('git status -s')}`);
+    hold('cli-blocked');
+    await until(() => repairStatus().blocked && watcherReads() > readsBefore, 6_000);
+    await delay(650, undefined, { signal: t.signal });
+    assert.equal(active(), undefined);
+    assert.equal(landState().state, 'running', JSON.stringify(landState()));
+    assert.equal(f.flow(flow).state, 'working');
+    assert.equal(f.flow(flow).tickets[0].failed, undefined);
+    release('pane-read-timeout');
+
+    // 2. Watcher classifies manual permission on repairId: land step reflects permission ID and notice names repairId.
+    await until(() => active()?.action === 'main', 6_000);
+    const entry = active();
+    assert.equal(entry.outcome, 'pending');
+    await until(() => landState().step === `repair 1: waiting for main (${entry.id})`, 6_000);
+    assert.equal(landState().state, 'running');
+    if (mode === 'paneless') {
+      await until(() => f.flow(flow).notices[`handback-${entry.id}`], 6_000);
+      const notice = f.flow(flow).notices[`handback-${entry.id}`];
+      assert.ok(notice.includes(repairId), `expected repair job ID ${repairId} in notice: ${notice}`);
+      const delivered = taskNoticeSource(f.home, f.env.HERDR_PANE_ID, f.root)();
+      assert.equal(delivered.length, 1);
+      assert.ok(delivered[0].line.includes(repairId));
+      assert.ok(delivered[0].line.includes(`Open pane ${entry.pane}`));
+    } else {
+      await until(() => fs.existsSync(join(repairDir, `${entry.id}.noticed`)), 6_000);
+    }
+
+    // 3. Resolve manual menu, then hit an auto-approvable prompt on the repair worker -> watcher auto-approves and repair stays running.
+    release('cli-blocked');
+    await until(() => !repairStatus().blocked && !active(), 6_000);
+    const scratch = join(repairDir, 'scratchpad');
+    fs.mkdirSync(scratch);
+    const readsBeforeAuto = watcherReads();
+    hold('pane-read-timeout');
+    writeFixtureFile(join(f.env.HOME, 'pane-read'), menu(`rm -f ${scratch}/*.png`));
+    hold('cli-blocked');
+    await until(() => repairStatus().blocked && watcherReads() > readsBeforeAuto, 6_000);
+    await delay(550, undefined, { signal: t.signal });
+    assert.equal(landState().state, 'running');
+    release('pane-read-timeout');
+    await until(() => permissionStatus(repairDir).latest?.outcome === 'answered', 6_000);
+    assert.deepEqual(keys(), [['Enter']]);
+    assert.equal(landState().state, 'running');
+
+    // 4. Repair commits the fix and settles -> land re-triages and lands cleanly!
+    writeFixtureFile(join(wtRoot, 'synthetic.txt'), 'fixed\n');
+    f.git(wtRoot, 'add', 'synthetic.txt');
+    f.git(wtRoot, 'commit', '-qm', 'apply repair fix');
+    writeFixtureFile(join(repairDir, 'report.md'), 'Synthetic repair report.\nRemoves: none\n');
+    const rTurn = readJson(join(repairDir, 'turn.json'));
+    writeFixtureFile(join(repairDir, 'done.json'), JSON.stringify({ seq: rTurn.seq, sent_at: rTurn.sent_at, report_sig: reportSignature(repairDir), at: new Date().toISOString() }));
+    release('hold-turn');
+
+    await until(() => f.flow(flow).tickets[0].landed, 20_000);
+    assert.equal(f.git(f.root, 'show', 'base:synthetic.txt'), 'fixed');
+    await until(() => f.flow(flow).review_job, 8_000);
+    await f.settleReview(f.flow(flow).review_job);
+    await until(() => f.flow(flow).active_lead?.kind === 'accept', 8_000);
+    await f.settleLead(f.flow(flow).active_lead.job);
+    assert.equal((await f.end(flow)).state, 'completed');
+  });
+}
+
 test('unattended Objective run lands tickets in one run (N + 2 sessions), records durable owner-try acceptance, and wakes on fs watch for next run', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, {
     tickets: {

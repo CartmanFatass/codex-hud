@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { jobRowReportMeta, readJobProgress, type JobRow } from '../../collectors/thin-jobs.js';
 import { questionFields } from '../../collectors/work-artifacts.js';
 import { checkBinding, readCheckReceipt, sameChecks, CHECKS_FILE, CHECK_TIMEOUT_MS } from '../../roles/job-checks.js';
-import { taskDelivery, notify } from '../../roles/notify.js';
+import { taskDelivery, notify, notifyOutcome } from '../../roles/notify.js';
 import { writeJsonPrivate, readJsonBounded, readDirSafe, writePrivateFile } from '../../utils/atomic-fs.js';
 import { procStat } from '../../utils/proc.js';
 import { reportReadHint } from '../../utils/report-summary.js';
@@ -17,7 +17,7 @@ import { monitorText } from '../../render/monitor-text.js';
 import { hasHeadlessSends, headlessFollowupReady } from '../headless-sends.js';
 import { readLand, activeLand, isFlowId } from '../land-state.js';
 import { landTask } from '../land.js';
-import { isTicketQueueId, readTicketQueue } from '../ticket-queue-state.js';
+import { claimQueueTask, isTicketQueueId, readQueueTask, readTicketQueue } from '../ticket-queue-state.js';
 import { ticketQueueTask } from '../ticket-queue.js';
 import { jobFiles } from '../paths.js';
 import {
@@ -48,7 +48,7 @@ export type HudTask = {
 };
 export let tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
 
-type TaskReceipt = { id: string; expiresAt: number };
+type TaskReceipt = { id: string; expiresAt: number; epoch?: number };
 type JobTaskReceipt = TaskReceipt & Omit<HudTask, 'seenQuestions'> & { seenQuestions: string[] };
 const taskRoot = join(hudHome, 'mcp-tasks');
 const jobTaskId = /^j[0-9a-f]{16}:[0-9a-f]{16}$/;
@@ -310,9 +310,10 @@ async function pushBatchNotices() {
       if (!session.taskClient || session.resumeRefusal) break;
       try {
         const sent = await notify(callerPane, item.text, hudHome);
-        if (sent.status === 0 || sent.uncertain) {
+        const outcome = notifyOutcome(sent);
+        if (outcome !== 'refused') {
           batchPending.delete(id);
-          if (!sent.uncertain) recordBatchNotice(item, id, 'push');
+          if (outcome === 'sent') recordBatchNotice(item, id, 'push');
         }
       } catch { /* Retry on next tick or deliver via withChanges. */ }
     }
@@ -441,14 +442,31 @@ export async function taskRequest(taskId: string, cancel: boolean,
   closeJob: (job: Job, stop: boolean) => Promise<{ exit_code: number; last_line: string }>) {
   if (flowId(taskId)) {
     const live = landTasks.has(taskId);
-    if (!live && (cancel || !loadTaskReceipt(taskId))) return unknownTask(taskId);
+    const receipt = loadTaskReceipt(taskId);
+    if (!live && (cancel || !receipt)) return unknownTask(taskId);
     const flow = flowReceipt(taskId);
-    if (!flow || Date.parse(flow.created_at) + TASK_TTL <= Date.now()) {
+    if (!flow) {
       landTasks.delete(taskId);
       return unknownTask(taskId);
     }
+    if ('wt' in flow) {
+      if (Date.parse(flow.created_at) + TASK_TTL <= Date.now()) {
+        landTasks.delete(taskId);
+        return unknownTask(taskId);
+      }
+      if (live) { landTasks.delete(taskId); landTasks.add(taskId); }
+      return landTask(hudHome, flow, cancel);
+    }
+    const marker = readQueueTask(hudHome, taskId);
+    const taskEpoch = marker?.epoch ?? receipt?.epoch;
+    const expiresAt = marker?.expires ?? receipt?.expiresAt ?? (Date.parse(flow.created_at) + TASK_TTL);
+    if ((!marker && !receipt) || expiresAt <= Date.now() || (taskEpoch !== undefined && taskEpoch !== (flow.epoch ?? 0))) {
+      landTasks.delete(taskId);
+      return unknownTask(taskId);
+    }
+    if (flow.state === 'working' && !cancel && !live && receipt) claimQueueTask(hudHome, flow, expiresAt);
     if (live) { landTasks.delete(taskId); landTasks.add(taskId); }
-    return 'wt' in flow ? landTask(hudHome, flow, cancel) : ticketQueueTask(hudHome, flow, cancel);
+    return ticketQueueTask(hudHome, flow, cancel);
   }
   let task = tasks.get(taskId);
   if (!task && !cancel) {

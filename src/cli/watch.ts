@@ -10,7 +10,7 @@ import { getHudHome } from '../hud-home.js';
 import { watchJobChanges } from '../collectors/job-changes.js';
 import { collectSessionJobRows, watchJobsInBackground } from '../collectors/job-snapshot.js';
 import { workflowEvents } from '../workflows/events.js';
-import { PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, recordPromptExpiry, registerWatcher, type NotifyResult } from '../roles/notify.js';
+import { notifyOutcome, PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, recordPromptExpiry, registerWatcher, type NotifyResult } from '../roles/notify.js';
 import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { reportMainPaneGroup } from '../runtime/pane-group.js';
 import { herdrId } from '../roles/herdr-run.js';
@@ -345,6 +345,7 @@ export async function watchCommand(
   }
   let stopPaneWatch: (() => void) | undefined;
   let retryAt = Infinity;
+  let flowRetryAt = Infinity;
   const waitForPrompt = () => {
     retryAt = performance.now() + PROMPT_QUIET_MS;
     stopPaneWatch ??= watchHerdrPane(callerPane!, io.env, changed, stop);
@@ -392,7 +393,7 @@ export async function watchCommand(
       if (stopped) return resolve();
       wakeWait = resolve;
       inputs.attach();
-      timer = setTimeout(fire, Math.min(dirty ? DEBOUNCE_MS : rescanMs, notices.delay, Math.max(0, retryAt - performance.now())));
+      timer = setTimeout(fire, Math.min(dirty ? DEBOUNCE_MS : rescanMs, notices.delay, Math.max(0, Math.min(retryAt, flowRetryAt) - performance.now())));
     });
 
   const pidFile = !all && callerPane ? join(home, 'watchers', `${callerPane}.pid`) : null;
@@ -419,7 +420,6 @@ export async function watchCommand(
     const agyBacklog: string[] = [];
     let agyGuardUntil: number | undefined;
     let typedPending: { retry: NonNullable<NotifyResult['retryPrompt']>; text: string; until: number; markers: string[] } | undefined;
-    let flowRetryAt = Infinity;
     const flowMarkers = new Map<string, string[]>();
     const trackFlowEvents = (items: readonly { line: string; marker: string }[]) => {
       for (const { line, marker } of items) {
@@ -542,7 +542,7 @@ export async function watchCommand(
           }
           const sent = await typedPending.retry(typedPending.text, signal);
           if (stopped) {
-            if (sent.status !== 0 && !sent.uncertain) releaseMarkers(typedPending.markers);
+            if (notifyOutcome(sent) === 'refused') releaseMarkers(typedPending.markers);
             typedPending = undefined;
             noPendingPrompt();
             break;
@@ -551,12 +551,11 @@ export async function watchCommand(
             typedPending.retry = sent.retryPrompt;
             waitForPrompt();
           } else {
-            if (sent.status !== 0 && !sent.uncertain) {
+            if (notifyOutcome(sent) === 'refused') {
               releaseMarkers(typedPending.markers);
               if (typedPending.markers.length) {
                 idleSince = null;
                 flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
-                retryAt = Math.min(retryAt, flowRetryAt);
               }
             }
             typedPending = undefined;
@@ -575,8 +574,9 @@ export async function watchCommand(
         try {
           if (queue) {
             const sent = await delivery!.notify(callerPane, line, home, { queue: true, env: io.env, signal });
+            const outcome = notifyOutcome(sent);
             if (stopped) {
-              if (sent.status !== 0 && !sent.uncertain) releaseMarkers(claimed);
+              if (outcome === 'refused') releaseMarkers(claimed);
               for (const rest of batches.slice(i + 1)) releaseMarkers(takeMarkers(rest));
               break;
             }
@@ -590,12 +590,11 @@ export async function watchCommand(
               waitForPrompt();
               break;
             }
-            if (sent.status !== 0 && !sent.uncertain) {
+            if (outcome === 'refused') {
               releaseMarkers(claimed);
               if (claimed.length) {
                 idleSince = null;
                 flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
-                retryAt = Math.min(retryAt, flowRetryAt);
               }
             }
             if (sent.detail?.includes('failed') || sent.status !== 0) io.stderr(`${sent.detail || 'event delivery failed'}\n`);

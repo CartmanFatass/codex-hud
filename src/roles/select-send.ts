@@ -19,6 +19,7 @@ import { getJobIndexCache } from './job-index-cache.js';
 import { jobCallerPane } from './job-pane.js';
 import {
   notify,
+  notifyOutcome,
   PROMPT_QUIET_MS,
   PROMPT_RETRY_TTL_MS,
   recordPromptExpiry,
@@ -835,7 +836,7 @@ export async function deliverSelection(
   if (sent.retryPrompt) {
     return { ok: false, error: 'Main session not ready for guarded typing. Selection not sent.', retryPrompt: sent.retryPrompt };
   }
-  if (sent.status === 0 || sent.uncertain) {
+  if (notifyOutcome(sent) !== 'refused') {
     return { ok: true, delivered: 'direct', detail: sent.detail };
   }
   return {

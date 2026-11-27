@@ -14,11 +14,25 @@ import { pushAgyEvents, type Delivery } from '../../packages/hud-mcp/bin/agy-eve
 
 export { hasAgyEvents } from '../../packages/hud-mcp/bin/agy-events.mjs';
 
+export type NotifyOutcome = 'sent' | 'refused' | 'indeterminate';
+
 export type NotifyResult = Delivery & {
   stdout?: string; stderr?: string; skipped?: boolean;
   retryPrompt?: (text: string, signal?: AbortSignal) => Promise<NotifyResult>;
   uncertain?: true;
+  outcome?: NotifyOutcome;
 };
+
+export function notifyOutcome(
+  result: Pick<NotifyResult, 'outcome' | 'status' | 'skipped' | 'uncertain' | 'retry' | 'retryPrompt'>,
+): NotifyOutcome {
+  if (result.outcome) return result.outcome;
+  if (result.skipped) return 'refused';
+  if (result.status === 0) return 'sent';
+  if (result.uncertain) return 'indeterminate';
+  if (result.retry || result.retryPrompt) return 'refused';
+  return 'indeterminate';
+}
 type Pane = { agent?: string; agent_status?: string; agent_session?: { kind?: string; value?: string } };
 type Options = { signal?: AbortSignal };
 
@@ -94,6 +108,7 @@ export async function paneInfo(pane: string | null, env = process.env, { signal 
 const agyIdle = (info: Pane | null) => info?.agent === 'agy' && (info.agent_status === 'idle' || info.agent_status === 'done');
 
 const guardRefusals = new Set(['not_ready', 'scrolled_back', 'recent_input', 'draft_present', 'prompt_unknown']);
+const nonSendRefusals = new Set(['agent_not_ready', 'agent_not_found', 'pane_not_found', ...guardRefusals]);
 export const PROMPT_QUIET_MS = 3000; // Also the fork's default input_quiet_ms.
 export const PROMPT_RETRY_TTL_MS = 10 * 60_000;
 
@@ -104,25 +119,44 @@ export function recordPromptExpiry(home: string) {
 }
 
 async function typeMainNotice(pane: string | null, text: string, env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<NotifyResult> {
-  const pending = (retryPrompt: NonNullable<NotifyResult['retryPrompt']>): NotifyResult => ({ status: 1, retry: true, retryPrompt });
+  const pending = (retryPrompt: NonNullable<NotifyResult['retryPrompt']>): NotifyResult =>
+    ({ status: 1, retry: true, retryPrompt, outcome: 'refused' });
+  const abortedRefusal = (): NotifyResult =>
+    ({ status: null, stdout: '', stderr: '', error: new Error('aborted'), retry: true, outcome: 'refused' });
   const guarded = async (message: string, attemptSignal?: AbortSignal): Promise<NotifyResult> => {
+    if (attemptSignal?.aborted) return abortedRefusal();
     const reply = await request('agent.prompt', { target: pane, text: message, guarded: true }, { env, signal: attemptSignal, timeoutMs: 20_000 });
     if (reply?.error && guardRefusals.has(reply.error.code)) return pending(guarded);
-    if (!reply?.error && reply?.result?.type === 'agent_prompted') return { status: 0 };
+    if (reply?.error && nonSendRefusals.has(reply.error.code)) {
+      return { status: 1, retry: true, stderr: reply.error.message || reply.error.code, outcome: 'refused' };
+    }
+    if (!reply?.error && reply?.result?.type === 'agent_prompted') return { status: 0, outcome: 'sent' };
     // A lost/failed reply after submission does not prove that zero bytes were written.
-    return { status: 1, uncertain: true };
+    return { status: 1, uncertain: true, outcome: 'indeterminate' };
   };
+  if (signal?.aborted) return abortedRefusal();
   const reply = await request('ping', {}, { env, signal, timeoutMs: 500 });
+  if (signal?.aborted) return abortedRefusal();
   if (reply?.error || reply?.result?.type !== 'pong') return pending((message, attemptSignal) => typeMainNotice(pane, message, env, attemptSignal));
   if (reply.result.capabilities?.guarded_prompt === true) return guarded(text, signal);
   const outcome = await runHerdr(['agent', 'prompt', pane!, text], env, { budgetMs: 20_000, killGraceMs: 500, signal });
   const sent = deliveryResult(outcome);
-  if (sent.status !== 0) {
-    // Legacy Antigravity mailbox retries only failures known to precede input.
-    let code;
-    try { code = JSON.parse(sent.stdout!)?.error?.code; } catch { /* May be printed on stderr. */ }
-    code ??= /^(?:Error:\s*)?(agent_not_ready|agent_not_found)(?=[:\s]|$)/.exec(sent.stderr?.trim() ?? '')?.[1];
-    sent.retry = outcome.reason === 'unavailable' || code === 'agent_not_ready' || code === 'agent_not_found';
+  if (sent.status === 0) {
+    sent.outcome = 'sent';
+    return sent;
+  }
+  // Only positive non-send evidence justifies retry; timeouts and unknown failures are indeterminate.
+  let code: string | undefined;
+  try { code = JSON.parse(sent.stdout!)?.error?.code; } catch { /* May be printed on stderr. */ }
+  code ??= /^(?:Error:\s*)?(agent_not_ready|agent_not_found|pane_not_found|not_ready|scrolled_back|recent_input|draft_present|prompt_unknown)(?=[:\s]|$)/.exec(sent.stderr?.trim() ?? '')?.[1];
+  const refused = outcome.reason === 'unavailable' || (typeof code === 'string' && nonSendRefusals.has(code));
+  if (refused) {
+    sent.retry = true;
+    sent.outcome = 'refused';
+  } else {
+    sent.retry = false;
+    sent.uncertain = true;
+    sent.outcome = 'indeterminate';
   }
   return sent;
 }
@@ -139,17 +173,18 @@ export function notifyAgy(pane: string, messages: string[], home: string, env: N
 export async function notify(pane: string | null, message: string, home?: string, { queue = false, env = process.env, signal }: Options & { queue?: boolean; env?: NodeJS.ProcessEnv } = {}): Promise<NotifyResult> {
   if (!queue && watching(pane, home)) return { status: 0, skipped: true };
   const info = await paneInfo(pane, env, { signal });
-  const aborted = () => ({ status: null, stdout: '', stderr: '', error: new Error('aborted') });
+  const aborted = (): NotifyResult => ({ status: null, stdout: '', stderr: '', error: new Error('aborted'), outcome: 'refused' });
   if (signal?.aborted) return aborted();
   if (info?.agent === 'agy') {
     const sent = await notifyAgy(pane!, [message], home ?? (env.HUD_HOME || join(env.HOME || homedir(), '.hud')), env, info, { signal });
-    if (!sent.accepted) return { status: 1, error: sent.error ?? new Error('Antigravity mailbox busy or full') };
+    if (!sent.accepted) return { status: 1, outcome: 'refused', error: sent.error ?? new Error('Antigravity mailbox busy or full') };
     // Once persisted the event can still be delivered after a rejected prompt.
-    return { status: 0, detail: sent.detail ?? (sent.status === 0 ? 'typed into Antigravity' : 'pending for Antigravity delivery') };
+    return { status: 0, outcome: 'sent', detail: sent.detail ?? (sent.status === 0 ? 'typed into Antigravity' : 'pending for Antigravity delivery') };
   }
 
   let detail = '';
   if (info?.agent === 'codex' && info.agent_session?.value) {
+    let codexStarted = false;
     try {
       const got = await runHerdr(['pane', 'process-info', '--pane', pane!], env, { budgetMs: 2000, killGraceMs: 500, signal });
       if (!got.ok) throw new Error(got.stderr || `process-info failed (${got.reason})`);
@@ -158,14 +193,16 @@ export async function notify(pane: string | null, message: string, home?: string
       const account = readProcEnviron(proc.pid);
       if (!account) throw new Error('Codex process environment unreadable');
       const CODEX_HOME = account.CODEX_HOME || join(account.HOME || homedir(), '.codex');
+      if (signal?.aborted) return aborted();
+      codexStarted = true;
       // Leave headroom for the queue watcher to exit in 500 ms even if Codex ignores TERM.
       const outcome = await runCommand('codex', ['queue', '--thread', info.agent_session.value, '--message', message],
         { ...env, CODEX_HOME }, { budgetMs: 20_000, killGraceMs: 250, signal });
       const sent = deliveryResult(outcome);
-      if (outcome.ok) return { ...sent, detail: 'pushed via codex queue' };
+      if (outcome.ok) return { ...sent, outcome: 'sent', detail: 'pushed via codex queue' };
       throw new Error(sent.error?.message || sent.stderr || `exit ${sent.status}`);
     } catch (error) {
-      if (signal?.aborted) return aborted();
+      if (signal?.aborted) return codexStarted ? { ...aborted(), uncertain: true, outcome: 'indeterminate' } : aborted();
       detail = `codex queue failed (${String((error as Error).message).trim().slice(0, 200)}); fell back to typing`;
     }
   }

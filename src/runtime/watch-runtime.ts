@@ -25,7 +25,7 @@ import { noticeEvents, runDir } from '../workflows/store.js';
 import type { PrewalkRun } from '../mcp/prewalk-flow.js';
 import { workflowHeaders } from '../workflows/header-scan.js';
 import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
-import { isTicketQueueId, type TicketQueue } from '../mcp/ticket-queue-state.js';
+import { isTicketQueueId, liveQueueTask, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { canOverflowImpJob, startQueuedJob } from '../mcp/thin-main.js';
 import { resumeHeadlessQueue } from '../mcp/dispatch/orchestrator.js';
 import { hasHeadlessSends, headlessFollowupReady, noHeadlessReport } from '../mcp/headless-sends.js';
@@ -33,9 +33,9 @@ import { isGenericNoReportReason, lastTurnError, missingRunnerEvidence, missingR
 import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
 import { piTurnUnfinished, settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
-import { observeWorkerPermission, permissionNotice, permissionTarget } from '../mcp/worker-permissions.js';
+import { observeWorkerPermission, PERMISSION_ID, permissionNotice, permissionStatus, permissionTarget, type PermissionEntry } from '../mcp/worker-permissions.js';
 import { jobCallerPane } from '../roles/job-pane.js';
-import { notify as notifyPane, watching } from '../roles/notify.js';
+import { notify as notifyPane, notifyOutcome, watching as paneWatching } from '../roles/notify.js';
 import { jobChangePublisher } from '../collectors/job-changes.js';
 import { createWorkSummaryPublisher } from '../collectors/work-summary-snapshot.js';
 import type { Job, JobSession, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
@@ -231,9 +231,14 @@ const inFlightAutoLands = new Map<string, Promise<void>>();
 const inFlightStarts = new Map<string, { role: string; promise: Promise<void> }>();
 const permissionChecks = new Map<string, { controller: AbortController; promise: Promise<void> }>();
 const permissionsSeen = new Map<string, { pane: string; key: string; next: number }>();
+const permissionNoticeChecks = new Map<string, { controller: AbortController; promise: Promise<void> }>();
+const permissionNoticeRetries = new Map<string, { at: number; attempts: number }>();
 const flowNoticeChecks = new Map<string, { controller: AbortController; promise: Promise<void> }>();
 const flowNoticeRetries = new Map<string, { at: number; attempts: number }>();
 const WAITING_FLOW_NOTICE = /^(?:pause-\d+|handback-[a-z][a-z0-9_-]{0,47}|error-\d+)$/;
+function hasUnclaimedWaitingNotice(id: string, notices: Record<string, string>) {
+  return Object.keys(notices).some(key => WAITING_FLOW_NOTICE.test(key) && !fs.existsSync(join(runDir(home, id), `${key}.noticed`)));
+}
 function deliverFlowNotices(
   id: string,
   run: { pane: string; origin_mcp?: { pid: number; start: string }; notices?: Record<string, string> },
@@ -242,7 +247,7 @@ function deliverFlowNotices(
 ): number {
   let nextAt = Infinity;
   const endpoint = herdrEndpoint();
-  if (!endpoint || !fs.existsSync(endpoint) || !run.pane || !run.notices || !directRecipient(run) || watching(run.pane, home)) return nextAt;
+  if (!endpoint || !fs.existsSync(endpoint) || !run.pane || !run.notices || !directRecipient(run) || paneWatching(run.pane, home)) return nextAt;
   const ready: Record<string, string> = {};
   for (const [key, text] of Object.entries(run.notices)) {
     if (!WAITING_FLOW_NOTICE.test(key)) continue;
@@ -264,7 +269,7 @@ function deliverFlowNotices(
       }
     };
     const promise = notifyPane(run.pane, line, home, { signal: controller.signal }).then(sent => {
-      if (!sent.skipped && (sent.status === 0 || sent.uncertain)) {
+      if (notifyOutcome(sent) !== 'refused') {
         flowNoticeRetries.delete(marker);
         return;
       }
@@ -278,13 +283,51 @@ function deliverFlowNotices(
   }
   return nextAt;
 }
+function deliverPermissionNotice(
+  dir: string,
+  job: Job,
+  entry: PermissionEntry,
+  now: number,
+  seenMarkers: Set<string>,
+): number {
+  const endpoint = herdrEndpoint();
+  const recipient = jobCallerPane(job);
+  if (!endpoint || !fs.existsSync(endpoint) || !recipient || paneWatching(recipient, home)) return Infinity;
+  if (!PERMISSION_ID.test(entry.id) || (entry.outcome !== 'uncertain' && !(entry.action === 'main' && entry.outcome === 'pending'))) return Infinity;
+  const marker = join(dir, `${entry.id}.noticed`);
+  seenMarkers.add(marker);
+  if (permissionNoticeChecks.has(marker) || fs.existsSync(marker)) return Infinity;
+  const retry = permissionNoticeRetries.get(marker);
+  if (retry && retry.at > now) return retry.at;
+  try { fs.closeSync(fs.openSync(marker, 'wx', 0o600)); }
+  catch (e) { if (['EEXIST', 'ENOENT'].includes((e as NodeJS.ErrnoException).code ?? '')) return Infinity; throw e; }
+  const controller = new AbortController();
+  const recordRetry = () => {
+    fs.rmSync(marker, { force: true });
+    if (!controller.signal.aborted && herdrEndpoint()) {
+      const attempts = (permissionNoticeRetries.get(marker)?.attempts ?? 0) + 1;
+      permissionNoticeRetries.set(marker, { at: Date.now() + Math.min(30_000, 500 * 2 ** Math.min(attempts - 1, 6)), attempts });
+    }
+  };
+  const promise = notifyPane(recipient, permissionNotice(job.job, entry), home, { signal: controller.signal }).then(sent => {
+    if (notifyOutcome(sent) !== 'refused') {
+      permissionNoticeRetries.delete(marker);
+      return;
+    }
+    recordRetry();
+  }).catch(recordRetry).finally(() => {
+    permissionNoticeChecks.delete(marker);
+    drained();
+    schedule();
+  });
+  permissionNoticeChecks.set(marker, { controller, promise });
+  return Infinity;
+}
 function checkPermission(dir: string, job: Job, status: Partial<JobStatus> | null, session: SessionEntry) {
   const controller = new AbortController();
-  const promise = observeWorkerPermission(home, dir, job, status, session, controller.signal).then(entry => {
-    const recipient = jobCallerPane(job);
-    if (entry && recipient && !controller.signal.aborted)
-      void notifyPane(recipient, permissionNotice(job.job, entry), home).catch(() => {});
-  }).catch(() => { if (!controller.signal.aborted) warn(`permission ${job.job}`, `${job.job}: could not reconcile worker permission`); })
+  const promise = observeWorkerPermission(home, dir, job, status, session, controller.signal)
+    .then(() => undefined)
+    .catch(() => { if (!controller.signal.aborted) warn(`permission ${job.job}`, `${job.job}: could not reconcile worker permission`); })
     .finally(() => { permissionChecks.delete(job.job); drained(); schedule(); });
   permissionChecks.set(job.job, { controller, promise });
 }
@@ -298,7 +341,7 @@ let nextPiExitCheck = 0;
 const orphanRetries = new Map<string, { pid: number; at: number; delay: number }>();
 let pauseReady: ((state: Handoff | null) => void) | undefined;
 function drained() {
-  if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightAutoLands.size || inFlightStarts.size || checking.size || permissionChecks.size || flowNoticeChecks.size) return;
+  if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightAutoLands.size || inFlightStarts.size || checking.size || permissionChecks.size || permissionNoticeChecks.size || flowNoticeChecks.size) return;
   stopScheduling();
   pauseReady({ version: 1, reapRetries, preflightHold, worktreeRetries, summaryGeneration: workSummary.generation });
   pauseReady = undefined;
@@ -368,10 +411,12 @@ async function shutdown() {
   // Check helpers own their own lifetime. Reap helpers must exit before we release watch.pid.
   const permissions = [...permissionChecks.values()];
   for (const entry of permissions) entry.controller.abort();
+  const permissionNotices = [...permissionNoticeChecks.values()];
+  for (const entry of permissionNotices) entry.controller.abort();
   const flowNotices = [...flowNoticeChecks.values()];
   for (const entry of flowNotices) entry.controller.abort();
   await Promise.all([Promise.allSettled(reaps.map((entry) => entry.promise)), worktrees, starts,
-    Promise.race([Promise.allSettled([...permissions, ...flowNotices].map(entry => entry.promise)), delay(SHUTDOWN_DRAIN_MS, undefined, { ref: false })])]);
+    Promise.race([Promise.allSettled([...permissions, ...permissionNotices, ...flowNotices].map(entry => entry.promise)), delay(SHUTDOWN_DRAIN_MS, undefined, { ref: false })])]);
 }
 function sessionFolders(dir: string) {
   const dispatch = join(dir, '.dispatch');
@@ -857,6 +902,7 @@ function scan(retryWatch = false) {
     }
   }
   const orphans = new Set<string>();
+  const seenPermissionNoticeMarkers = new Set<string>();
   const watch = (dir: string, pid: number) => { nearest = Math.min(nearest, runners.watch(dir, pid)); };
   for (const id of listedIds) {
     const dir = join(jobs, id);
@@ -954,6 +1000,11 @@ function scan(retryWatch = false) {
           const due = permissionsSeen.get(id)?.next;
           if (due !== undefined && due > nowMs) nearest = Math.min(nearest, due);
         }
+      }
+      if (job && !job.headless && !job.bro && !job.jev && !job.reaped_at && !paneExit &&
+          ['working', 'waiting_orchestrator', 'blocked'].includes(status?.state ?? '')) {
+        const activePerm = permissionStatus(dir, jobCache).active;
+        if (activePerm) nearest = Math.min(nearest, deliverPermissionNotice(dir, job, activePerm, nowMs, seenPermissionNoticeMarkers));
       }
       if (direct && directKey && directRoot && !job?.reaped_at && !['done', 'closed', 'failed', 'stopped'].includes(status?.state ?? '')) {
         nearest = Math.min(nearest, nextPiExitCheck);
@@ -1354,8 +1405,12 @@ function scan(retryWatch = false) {
       } else if (isTicketQueueId(id)) {
         const q = header<TicketQueue>(file);
         if (!q) continue;
-        if (!q.task && (q.state === 'paused' || q.state === 'working')) {
+        const taskMarker = q.state === 'paused' ? liveQueueTask(home, q, flowScanNow) : null;
+        if (q.state === 'working' || (q.state === 'paused' && !taskMarker)) {
           nearest = Math.min(nearest, deliverFlowNotices(id, q, flowScanNow, seenFlowNoticeMarkers));
+        } else if (taskMarker && q.pane && q.notices && directRecipient(q) && !paneWatching(q.pane, home) && hasUnclaimedWaitingNotice(id, q.notices)) {
+          const endpoint = herdrEndpoint();
+          if (endpoint && fs.existsSync(endpoint)) nearest = Math.min(nearest, taskMarker.expires);
         }
         if (q.state !== 'working') continue;
         wakeWorkflow(home, q);
@@ -1454,8 +1509,9 @@ function scan(retryWatch = false) {
   runners.finishScan();
   for (const id of orphanRetries.keys()) if (!orphans.has(id)) orphanRetries.delete(id);
   for (const id of permissionsSeen.keys()) if (!liveIds.has(id)) permissionsSeen.delete(id);
+  for (const marker of [...permissionNoticeRetries.keys()]) if (!seenPermissionNoticeMarkers.has(marker)) permissionNoticeRetries.delete(marker);
   for (const marker of [...flowNoticeRetries.keys()]) if (!seenFlowNoticeMarkers.has(marker)) flowNoticeRetries.delete(marker);
-  const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightAutoLands.size > 0 || inFlightStarts.size > 0 || permissionChecks.size > 0 || flowNoticeChecks.size > 0;
+  const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightAutoLands.size > 0 || inFlightStarts.size > 0 || permissionChecks.size > 0 || permissionNoticeChecks.size > 0 || flowNoticeChecks.size > 0;
   if ((open || hasInFlight || nearest !== Infinity) && !watching) nearest = Math.min(nearest, Date.now() + degradedMs);
   if (nearest !== Infinity) timer = setTimeout(() => schedule(true), Math.max(1, Math.min(0x7fffffff, Math.ceil(nearest - Date.now()))));
   if (!queued && !open && !hasInFlight && nearest === Infinity) {

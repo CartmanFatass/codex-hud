@@ -9,6 +9,7 @@ import { cachedReportSignature } from '../roles/report-meta.js';
 import { DEFAULT_ASK_TIMEOUT_S, parseAskTimeoutSeconds } from '../worker/qa.js';
 import { setLandStep, writeLand, type LandFlow } from './land-state.js';
 import { dispatchLandRepair, releaseLandTurn } from './thin-main.js';
+import { permissionRecheckMs } from './worker-permissions.js';
 
 function questions(dir: string) {
   try { return fs.readdirSync(join(dir, jobFiles.qa)).filter(file => /^q\d+\.md$/.test(file)); }
@@ -60,9 +61,15 @@ function repairProgress(root: string, receipt: Job, key: string, inPlace: boolea
     if (open) return open;
   }
   if (oldStatus) return false;
+  if (row.permission) {
+    return waitForQuestions && (row.permission.outcome === 'uncertain' || (row.permission.action === 'main' && row.permission.outcome === 'pending'))
+      ? row.permission.id : false;
+  }
   // After an answer the worker may still be publishing its transition out of attention.
-  if (!asked.length && (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator'))
+  if (!asked.length && (row.blocked || row.state === 'blocked' || row.state === 'waiting_orchestrator')) {
+    if (permissionRecheckMs(root, receipt, status, statusAt) > 0) return false;
     throw Error(`${id} needs the main session`);
+  }
   if (row.display_state === 'done') {
     const sig = settledJobReport(row, status) && cachedReportSignature(root);
     const settled = status!.settled_at ? Date.parse(status!.settled_at) : statusAt!;
