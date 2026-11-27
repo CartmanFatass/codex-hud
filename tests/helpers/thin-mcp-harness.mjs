@@ -366,7 +366,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     rpc,
     notifications: rpc.notifications,
     call,
-    onCleanup: (fn) => cleanups.push(fn),
+    onCleanup: (fn, { afterMcp = false } = {}) => (afterMcp ? cleanups.unshift(fn) : cleanups.push(fn)),
     stopMcp,
     // Rename replaces the fixture symlink itself, never the shared executable it points to.
     overrideBin: (name, body) => writeFixtureFile(join(bin, name), body, { mode: 0o700 }),

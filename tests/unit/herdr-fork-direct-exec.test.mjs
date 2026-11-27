@@ -241,6 +241,8 @@ async function startForkHerdr(t, f, opts = {}) {
   const socketRequests = [];
   const subscriptions = [];
   const subscribers = new Set();
+  const connections = new Set();
+  let closing = false;
   const tabs = new Map(); // launch_id -> entry
   let seq = 0;
 
@@ -256,6 +258,8 @@ async function startForkHerdr(t, f, opts = {}) {
   };
 
   const server = createServer((conn) => {
+    if (closing) { conn.destroy(); return; }
+    connections.add(conn);
     const client = { conn, types: new Set(), pane: null };
     const lines = createInterface({ input: conn });
     lines.on('line', (line) => {
@@ -391,13 +395,15 @@ async function startForkHerdr(t, f, opts = {}) {
     });
     conn.on('error', () => {});
     lines.on('error', () => {});
-    conn.on('close', () => { subscribers.delete(client); lines.close(); });
+    conn.on('close', () => { connections.delete(conn); subscribers.delete(client); lines.close(); });
   });
   await new Promise((done) => server.listen(f.env.HERDR_SOCKET_PATH, done));
+  // Keep Herdr available until MCP exits and destroy every accepted socket so server.close never stalls.
   f.onCleanup(() => {
-    for (const c of subscribers) c.conn.destroy();
+    closing = true;
+    for (const conn of connections) conn.destroy();
     return new Promise((done) => server.close(done));
-  });
+  }, { afterMcp: true });
 
   const emit = (event, data) => {
     const line = JSON.stringify({ event, data }) + '\n';

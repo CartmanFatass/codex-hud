@@ -1,6 +1,6 @@
 # 24: Gate flakes collected after test-flakes/23
 
-**Status:** ready-for-agent
+**Status:** done
 **Owner try:** no
 **Live try:** none
 **Blocked by:** none
@@ -14,7 +14,9 @@
 - `hud_send: preserves the right turn on rejected-prompt` (tests/unit/thin-mcp-cli-turns.test.mjs) — flow `f7481730d0a511b32`, log `~/.hud/flows/f7481730d0a511b32.json.gate-1.log`
 - `tab_visible roles omit hidden even on a capable fork` (tests/unit/herdr-fork-direct-exec.test.mjs) — flow `f9b9e560199e87481`, log `~/.hud/flows/f9b9e560199e87481.json.gate-1.log`
 
-- [ ] Each listed case passes 20 consecutive runs under parallel load
-- [ ] No assertion or product bound weakened
+- [x] Each listed case passes 20 consecutive runs under parallel load
+- [x] No assertion or product bound weakened
 
 ## Comments
+
+- Landed in this commit (replay base 368c493845e8ed86a61b7c9fec91cfc43a178db7); gate 5/5 passed.

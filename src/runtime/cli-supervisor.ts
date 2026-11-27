@@ -108,8 +108,9 @@ export async function main() {
     pending = true;
     if (busy) return;
     clearTimeout(debounce);
-    if (urgentWake) immediate ??= setImmediate(run);
-    else debounce = setTimeout(() => { if (!stopped) immediate ??= setImmediate(run); }, 250);
+    if (immediate) return;
+    if (urgentWake) immediate = setImmediate(run);
+    else debounce = setTimeout(() => { if (!stopped && !busy && !immediate) immediate = setImmediate(run); }, 250);
   }
   function terminalWake() {
     diskDirty = true;
@@ -273,8 +274,10 @@ export async function main() {
     current = row; rowStamp = changed;
   }
   async function run() {
+    immediate = undefined;
+    clearTimeout(debounce);
     if (stopped || !pending || busy) return;
-    busy = true; pending = urgentWake = false; immediate = undefined;
+    busy = true; pending = urgentWake = false;
     const isTick = tickPending, refreshAgent = isTick || seedPending;
     tickPending = seedPending = false;
     let quitting = false;

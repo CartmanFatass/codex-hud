@@ -61,6 +61,14 @@ export function publishGeneration(kind, stamp) {
 const distLockName = (kind, root = releaseRoot) =>
   `\0myhud-${kind}-${createHash('sha256').update(fs.realpathSync(root)).digest('hex')}`;
 
+function nudgeDrain(name) {
+  const socket = createConnection(name);
+  socket.on('error', () => {});
+  socket.on('connect', () => {
+    socket.end('D\n', () => socket.destroy());
+  });
+}
+
 export async function acquireBuildLock(kind, root = releaseRoot) {
   const name = distLockName(kind, root);
   // Linux/WSL releases abstract sockets even after SIGKILL. No files or daemon to clean up.
@@ -69,6 +77,7 @@ export async function acquireBuildLock(kind, root = releaseRoot) {
     socket.end('W\n');
   });
   const deadline = performance.now() + 15_000;
+  let attempts = 0;
   for (;;) {
     const listening = once(lock, 'listening');
     lock.listen(name);
@@ -77,9 +86,11 @@ export async function acquireBuildLock(kind, root = releaseRoot) {
       return lock;
     } catch (error) {
       if (error.code !== 'EADDRINUSE') throw error;
+      if (kind === 'dist') nudgeDrain(name);
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new Error(`Timed out waiting for the HUD ${kind === 'build' ? 'build lock' : 'dist lock'}`);
-      await delay(Math.min(10, remaining));
+      attempts++;
+      await delay(Math.min(remaining, Math.min(50, 10 + attempts * 5)));
     }
   }
 }
@@ -123,7 +134,15 @@ async function acquireSharedDistLock(root) {
   const name = distLockName('dist', root);
   const peers = new Set();
   let accepting = true;
-  let onDrained;
+  let hostDone = false;
+  let closed = false;
+  let drainTimer;
+  const maybeClose = () => {
+    if (!hostDone || peers.size > 0 || closed) return;
+    closed = true;
+    clearTimeout(drainTimer);
+    lock.close();
+  };
   const lock = createServer((socket) => {
     socket.on('error', () => {});
     if (!accepting) {
@@ -131,38 +150,50 @@ async function acquireSharedDistLock(root) {
       return;
     }
     peers.add(socket);
+    socket.on('data', (chunk) => {
+      // An exclusive publisher nudges with 'D' to stop admitting new readers and drain.
+      if (chunk.includes(0x44)) {
+        accepting = false;
+        socket.destroy();
+      }
+    });
     socket.once('end', () => socket.destroy());
     socket.once('close', () => {
       peers.delete(socket);
-      if (!accepting && peers.size === 0) onDrained?.();
+      maybeClose();
     });
     socket.write('R\n');
   });
   const deadline = performance.now() + 15_000;
+  let attempts = 0;
   for (;;) {
     const listening = once(lock, 'listening');
     lock.listen(name);
     try {
       await listening;
-      return async () => {
-        accepting = false;
-        if (peers.size > 0) {
-          await new Promise((done) => {
-            onDrained = done;
-            if (peers.size === 0) done();
-          });
+      return () => {
+        hostDone = true;
+        if (peers.size === 0) {
+          maybeClose();
+          return;
         }
-        lock.close();
+        // Keep accepting peers briefly during bursts unless a writer nudges, without stalling the host.
+        drainTimer = setTimeout(() => {
+          accepting = false;
+          maybeClose();
+        }, 1000);
+        drainTimer.unref();
       };
     } catch (error) {
       if (error.code !== 'EADDRINUSE') throw error;
       const remaining = deadline - performance.now();
       if (remaining <= 0) throw new Error('Timed out waiting for the HUD dist lock');
-      const peer = await joinSharedReader(name, Math.min(500, remaining));
+      const peer = await joinSharedReader(name, Math.min(2000, remaining));
       if (peer) return () => { peer.destroy(); };
       const left = deadline - performance.now();
       if (left <= 0) throw new Error('Timed out waiting for the HUD dist lock');
-      await delay(Math.min(10, left));
+      attempts++;
+      await delay(Math.min(left, Math.min(50, 10 + attempts * 5)));
     }
   }
 }

@@ -129,21 +129,21 @@ for (const mode of ['rejected-prompt', 'fast-ambiguous-prompt']) {
     const job = await f.call('hud_create', { role: 'cli-send-outcome', request_key: mode, task: 'Synthetic task.' });
     const dir = job.task_dir, turn = () => JSON.parse(fs.readFileSync(join(dir, 'turn.json'), 'utf8'));
     const receipt = () => JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
-    await until(() => cliState(dir)?.agent_session_id, 15000);
+    await until(() => cliState(dir)?.agent_session_id, t.signal);
     writeFixtureFile(join(dir, 'report.md'), 'Synthetic first report.\n');
     f.push(job.job, 'idle');
-    await until(() => cliState(dir)?.state === 'idle_grace', 15000);
+    await until(() => cliState(dir)?.state === 'idle_grace', t.signal);
     const prior = turn(), grace = cliState(dir);
     const args = { job: job.job, message_key: 'cont', text: 'Synthetic continuation.' };
     fs.writeFileSync(join(f.env.HOME, mode), '');
     const prompts = () => f.commands().filter((c) => c.args[1] === 'prompt' && c.args[3]?.split('\n')[0] === args.text);
     const sent = f.call('hud_send', args);
-    await until(() => prompts().length > 0, 15000);
+    await until(() => prompts().length > 0, t.signal);
     const provisional = turn();
     assert.equal(provisional.seq, prior.seq + 1);
     assert.equal(receipt().send_outcomes.at(-1).exit_code, null);
     const pendingQueries = statusQueries(f, job);
-    await until(() => statusQueries(f, job) > pendingQueries, 15000); // Sample while Herdr has not replied yet.
+    await until(() => statusQueries(f, job) > pendingQueries, t.signal); // Sample while Herdr has not replied yet.
     assert.equal(cliState(dir).settled_at, grace.settled_at);
     fs.writeFileSync(join(f.env.HOME, 'release-prompt-result'), '');
     assert.equal((await sent).code, 'send_failed');
@@ -153,7 +153,7 @@ for (const mode of ['rejected-prompt', 'fast-ambiguous-prompt']) {
     if (mode === 'rejected-prompt') {
       assert.deepEqual(turn(), prior);
       const queries = statusQueries(f, job);
-      await until(() => statusQueries(f, job) > queries, 15000);
+      await until(() => statusQueries(f, job) > queries, t.signal);
       const listing = (await f.call('hud_read')).jobs.find((row) => row.job === job.job);
       assert.equal(listing.report_unread, true);
       assert.equal(listing.state, 'idle_grace');
@@ -163,7 +163,7 @@ for (const mode of ['rejected-prompt', 'fast-ambiguous-prompt']) {
       const { pending_from, ...submitted } = provisional;
       assert.equal(pending_from.seq, prior.seq);
       assert.deepEqual(turn(), submitted, 'an ambiguous result keeps the new baseline but closes the old-token window');
-      await until(() => cliState(dir)?.state === 'idle_grace' && cliState(dir).settled_at !== grace.settled_at, 15000);
+      await until(() => cliState(dir)?.state === 'idle_grace' && cliState(dir).settled_at !== grace.settled_at, t.signal);
       assert.equal(cliState(dir).output_written, true);
       assert.match((await f.call('hud_read', { job: job.job })).digest.result, /fast report after input/);
     }

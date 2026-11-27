@@ -422,8 +422,17 @@ function recordSessions(dir: string, job: Job, status: Partial<JobStatus>, piFil
     else if (!sessions[i]!.path && fact.path) sessions[i] = fact;
   }
   if (sessions.length === known.length && sessions.every((s, i) => s === known[i])) return job;
-  const receipt = { ...job, sessions };
-  try { writeJsonAtomic(join(dir, jobFiles.job), receipt, 2); }
+  const jobFile = join(dir, jobFiles.job);
+  let latest = job;
+  try { latest = JSON.parse(fs.readFileSync(jobFile, 'utf8')) as Job; } catch { /* Keep the scanned receipt if unreadable. */ }
+  const merged = Array.isArray(latest.sessions) ? [...latest.sessions] : [];
+  for (const fact of sessions) {
+    const i = merged.findIndex(s => s?.harness === fact.harness && s.id === fact.id);
+    if (i === -1) merged.push(fact);
+    else if (!merged[i]!.path && fact.path) merged[i] = fact;
+  }
+  const receipt = { ...latest, sessions: merged };
+  try { writeJsonAtomic(jobFile, receipt, 2); }
   catch (error) { warn(`sessions ${job.job}`, `record sessions ${job.job}: ${(error as NodeJS.ErrnoException).code ?? 'unknown'}`); }
   return receipt;
 }
