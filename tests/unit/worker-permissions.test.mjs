@@ -351,6 +351,10 @@ test('worktree cleanup requires every glob match to be recoverable from Git', t 
   git('add', 'tracked.png');
   const proof = () => provePermission(`rm -f ${worktree}/*.png`, { task, worktree });
   assert.deepEqual(proof()?.roots, ['worktree (Git-tracked files)']);
+  assert.deepEqual(provePermission(`rm -f ${worktree}/?racked.png`, { task, worktree })?.roots, ['worktree (Git-tracked files)']);
+  fs.writeFileSync(join(worktree, 'index-only.txt'), 'synthetic bytes without a recovery blob');
+  git('update-index', '--add', '--info-only', 'index-only.txt');
+  assert.equal(provePermission(`cat ${tracked} > ${worktree}/index-only.txt`, { task, worktree }), undefined);
   fs.writeFileSync(tracked, 'synthetic unstaged change');
   assert.equal(proof(), undefined);
   git('add', 'tracked.png');
@@ -423,7 +427,7 @@ test('Claude accepts a basename-only question but not conflicting qualified file
   }
 });
 
-test('watcher auto-approves widened low-risk prompts within one pass and names the operation', { timeout: 20000 }, async t => {
+test('watcher approves recoverable edits, new files and scratch cleanup once per prompt', { timeout: 20000 }, async t => {
   const { herdr, dir, scratch, worktree, wait, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true, withTemp: true });
   fs.mkdirSync(join(scratch, 'out'), { recursive: true });
   fs.writeFileSync(join(scratch, 'out', 'a.png'), 'synthetic a');
@@ -431,16 +435,17 @@ test('watcher auto-approves widened low-risk prompts within one pass and names t
   fs.mkdirSync(join(scratch, 'extra'), { recursive: true });
   fs.writeFileSync(join(scratch, 'extra', 'c.json'), '{}');
   fs.mkdirSync(join(worktree, 'src'), { recursive: true });
-  fs.mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true });
-  fs.writeFileSync(join(worktree, 'node_modules', '.bin', 'tsc'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   fs.writeFileSync(join(worktree, 'a'), 'synthetic file');
   fs.writeFileSync(join(worktree, 'src', 'app.ts'), 'export const x = 1;\n');
+  execFileSync('git', ['init', '-q'], { cwd: worktree });
+  execFileSync('git', ['add', 'src/app.ts'], { cwd: worktree });
   const cases = [
     { screen: prompt(`S=${scratch}; rm -rf $S/out $S/extra`), match: /Local path check: verified rm \(-r, -f\) in the job’s task scratchpad/ },
-    { screen: prompt(`mkdir -p ${worktree}/tmp/x && cp a b && mv b tmp/x/c`), match: /Local path check: verified mkdir, cp, mv in the job’s worktree/ },
+    { screen: prompt(`S=${scratch}; rm -f $S/out/*.png`), match: /Local path check: verified rm \(-f, glob\) in the job’s task scratchpad/ },
+    { screen: prompt(`cat a > ${dir}/new-copy.txt`), match: /Local path check: verified cat in the job’s worktree and task directory/ },
     { screen: filePrompt(`Edit file ${worktree}/src/app.ts`, 'Do you want to make this edit to app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
     { screen: filePrompt('Edit file src/app.ts', 'Do you want to make this edit to app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
-    { screen: prompt('npx --no-install tsc --noEmit'), match: /Local path check: verified npx tsc in the job’s worktree/ },
+    { screen: filePrompt(`Create file ${dir}/new.txt`, 'Do you want to create new.txt?'), match: /Local path check: verified Create file in the job’s task directory/ },
   ];
 
   herdr.update('blocked', cases[0].screen);
@@ -456,6 +461,70 @@ test('watcher auto-approves widened low-risk prompts within one pass and names t
     assert.equal(entry.action, 'approve');
     assert.match(entry.reason, match);
     assert.doesNotMatch(entry.reason, /regenerable PNG cleanup/i);
+    await unblocked();
+  }
+});
+
+test('review findings 1–6 write pending manual entries without keys', { timeout: 25000 }, async t => {
+  const { herdr, dir, scratch, worktree, rows, wait, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true });
+  const original = join(dir, 'ref.png');
+  const outside = join(dirname(worktree), 'outside-job');
+  const git = (...args) => execFileSync('git', args, { cwd: worktree });
+  git('init', '-q');
+  for (const folder of ['dest', 'images', 'sub', 'node_modules/.bin']) {
+    fs.mkdirSync(join(worktree, folder), { recursive: true });
+  }
+  fs.mkdirSync(outside);
+  fs.symlinkSync(outside, join(worktree, 'sub', 'link'));
+  fs.writeFileSync(original, 'synthetic original');
+  for (const file of ['src.txt', 'dirty.txt', 'tracked.png', 'images/a.png']) {
+    fs.writeFileSync(join(worktree, file), 'synthetic indexed bytes');
+  }
+  git('add', 'src.txt', 'dirty.txt', 'tracked.png', 'images/a.png');
+  fs.writeFileSync(join(worktree, 'dirty.txt'), 'synthetic unstaged bytes');
+  fs.writeFileSync(join(worktree, 'move-me.txt'), 'synthetic untracked bytes');
+  fs.writeFileSync(join(worktree, 'dest', 'alias.txt'), 'synthetic untracked destination');
+  fs.writeFileSync(join(worktree, 'images', 'b.png'), 'synthetic untracked image');
+  fs.writeFileSync(join(worktree, 'x.js'), '// synthetic worker script\n');
+  fs.writeFileSync(join(worktree, 'node_modules', '.bin', 'tsc'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.symlinkSync('src.txt', join(worktree, 'alias.txt'));
+
+  const cases = [
+    // 1: recovery depends on the bytes, not the spelling of the write.
+    prompt(`printf x > ${original}`),
+    prompt(`cat src.txt > ${original}`),
+    prompt(`ln -sf src.txt ${original}`),
+    filePrompt(`Write file ${original}`, 'Do you want to overwrite ref.png?'),
+    prompt('git restore dirty.txt'),
+    // 2: local executable paths do not prove execution effects.
+    prompt('node x.js'),
+    prompt('node --test x.js'),
+    prompt('cargo build'),
+    prompt('cargo test'),
+    prompt('npx --no-install tsc --noEmit'),
+    // 3: the link name, not the referent name, selects the destination child.
+    prompt('cp alias.txt dest/'),
+    prompt('mv alias.txt dest/'),
+    // 4: neither shell bracket negation nor malformed ranges should reach the matcher.
+    prompt('rm -f images/[!a].png'),
+    prompt('rm -f images/[z-a].png'),
+    prompt(`rm -f ${scratch}/[z-a].png`),
+    // 5: a relative variable survives cd, and a move changes the bytes a later rm sees.
+    prompt('S=images; cd sub; rm -f $S/a.png'),
+    prompt('mv move-me.txt tracked.png; rm -f tracked.png'),
+    // 6: --files has no pattern; traversal flags can follow links inside the start directory.
+    prompt(`rg --files ${outside}`),
+    prompt('rg -L synthetic sub'),
+    prompt('grep -R synthetic sub'),
+  ];
+  startWatch();
+  for (const screen of cases) {
+    assert.ok(parsePermissionPrompt(screen, 'claude').target, screen);
+    herdr.update('blocked', screen);
+    await wait(() => permissionStatus(dir).active?.action === 'main');
+    assert.equal(permissionStatus(dir).active.outcome, 'pending', screen);
+    assert.deepEqual(herdr.keys, [], screen);
+    assert.match(jobChanges([], rows()).join('\n'), /recommends.*hud_respond/);
     await unblocked();
   }
 });
@@ -508,14 +577,11 @@ test('watcher sends high-risk, escaping, sensitive, substituted and sudo prompts
   }
 });
 
-test('relative paths and worktree build commands require verifiable cwd, never job.cwd alone', { timeout: 15000 }, async t => {
+test('relative paths require verifiable cwd, never job.cwd alone', { timeout: 15000 }, async t => {
   const f = fixture(t);
   // Worker process cwd stays outside worktree even though job.cwd is worktree.
-  const { herdr, dir, worktree, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true, workerCwd: dirname(f.home) });
-  fs.mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true });
-  fs.writeFileSync(join(worktree, 'node_modules', '.bin', 'tsc'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const { herdr, dir, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true, workerCwd: dirname(f.home) });
   const screens = [
-    prompt('npx --no-install tsc --noEmit'),
     prompt('cp a b'),
     filePrompt('Edit file src/app.ts', 'Do you want to make this edit to app.ts?'),
   ];
@@ -534,14 +600,12 @@ test('decision model receives only structural facts without raw args or absolute
   const scratch = join(task, 'scratchpad');
   fs.mkdirSync(scratch, { recursive: true });
   fs.mkdirSync(join(worktree, 'src'), { recursive: true });
-  fs.mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true });
-  fs.writeFileSync(join(worktree, 'node_modules', '.bin', 'tsc'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   fs.writeFileSync(join(worktree, 'alpha.txt'), 'synthetic');
 
   const proofs = [
     provePermission(`S=${scratch}; rm -rf $S/output-dir-99`, { task }),
-    provePermission(`mkdir -p ${worktree}/custom-dir-77/x && cp alpha.txt beta-output.txt`, { task, worktree, cwd: worktree }),
-    provePermission('npx --no-install tsc --noEmit --project tsconfig.custom-build.json', { task, worktree, cwd: worktree }),
+    provePermission(`mkdir -p ${worktree}/custom-dir-77/x`, { task, worktree, cwd: worktree }),
+    provePermission('cat alpha.txt && cp alpha.txt beta-output.txt', { task, worktree, cwd: worktree }),
     provePermission({ kind: 'file_edit', paths: [join(worktree, 'src', 'my-module-file.ts')] }, { task, worktree }),
   ];
   for (const proof of proofs) {
@@ -556,7 +620,7 @@ test('decision model receives only structural facts without raw args or absolute
     const decision = await classifyPermission(f.home, proof, decide);
     assert.equal(decision.action, 'approve');
     const serialized = JSON.stringify(captured);
-    for (const forbidden of [task, scratch, worktree, 'output-dir-99', 'custom-dir-77', 'alpha.txt', 'beta-output.txt', 'tsconfig.custom-build.json', 'my-module-file.ts']) {
+    for (const forbidden of [task, scratch, worktree, 'output-dir-99', 'custom-dir-77', 'alpha.txt', 'beta-output.txt', 'my-module-file.ts']) {
       assert.ok(!serialized.includes(forbidden), `model input leaked ${forbidden}: ${serialized}`);
     }
     assert.equal(captured.facts.verified, true);
@@ -573,7 +637,7 @@ test('decision model receives only structural facts without raw args or absolute
   assert.equal((await classifyPermission(f.home, undefined, alwaysApprove)).action, 'main');
 });
 
-test('widened local proof allows spec verbs and rejects forbidden flags, escapes and dangerous tools', t => {
+test('local proof allows confined forms and refuses unproven flags, sequences and paths', t => {
   const f = fixture(t), task = f.job(null), worktree = join(dirname(f.home), 'wt-policy');
   const scratch = join(task, 'scratchpad');
   const temp = join('/tmp', `hud-perm-unit-${basename(task)}`);
@@ -583,7 +647,6 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
   fs.mkdirSync(join(worktree, 'dest-symlink'), { recursive: true });
   fs.mkdirSync(join(worktree, 'dest-untracked'), { recursive: true });
   fs.mkdirSync(join(worktree, 'dest-tracked'), { recursive: true });
-  fs.mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true });
   fs.mkdirSync(temp, { recursive: true });
   t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
   const git = (...args) => execFileSync('git', args, { cwd: worktree, stdio: 'ignore' });
@@ -594,7 +657,6 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
   fs.writeFileSync(join(worktree, 'dest-untracked', 'a.ts'), 'untracked work\n');
   fs.symlinkSync(join(worktree, 'src', 'a.ts'), join(worktree, 'dest-symlink', 'a.ts'));
   fs.symlinkSync(join(worktree, 'dest-empty'), join(worktree, 'dir-link'));
-  fs.writeFileSync(join(worktree, 'node_modules', '.bin', 'tsc'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   fs.writeFileSync(join(worktree, 'archive.tar.gz'), 'synthetic');
   fs.writeFileSync(join(worktree, 'bundle.zip'), 'synthetic');
   fs.symlinkSync(dirname(f.home), join(worktree, 'escape-link'));
@@ -602,7 +664,10 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
 
   const allowed = [
     `S=${scratch}; rm -rf $S/out`,
-    `mkdir -p ${worktree}/tmp/x && touch ${worktree}/tmp/x/f && cp src/a.ts tmp/x/b.ts && mv tmp/x/b.ts tmp/x/c.ts`,
+    'mkdir -p tmp/x',
+    'touch tmp/x/f',
+    'cp src/a.ts tmp/x/b.ts',
+    'mv src/a.ts tmp/x/c.ts',
     `cp src/a.ts ${worktree}/dest-empty/`,
     `cp src/a.ts ${worktree}/dest-tracked/`,
     `cp src/a.ts ${scratch}/`,
@@ -615,22 +680,20 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
     `tail -n 10 src/a.ts`,
     `grep -n export src/a.ts`,
     `rg export src`,
+    `rg --files src`,
+    `rg --files`,
+    `grep -r export src`,
     `find src -name '*.ts'`,
     `find ${scratch} -name '*.png' -delete`,
     `diff -u src/a.ts src/a.ts`,
-    `node src/a.ts`,
-    `node --test src/a.ts`,
-    `npx --no-install tsc --noEmit`,
-    `npx --no tsc --noEmit`,
-    `cargo build --release`,
-    `cargo test`,
     `git status -s && git diff --stat && git log -n 5 --oneline`,
     `git show HEAD`,
-    `git add src/a.ts && git commit -m "synthetic fix"`,
-    `git restore src/a.ts`,
+    `git add src/a.ts`,
+    `git commit -m "synthetic fix"`,
     `git stash list`,
     `git rebase main`,
     `cat src/a.ts > ${scratch}/copy.txt`,
+    `cat src/a.ts > dest-tracked/a.ts`,
     `cat src/a.ts 2>/dev/null`,
     `cd ${worktree} && git status -s`,
     `S=${scratch}; cd ${worktree} && rm -rf $S/out`,
@@ -664,6 +727,13 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
     'cd src | cat',
     `S=${scratch} | cat`,
     'cat src/a.ts | wc -l; cd src; ls',
+    'mkdir -p tmp/x && touch tmp/x/f',
+    'touch tmp/x/f; ls tmp',
+    'cat src/a.ts > new.txt; ls new.txt',
+    'cat src/a.ts | head > new.txt',
+    'git add src/a.ts && git commit -m "synthetic fix"',
+    'git restore src/a.ts',
+    'diff -r src dest-empty',
     'find src -delete',
     'find src -exec rm {} ;',
     'rg --pre sh foo src',
@@ -712,7 +782,7 @@ test('widened local proof allows spec verbs and rejects forbidden flags, escapes
   assert.ok(provePermission({ kind: 'file_create', paths: [join(worktree, 'new-dir', 'sub', 'file.ts')] }, roots));
 });
 
-test('narrowed proof rejects symlinked scratchpads and npx tsc without a local worktree binary', t => {
+test('narrowed proof rejects symlinked scratchpads', t => {
   const f = fixture(t), task = f.job(null);
   const worktree = join(dirname(f.home), 'wt-narrow');
   const outside = join(dirname(f.home), 'outside-owned');
@@ -740,21 +810,4 @@ test('narrowed proof rejects symlinked scratchpads and npx tsc without a local w
   fs.unlinkSync(join(worktree, 'scratchpad'));
   fs.mkdirSync(join(worktree, 'scratchpad'));
   assert.deepEqual(provePermission(`S=${worktree}/scratchpad; rm -rf $S/out`, { task, worktree })?.roots, ['scratchpad']);
-
-  // npx --no-install tsc requires an executable node_modules/.bin/tsc confined inside the worktree.
-  assert.equal(provePermission('npx --no-install tsc --noEmit', { task, worktree, cwd: worktree }), undefined);
-  fs.mkdirSync(join(worktree, 'node_modules', '.bin'), { recursive: true });
-  const outsideBin = join(outside, 'fake-tsc');
-  fs.writeFileSync(outsideBin, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-  fs.symlinkSync(outsideBin, join(worktree, 'node_modules', '.bin', 'tsc'));
-  assert.equal(provePermission('npx --no-install tsc --noEmit', { task, worktree, cwd: worktree }), undefined);
-
-  // Local target inside worktree/node_modules is accepted.
-  fs.unlinkSync(join(worktree, 'node_modules', '.bin', 'tsc'));
-  fs.mkdirSync(join(worktree, 'node_modules', 'typescript', 'bin'), { recursive: true });
-  const localTarget = join(worktree, 'node_modules', 'typescript', 'bin', 'tsc');
-  fs.writeFileSync(localTarget, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
-  fs.symlinkSync('../typescript/bin/tsc', join(worktree, 'node_modules', '.bin', 'tsc'));
-  assert.deepEqual(provePermission('npx --no-install tsc --noEmit', { task, worktree, cwd: worktree })?.roots, ['worktree']);
-  assert.equal(provePermission('npx tsc --noEmit', { task, worktree, cwd: worktree }), undefined);
 });
