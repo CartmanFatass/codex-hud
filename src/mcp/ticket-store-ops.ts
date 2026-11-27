@@ -28,16 +28,37 @@ const specFields = ['title', 'what', 'live_try', 'approved_removals', 'kind', 'r
 const editFields = ['status', 'tick', 'blocked_by', 'repairs', 'owner_try', 'objective', 'repo', ...specFields];
 const has = (args: Record<string, unknown>, fields: string[]) => fields.some(field => args[field] !== undefined);
 
+function parseTicketNumber(value: unknown): number | undefined {
+  if (ticketNumber(value)) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const n = Number(value);
+    if (ticketNumber(n)) return n;
+  }
+}
+
+function resolveTicketTarget(featureArg: unknown, ticketArg: unknown, refError = 'ticket'): { feature: string; number: number } {
+  const num = parseTicketNumber(ticketArg);
+  const ref = typeof ticketArg === 'string' && num === undefined
+    ? parseTicketRef(ticketArg) ?? invalid(refError)
+    : undefined;
+  const feature = featureArg === undefined && ref ? ref.feature : featureSlug(featureArg);
+  if (ref && ref.feature !== feature) invalid('ticket does not match feature');
+  const number = ref?.number ?? num;
+  if (!number) return invalid('ticket');
+  return { feature, number };
+}
+
 export function getTickets(cwd: string, args: Record<string, unknown>) {
   const { mainRoot } = localProjectRoots(cwd);
-  const ref = typeof args.ticket === 'string' ? parseTicketRef(args.ticket) ?? invalid('ticket (expected feature/NN)') : undefined;
-  const feature = args.feature === undefined && ref ? ref.feature : featureSlug(args.feature);
-  if (ref && ref.feature !== feature) invalid('ticket does not match feature');
+  if (args.ticket === undefined) {
+    const feature = featureSlug(args.feature);
+    const doc = readTicketFeature(mainRoot, feature);
+    if (!doc) throw new Error(`unknown ticket feature: ${feature}`);
+    return { ok: true, feature: doc };
+  }
+  const { feature, number: n } = resolveTicketTarget(args.feature, args.ticket, 'ticket (expected feature/NN)');
   const doc = readTicketFeature(mainRoot, feature);
   if (!doc) throw new Error(`unknown ticket feature: ${feature}`);
-  if (args.ticket === undefined) return { ok: true, feature: doc };
-  const n = ref?.number ?? args.ticket;
-  if (!ticketNumber(n)) return invalid('ticket');
   const matches = doc.tickets.filter(ticket => ticket.number === n);
   if (!matches.length) throw new Error(`unknown ticket: ${ticketRef(feature, n)}`);
   if (matches.length > 1) throw new Error(`ambiguous ticket: ${ticketRef(feature, n)}`);
@@ -227,10 +248,11 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     if (has(item, specFields)) throw new Error('Comment and spec-field edits require a JSON ticket feature');
   };
   if (args.updates === undefined) {
-    const feature = featureSlug(args.feature);
-    if (!markdown(feature)) return json(async () => updateJson(feature, args));
-    checkMarkdown(args);
-    return legacy(args);
+    const { feature, number } = resolveTicketTarget(args.feature, args.ticket);
+    const item = { ...args, feature, ticket: number };
+    if (!markdown(feature)) return json(async () => updateJson(feature, item));
+    checkMarkdown(item);
+    return legacy(item);
   }
   if (args.ticket !== undefined || has(args, editFields) || !Array.isArray(args.updates) || !args.updates.length) return invalid('updates');
   const sharedFeature = args.feature === undefined ? undefined : featureSlug(args.feature);
@@ -248,15 +270,20 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       const item = object(raw, 'updates');
       feature = item.feature ?? sharedFeature;
       ticket = item.ticket;
-      const slug = featureSlug(feature);
-      const entry = { index, feature: slug, item };
-      if (markdown(slug)) {
-        checkMarkdown(item);
+      const resolved = resolveTicketTarget(feature, ticket);
+      feature = resolved.feature;
+      ticket = resolved.number;
+      const normalized = { ...item, feature: resolved.feature, ticket: resolved.number };
+      const entry = { index, feature: resolved.feature, item: normalized };
+      if (markdown(resolved.feature)) {
+        checkMarkdown(normalized);
         markdownItems.push(entry);
       } else jsonItems.push(entry);
     } catch (error) { failed(index, feature, ticket, error); }
   }
-  if (markdownItems.length === args.updates.length) return legacy(args);
+  if (markdownItems.length === args.updates.length) {
+    return legacy({ feature: sharedFeature, updates: markdownItems.map(({ item }) => item) });
+  }
   if (markdownItems.length) {
     try {
       const result = await legacy({ feature: sharedFeature, updates: markdownItems.map(({ item }) => item) });

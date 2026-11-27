@@ -265,7 +265,7 @@ export const ROLE_TOOLS = [
           additionalProperties: false,
         },
       },
-      ticket: { anyOf: [ticketNumber, ticketRef], description: 'Update: number. Get: number with feature, or feature/NN.' },
+      ticket: { anyOf: [ticketNumber, ticketRef], description: 'Number with feature, or feature/NN.' },
       ...ticketUpdate,
       updates: {
         type: 'array',

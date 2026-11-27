@@ -466,3 +466,148 @@ test('hud_tickets add/update/comment and land-written ticket comments normalize 
   assert.match(acceptedMd, /^- Accepted by unattended lead \(q00000000000000c1\): finish: verified ~\/\.hud\/jobs\/x\/report\.md and \/var\/tmp\/outside\/jobs\/x\/report\.md$/m);
   assert.equal(acceptedMd.includes(procHomePath), false);
 });
+
+test('hud_tickets single-form update accepts numeric, numeric-string and feature/NN targets for Markdown and JSON and matches updates[]', { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true']);
+  const call = (op, args) => f.call('hud_tickets', { op, cwd: f.main, ...args });
+  const rpcErr = async (op, args) => {
+    const { result } = await f.rpc('tools/call', { name: 'hud_tickets', arguments: { op, cwd: f.main, ...args } });
+    assert.equal(result.isError, true, JSON.stringify(result));
+    return JSON.parse(result.content[0].text);
+  };
+
+  const mdTemplate = [
+    '# 31: Synthetic Markdown slice',
+    '',
+    '**Status:** ready-for-agent',
+    '**Owner try:** no',
+    '**Live try:** none',
+    '**Blocked by:** none',
+    '',
+    '**What to build:** Verify single-form update.',
+    '',
+    '- [ ] First check',
+    '- [ ] Second check',
+    '- [ ] Third check',
+    '- [ ] Fourth check',
+    '',
+    '## Comments',
+    '',
+  ].join('\n');
+  const seedMdFeature = slug => {
+    const rel = `.scratch/${slug}/issues/31-synthetic-markdown-slice.md`, path = join(f.main, rel);
+    fs.mkdirSync(join(f.main, `.scratch/${slug}/issues`), { recursive: true });
+    fs.writeFileSync(path, mdTemplate);
+    f.git(f.main, 'add', rel);
+    return path;
+  };
+  const mdSinglePath = seedMdFeature('md-single');
+  const mdBatchPath = seedMdFeature('md-batch');
+  const mdStringPath = seedMdFeature('md-str');
+  const mdRefPath = seedMdFeature('md-ref');
+  f.git(f.main, 'commit', '-qm', 'Seed synthetic Markdown features');
+
+  const at = '2026-01-01T00:00:00.000Z';
+  const seedJsonFeature = slug => {
+    const rel = `.hud/tickets/${slug}.json`, path = join(f.main, rel);
+    fs.mkdirSync(join(f.main, '.hud/tickets'), { recursive: true });
+    fs.writeFileSync(path, serializeTicketFeature({
+      version: 1,
+      feature: slug,
+      tickets: [{
+        number: 31,
+        title: 'Synthetic JSON slice',
+        status: 'ready-for-agent',
+        owner_try: false,
+        live_try: 'none',
+        approved_removals: [],
+        blocked_by: [],
+        what: 'Verify single-form update.',
+        acceptance: [
+          { id: 1, text: 'First check', done: false },
+          { id: 2, text: 'Second check', done: false },
+          { id: 3, text: 'Third check', done: false },
+          { id: 4, text: 'Fourth check', done: false },
+        ],
+        comments: [],
+        created_at: at,
+        updated_at: at,
+      }],
+    }));
+    f.git(f.main, 'add', rel);
+    return path;
+  };
+  const jsonSinglePath = seedJsonFeature('json-single');
+  const jsonBatchPath = seedJsonFeature('json-batch');
+  const jsonStringPath = seedJsonFeature('json-str');
+  const jsonRefPath = seedJsonFeature('json-ref');
+  f.git(f.main, 'commit', '-qm', 'Seed synthetic JSON features');
+
+  // 1. Single form with feature + numeric ticket + status + tick succeeds for Markdown and JSON.
+  const mdSingleRes = await call('update', { feature: 'md-single', ticket: 31, status: 'done', tick: [1, 2, 3, 4] });
+  assert.deepEqual(mdSingleRes, { ok: true, number: 31, path: mdSinglePath });
+  const jsonSingleRes = await call('update', { feature: 'json-single', ticket: 31, status: 'done', tick: [1, 2, 3, 4] });
+  assert.deepEqual(jsonSingleRes, { ok: true, number: 31, path: jsonSinglePath });
+
+  // 2. Single form with numeric string ("31") and feature/NN ref (".../31") also succeed for Markdown and JSON.
+  assert.deepEqual(
+    await call('update', { feature: 'md-str', ticket: '31', status: 'done', tick: [1, 2, 3, 4] }),
+    { ok: true, number: 31, path: mdStringPath },
+  );
+  assert.deepEqual(
+    await call('update', { ticket: 'md-ref/31', status: 'done', tick: [1, 2, 3, 4] }),
+    { ok: true, number: 31, path: mdRefPath },
+  );
+  assert.deepEqual(
+    await call('update', { feature: 'json-str', ticket: '31', status: 'done', tick: [1, 2, 3, 4] }),
+    { ok: true, number: 31, path: jsonStringPath },
+  );
+  assert.deepEqual(
+    await call('update', { ticket: 'json-ref/31', status: 'done', tick: [1, 2, 3, 4] }),
+    { ok: true, number: 31, path: jsonRefPath },
+  );
+  assert.equal((await call('get', { feature: 'json-str', ticket: '31' })).ticket.status, 'done');
+
+  // 3. Same edit through updates[] produces identical files for both Markdown and JSON.
+  const mdBatchRes = await call('update', { updates: [{ feature: 'md-batch', ticket: 31, status: 'done', tick: [1, 2, 3, 4] }] });
+  assert.deepEqual(mdBatchRes, { updates: [{ feature: 'md-batch', ok: true, number: 31, path: mdBatchPath }] });
+  const jsonBatchRes = await call('update', { updates: [{ feature: 'json-batch', ticket: 31, status: 'done', tick: [1, 2, 3, 4] }] });
+  assert.deepEqual(jsonBatchRes, { updates: [{ feature: 'json-batch', ok: true, number: 31, path: jsonBatchPath }] });
+
+  const mdSingleBytes = fs.readFileSync(mdSinglePath, 'utf8');
+  assert.match(mdSingleBytes, /\*\*Status:\*\* done/);
+  assert.equal((mdSingleBytes.match(/^- \[x\] /gm) ?? []).length, 4);
+  assert.equal(mdSingleBytes, fs.readFileSync(mdBatchPath, 'utf8'), 'Markdown single form and updates[] must produce byte-identical files');
+  assert.equal(mdSingleBytes, fs.readFileSync(mdStringPath, 'utf8'));
+  assert.equal(mdSingleBytes, fs.readFileSync(mdRefPath, 'utf8'));
+
+  const normalizeJsonBytes = (bytes, slug) => bytes
+    .replace(`"feature": "${slug}"`, '"feature": "<slug>"')
+    .replace(/"updated_at": "[^"]+"/, '"updated_at": "<ts>"');
+  const jsonSingleBytes = fs.readFileSync(jsonSinglePath, 'utf8');
+  assert.equal(
+    normalizeJsonBytes(jsonSingleBytes, 'json-single'),
+    normalizeJsonBytes(fs.readFileSync(jsonBatchPath, 'utf8'), 'json-batch'),
+    'JSON single form and updates[] must produce identical files (modulo feature slug and updated_at)',
+  );
+  assert.equal(
+    normalizeJsonBytes(jsonSingleBytes, 'json-single'),
+    normalizeJsonBytes(fs.readFileSync(jsonStringPath, 'utf8'), 'json-str'),
+  );
+  assert.equal(
+    normalizeJsonBytes(jsonSingleBytes, 'json-single'),
+    normalizeJsonBytes(fs.readFileSync(jsonRefPath, 'utf8'), 'json-ref'),
+  );
+
+  // 4. Invalid ticket targets and feature/ticket mismatches still fail with invalid_arguments without touching files.
+  for (const bad of [0, -1, 1.5, '0', 'abc', 'md-single/0']) {
+    const err = await rpcErr('update', { feature: 'md-single', ticket: bad, status: 'claimed' });
+    assert.equal(err.code, 'invalid_arguments');
+    assert.match(err.error, /^invalid_arguments: ticket/);
+  }
+  const mismatch = await rpcErr('update', { feature: 'json-single', ticket: 'md-single/31', status: 'claimed' });
+  assert.equal(mismatch.code, 'invalid_arguments');
+  assert.match(mismatch.error, /ticket does not match feature/);
+  assert.equal(fs.readFileSync(mdSinglePath, 'utf8'), mdSingleBytes);
+  assert.equal(fs.readFileSync(jsonSinglePath, 'utf8'), jsonSingleBytes);
+});
