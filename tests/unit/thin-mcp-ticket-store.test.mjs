@@ -6,10 +6,10 @@ import test from 'node:test';
 import { main } from '../../dist/cli/hud.js';
 import { scanTicketStore } from '../../dist/collectors/ticket-store.js';
 import { collectGateFlakes } from '../../dist/mcp/land-flakes.js';
-import { ticketReadiness } from '../../dist/mcp/local-tickets.js';
+import { landedTicket, recordUnattendedAcceptance, ticketReadiness } from '../../dist/mcp/local-tickets.js';
 import { JobIndexCache } from '../../dist/roles/job-index-cache.js';
 import { takeLease } from '../../dist/roles/lease.js';
-import { parseMarkdownRepairRefs, readTicketWrites, serializeTicketFeature, ticketWritesPath, validateTicketFeature } from '../../dist/tickets/store.js';
+import { normalizeHomePaths, parseMarkdownRepairRefs, readTicketWrites, serializeTicketFeature, ticketWritesPath, validateTicketFeature } from '../../dist/tickets/store.js';
 import { checkout, job } from '../helpers/thin-mcp-land.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { goodTicket, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
@@ -352,4 +352,117 @@ test('none-theme/01 Markdown repair ref survives add, both readers, and queue ad
     await f.call('hud_tickets', { op: 'run', cancel: true, run: flow, cwd: f.root });
     assert.equal((await f.end(flow)).state, 'cancelled');
   }
+});
+
+test('hud_tickets add/update/comment and land-written ticket comments normalize $HOME paths to ~/ while leaving paths outside $HOME verbatim', { timeout: 25_000 }, async t => {
+  const f = await checkout(t, ['true']);
+  seedMarkdown(f);
+  const homePath = `${f.env.HOME}/.hud/jobs/x/report.md`;
+  const siblingPath = `${f.env.HOME}-other/.hud/jobs/x/report.md`;
+  const outsidePath = '/var/tmp/outside/jobs/x/report.md';
+  const nestedPath = `/mnt${f.env.HOME}/.hud/jobs/x/report.md`;
+
+  // Direct helper edge cases.
+  assert.equal(normalizeHomePaths(`read (${homePath}) and \`${f.env.HOME}\``, f.env.HOME), 'read (~/.hud/jobs/x/report.md) and `~`');
+  assert.equal(normalizeHomePaths(`${siblingPath} ${outsidePath} ${nestedPath}`, f.env.HOME), `${siblingPath} ${outsidePath} ${nestedPath}`);
+
+  const call = (op, args) => f.call('hud_tickets', { op, cwd: f.main, ...args });
+
+  // JSON add (including extracted live_try) and update/comment.
+  const jsonAdd = await call('add', {
+    feature: 'norm-json',
+    tickets: [
+      {
+        title: `Review ${homePath} vs ${outsidePath}`,
+        what: `Read ${homePath} and ${outsidePath} and ${siblingPath}.`,
+        live_try: `Open ${homePath} and ${outsidePath}`,
+        acceptance: [`Verify ${homePath}`, `Keep ${outsidePath}`],
+        blocked_by: [],
+        comment: `Initial note (${homePath}, ${outsidePath})`,
+      },
+      {
+        title: 'Extracted live try',
+        what: `Inspect ${homePath}.\nLive try: inspect ${homePath} and ${outsidePath}`,
+        acceptance: [`Check ${homePath}`],
+        blocked_by: [],
+      },
+    ],
+  });
+  assert.equal(jsonAdd.ok, true);
+  const { ticket: t1 } = await call('get', { ticket: 'norm-json/01' });
+  assert.equal(t1.title, `Review ~/.hud/jobs/x/report.md vs ${outsidePath}`);
+  assert.equal(t1.what, `Read ~/.hud/jobs/x/report.md and ${outsidePath} and ${siblingPath}.`);
+  assert.equal(t1.live_try, `Open ~/.hud/jobs/x/report.md and ${outsidePath}`);
+  assert.deepEqual(t1.acceptance.map(a => a.text), ['Verify ~/.hud/jobs/x/report.md', `Keep ${outsidePath}`]);
+  assert.equal(t1.comments[0].text, `Initial note (~/.hud/jobs/x/report.md, ${outsidePath})`);
+
+  const { ticket: t2 } = await call('get', { ticket: 'norm-json/02' });
+  assert.equal(t2.what, 'Inspect ~/.hud/jobs/x/report.md.');
+  assert.equal(t2.live_try, `inspect ~/.hud/jobs/x/report.md and ${outsidePath}`);
+
+  await call('update', {
+    feature: 'norm-json',
+    ticket: 1,
+    title: `Updated ${homePath}`,
+    what: `Updated what: ${homePath} and ${outsidePath}`,
+    live_try: `Updated try: ${homePath}`,
+    acceptance: [{ id: 1, text: `Updated acceptance: ${homePath} and ${outsidePath}` }],
+    comment: `Updated comment: ${homePath} and ${outsidePath}`,
+  });
+  const { ticket: t1Updated } = await call('get', { ticket: 'norm-json/01' });
+  assert.equal(t1Updated.title, 'Updated ~/.hud/jobs/x/report.md');
+  assert.equal(t1Updated.what, `Updated what: ~/.hud/jobs/x/report.md and ${outsidePath}`);
+  assert.equal(t1Updated.live_try, 'Updated try: ~/.hud/jobs/x/report.md');
+  assert.equal(t1Updated.acceptance[0].text, `Updated acceptance: ~/.hud/jobs/x/report.md and ${outsidePath}`);
+  assert.equal(t1Updated.comments[1].text, `Updated comment: ~/.hud/jobs/x/report.md and ${outsidePath}`);
+
+  const rawJson = fs.readFileSync(join(f.main, '.hud/tickets/norm-json.json'), 'utf8');
+  assert.equal(rawJson.includes(`${f.env.HOME}/`), false, 'stored JSON must not contain $HOME/ paths');
+  assert.equal(rawJson.includes(outsidePath), true);
+
+  // Markdown add.
+  const mdAdd = await call('add', {
+    feature: 'legacy',
+    tickets: [{
+      title: `Markdown ${homePath}`,
+      what: `Read ${homePath} and ${outsidePath}.`,
+      live_try: `Try ${homePath} and ${outsidePath}`,
+      acceptance: [`Check ${homePath}`, `Keep ${outsidePath}`],
+      blocked_by: [],
+    }],
+  });
+  assert.equal(mdAdd.ok, true);
+  const mdPath = mdAdd.tickets[0].path;
+  const mdBody = fs.readFileSync(mdPath, 'utf8');
+  assert.equal(mdBody.includes(f.env.HOME), false, 'stored Markdown must not contain $HOME paths');
+  assert.match(mdBody, /^# 02: Markdown ~\/\.hud\/jobs\/x\/report\.md$/m);
+  assert.match(mdBody, /^\*\*Live try:\*\* Try ~\/\.hud\/jobs\/x\/report\.md and \/var\/tmp\/outside\/jobs\/x\/report\.md$/m);
+  assert.match(mdBody, /^\*\*What to build:\*\* Read ~\/\.hud\/jobs\/x\/report\.md and \/var\/tmp\/outside\/jobs\/x\/report\.md\.$/m);
+  assert.match(mdBody, /^- \[ \] Check ~\/\.hud\/jobs\/x\/report\.md$/m);
+  assert.match(mdBody, /^- \[ \] Keep \/var\/tmp\/outside\/jobs\/x\/report\.md$/m);
+
+  // Land-written Markdown ticket comments and unattended acceptance comments (JSON and Markdown).
+  const procHome = process.env.HOME;
+  assert.ok(procHome, 'test runner must have HOME set');
+  const procHomePath = `${procHome}/.hud/jobs/x/report.md`;
+  const { body: landed } = landedTicket(mdBody, 2, `Landed; report ${procHomePath} and ${outsidePath}.`, []);
+  assert.match(landed, /^- Landed; report ~\/\.hud\/jobs\/x\/report\.md and \/var\/tmp\/outside\/jobs\/x\/report\.md\.$/m);
+  assert.equal(landed.includes(procHomePath), false);
+
+  const acc = await recordUnattendedAcceptance(
+    f.main,
+    f.home,
+    () => [
+      { path: join(f.main, '.hud/tickets/norm-json.json'), ticket: 'norm-json/01' },
+      { path: mdPath, ticket: 'legacy/02' },
+    ],
+    'q00000000000000c1',
+    `finish: verified ${procHomePath} and ${outsidePath}`,
+  );
+  assert.deepEqual(acc.failed, []);
+  const { ticket: acceptedJson } = await call('get', { ticket: 'norm-json/01' });
+  assert.equal(acceptedJson.accepted?.verdict, `finish: verified ~/.hud/jobs/x/report.md and ${outsidePath}`);
+  const acceptedMd = fs.readFileSync(mdPath, 'utf8');
+  assert.match(acceptedMd, /^- Accepted by unattended lead \(q00000000000000c1\): finish: verified ~\/\.hud\/jobs\/x\/report\.md and \/var\/tmp\/outside\/jobs\/x\/report\.md$/m);
+  assert.equal(acceptedMd.includes(procHomePath), false);
 });

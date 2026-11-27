@@ -5,7 +5,7 @@ import { OBJECTIVE_SLUG, readObjectives } from '../collectors/objectives.js';
 import { localProjectRoots } from '../roles/projects.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import {
-  canonicalTicketRef, legacyTicketPaths, parseTicketRef, readJsonTicketFeature, readTicketFeature, serializeTicketFeature,
+  canonicalTicketRef, legacyTicketPaths, normalizeHomePaths, parseTicketRef, readJsonTicketFeature, readTicketFeature, serializeTicketFeature,
   splitRemovals, ticketFeaturePath, ticketNumber, ticketRef, TICKET_FEATURE, TICKET_KINDS, TICKET_ROLES,
   TICKET_STATUSES, withTicketStoreLock, writeLegacyTicket, writeTicketFeature, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
@@ -13,7 +13,7 @@ import { linkFeature } from './local-objectives.js';
 import { editLocalTickets, extractWhatAndLiveTry, unlinkedWarning, type TicketEdit } from './local-tickets.js';
 
 function invalid(field: string): never { throw new Error(`invalid_arguments: ${field}`); }
-const text = (value: unknown, field: string) => typeof value === 'string' && value.trim() ? value.trim() : invalid(field);
+const text = (value: unknown, field: string) => typeof value === 'string' && value.trim() ? normalizeHomePaths(value.trim()) : invalid(field);
 const line = (value: unknown, field: string) => text(value, field).replace(/\s+/g, ' ');
 const flag = (value: unknown, field: string) => typeof value === 'boolean' ? value : invalid(field);
 const featureSlug = (value: unknown) => typeof value === 'string' && TICKET_FEATURE.test(value) ? value : invalid('feature');

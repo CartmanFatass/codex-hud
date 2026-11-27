@@ -11,7 +11,7 @@ import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
 import { localProjectRoots, projectRoot, sharedRoot } from '../roles/projects.js';
 import {
-  canonicalTicketRef, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature, renderTicketBrief, splitRemovals,
+  canonicalTicketRef, normalizeHomePaths, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature, renderTicketBrief, splitRemovals,
   storedTicket, ticketFeaturePath, ticketFeatureSlugs, TICKET_STATUSES, withTicketStoreLock, writeLegacyTicket,
   writeTicketFeature, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
@@ -36,7 +36,7 @@ function invalid(field: string): never {
 }
 function line(value: unknown, field: string): string {
   if (typeof value !== 'string' || !value.trim()) return invalid(field);
-  return value.replace(/\s+/g, ' ').trim();
+  return normalizeHomePaths(value.replace(/\s+/g, ' ').trim());
 }
 const ownLiveTryLine = /^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?Live try(?::\*\*|\*\*:|:(?!\*\*))[ \t]*(.+?)[ \t]*$/i;
 const inlineBoldLiveTry = /(?:^|[\s·])\*\*Live try(?::\*\*|\*\*:)[ \t]*(.+?)[ \t]*$/i;
@@ -44,7 +44,7 @@ const inlineAfterPunctLiveTry = /([.;!?]|·)[ \t]+Live try:[ \t]*(.+?)[ \t]*$/i;
 
 export function extractWhatAndLiveTry(rawWhat: unknown, rawLiveTry: unknown): { what: string; liveTry?: string } {
   if (typeof rawWhat !== 'string' || !rawWhat.trim()) return invalid('what');
-  const what = rawWhat.trim();
+  const what = normalizeHomePaths(rawWhat.trim());
   if (rawLiveTry !== undefined) return { what, liveTry: line(rawLiveTry, 'live_try') };
   const rawLines = what.split(/\r?\n/);
   let extracted: string | undefined;
@@ -524,7 +524,7 @@ export function landedTicket(original: string, ticket: number, comment: string, 
     !skip.has(++index) && mark === ' ' ? `${prefix}x]` : match);
   const body = withStatus(checked, ownerTry ? 'ready-for-human' : unfinished.length ? 'ready-for-agent' : 'done', ticket);
   const pending = unfinished.length ? `- Acceptance left unticked: ${unfinished.map(({ id }) => `#${id}`).join(', ')}.\n` : '';
-  return { body: (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${comment}\n${pending}`, unfinished };
+  return { body: (body + (start < 0 ? '\n## Comments' : original.slice(start))).trimEnd() + `\n\n- ${normalizeHomePaths(comment)}\n${pending}`, unfinished };
 }
 
 export interface UnattendedAcceptanceFailure {
@@ -554,7 +554,7 @@ export async function recordUnattendedAcceptance(
     const failed: UnattendedAcceptanceFailure[] = [];
     if (!tickets.length) return { persisted, failed, firstChanged: undefined as string | undefined };
     const at = new Date().toISOString();
-    const summary = verdict.replace(/\s+/g, ' ').trim().slice(0, 400);
+    const summary = normalizeHomePaths(verdict).replace(/\s+/g, ' ').trim().slice(0, 400);
     const scratch = join(mainRoot, '.scratch');
     let scratchChecked = false;
     let scratchMirror = false;

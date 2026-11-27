@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { join, parse, resolve, sep } from 'node:path';
 import { ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readFileBounded, writeFileAtomic, writeJsonPrivate } from '../utils/atomic-fs.js';
@@ -77,6 +78,39 @@ export function parseMarkdownRepairRefs(raw: string | undefined, feature: string
     const ref = parseTicketRef(/^#?\d+$/.test(clean) ? `${feature}/${clean.replace(/^#/, '')}` : clean);
     return ref ? [ticketRef(ref.feature, ref.number)] : [];
   });
+}
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function homePathCandidates(homeDir?: string): string[] {
+  const raw = homeDir ?? (process.env.HOME || homedir());
+  if (!raw) return [];
+  const resolved = resolve(raw);
+  const candidates: string[] = [];
+  const add = (dir: string) => {
+    if (!dir || dir === parse(dir).root) return;
+    const trimmed = dir.replace(/[/\\]+$/, '');
+    if (trimmed && !candidates.includes(trimmed)) candidates.push(trimmed);
+  };
+  add(resolved);
+  try { add(fs.realpathSync(resolved)); } catch { /* Synthetic or absent home. */ }
+  return candidates.sort((a, b) => b.length - a.length);
+}
+
+/** Rewrite absolute paths inside `$HOME` to `~/...` (or `~`) while leaving paths outside `$HOME` verbatim. */
+export function normalizeHomePaths(value: string, homeDir?: string): string {
+  const homes = homePathCandidates(homeDir);
+  if (!homes.length) return value;
+  const sepPattern = sep === '\\' ? '[/\\\\]' : '\\/';
+  let result = value;
+  for (const home of homes) {
+    const pattern = new RegExp(
+      `(?<![A-Za-z0-9_.\\-~\\/\\\\])${escapeRegExp(home)}(?=${sepPattern}|$|[\\s)\\]}"'\`>,;:?!]|\\.(?=$|[\\s)\\]}"'\`>,;:?!]))`,
+      'g',
+    );
+    result = result.replace(pattern, '~');
+  }
+  return result;
 }
 
 type Check = (value: unknown, field: string) => unknown;
