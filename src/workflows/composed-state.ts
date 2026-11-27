@@ -11,6 +11,7 @@ import { runDir, runLock } from './store.js';
 import type { Job } from '../mcp/job-contracts.js';
 
 export const isComposedId = (id: unknown): id is `w${string}` => typeof id === 'string' && /^w[a-f0-9]{16}$/.test(id);
+export const SONIC_INPUT_UNKNOWN = 'Earlier Sonic input bytes could not be accounted for; re-plan';
 export const workflowGrants = runGrantStore('workflow-grant');
 export type CheckResult = { exit_code: number | null; tail: string; error?: string };
 export type Item = { job?: string; state: 'waiting' | 'running' | 'done' | 'failed'; attempt: number; reason?: string; stall?: string };
@@ -24,6 +25,8 @@ export interface ComposedRun extends Run, RunScope {
   steps: Record<string, ComposedCursor>; answers: Record<string, string>;
   handback?: Run['handback'] & Partial<Handback>;
 }
+export const composedActive = (run: ComposedRun) => run.state === 'working' || (run.state === 'paused' &&
+  Object.values(run.steps).some(c => c.state === 'running' && c.items?.some(i => i.state === 'running')));
 export const readComposed = (home: string, id: string): ComposedRun | undefined => {
   if (!isComposedId(id)) return;
   try {

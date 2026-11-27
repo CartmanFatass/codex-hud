@@ -145,7 +145,7 @@ export interface Job extends PiOptions {
   used_place?: string;
   dispatch_exit_code: number | null;
   launcher?: { pid: number; start?: string }; // The process running the launch while dispatch_exit_code is null.
-  dispatch_code?: 'untrusted_cwd' | 'unsupported_harness' | 'invalid_arguments' | 'launch_unknown' | 'herdr_fork_required';
+  dispatch_code?: 'untrusted_cwd' | 'unsupported_harness' | 'invalid_arguments' | 'launch_unknown' | 'herdr_fork_required' | 'workflow_cost_changed';
   dispatch_path?: string;
   launch_unknown?: string;
   stderr_tail: string;

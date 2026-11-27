@@ -5,7 +5,7 @@ import { activeLand, isFlowId, landFile, landNoticeLine, readLand } from '../mcp
 import { isTicketQueueId, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
 import { activeTicketEdit, isTicketEditId, type TicketEdit } from '../mcp/ticket-edit-state.js';
 import { sharedRoot } from '../roles/projects.js';
-import { isComposedId, type ComposedRun } from './composed-state.js';
+import { composedActive, isComposedId, type ComposedRun } from './composed-state.js';
 import { workflowHeaders, type HeaderPass } from './header-scan.js';
 import { directRecipient, runVisible } from './scope.js';
 import { noticeEvents } from './store.js';
@@ -76,7 +76,7 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
       const run = pass.header<ComposedRun>(file);
       if (run?.template === 'composed' && (all || runVisible(run, pane, cwd))) {
         events.push(...noticeEvents(home, run, all));
-        pending ||= run.state === 'working';
+        pending ||= composedActive(run);
       }
       continue;
     }

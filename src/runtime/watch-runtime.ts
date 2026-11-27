@@ -18,7 +18,7 @@ import { landAttempt, activeLand, isFlowId, readLand } from '../mcp/land-state.j
 import type { CouncilRun } from '../mcp/council-state.js';
 import { settleMainCouncil } from '../mcp/council-settle.js';
 import { wakeWorkflow } from '../workflows/wake.js';
-import { isComposedId, type ComposedRun } from '../workflows/composed-state.js';
+import { composedActive, isComposedId, type ComposedRun } from '../workflows/composed-state.js';
 import { directRecipient } from '../workflows/scope.js';
 import { noticeEvents, runDir } from '../workflows/store.js';
 import type { PrewalkRun } from '../mcp/prewalk-flow.js';
@@ -1277,8 +1277,8 @@ function scan(retryWatch = false) {
         if (run.state === 'paused' || run.state === 'working') {
           nearest = Math.min(nearest, deliverFlowNotices(id, run, flowScanNow, seenFlowNoticeMarkers));
         }
-        if (run.state !== 'working') continue;
-        wakeWorkflow(home, run);
+        if (!composedActive(run)) continue;
+        wakeWorkflow(home, run, true);
       } else if (isTicketQueueId(id)) {
         const q = header<TicketQueue>(file);
         if (!q) continue;

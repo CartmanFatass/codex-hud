@@ -10,7 +10,7 @@ import type { JobRow } from '../../collectors/thin-jobs.js';
 import { isWorkingForCap, loadConcurrencySettings, capForRole, QUEUE_START_MARKER } from '../../roles/concurrency.js';
 import { councilGrants } from '../../roles/council-grant.js';
 import { wakeWorkflow } from '../../workflows/wake.js';
-import { isComposedId } from '../../workflows/composed-state.js';
+import { isComposedId, SONIC_INPUT_UNKNOWN } from '../../workflows/composed-state.js';
 import { roleHasBrowser } from '../../workflows/graph.js';
 import type { OwnerGrant } from '../../roles/run-grant.js';
 import { createCouncilRun } from '../council-state.js';
@@ -145,6 +145,11 @@ export function batchHasRoom(role: string, all = jobs(), cap = capForRole(loadCo
     else if (j.batch_flow && status?.state === 'waiting_orchestrator') members++; // A headless answer resumes the same item.
   }
   return !cap || (working < cap && members < cap - 2);
+}
+
+export function workflowSonicHasRoom() {
+  const cap = capForRole(loadConcurrencySettings(), 'sonic');
+  return !cap || (countWorkingByRole().get('sonic') ?? 0) < cap;
 }
 
 function jobOptions(job: Job): Args {
@@ -766,8 +771,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           // Overflow borrows a concurrency slot, not the imp role's launch chain or mode.
           overflowFrom = 'imp';
           role = 'general';
-        } else if (advisor) return { ok: false as const, code: 'role_busy' as const, reason: `Role ${role} is at capacity` };
-        else shouldQueue = true;
+        } else if (advisor || (sonic && workflow?.cheap && isComposedId(workflow.id))) {
+          // Keep cheap Sonic work in the flow so its inputs are remeasured when a slot opens.
+          return { ok: false as const, code: 'role_busy' as const, reason: `Role ${role} is at capacity` };
+        } else shouldQueue = true;
       }
     }
 
@@ -1033,6 +1040,9 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     if (chain?.optionalEnabled === false) return failQueued(`Optional role ${launchRoleName} is off`);
     if (!chain) return failQueued(`Role ${launchRoleName} is not configured or is hidden in this project`);
     if (existing.workflow_cheap && roleHasBrowser(chain)) return failQueued(`Role ${launchRoleName} now has a browser place; re-plan`);
+    // Only pre-upgrade cheap composed Sonic jobs can be here. Their charge used
+    // the bare task and cannot be recovered from the queued receipt.
+    if (existing.workflow_cheap && launchRoleName === 'sonic') return failQueued(SONIC_INPUT_UNKNOWN, 'workflow_cost_changed');
     if (args.mode === 'headless' && !chain.can_continue) return failQueued('headless mode requires a continuable role', 'invalid_arguments');
     const now = Date.now();
     let routing;

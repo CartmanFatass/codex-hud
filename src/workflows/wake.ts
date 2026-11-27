@@ -26,9 +26,10 @@ export async function wakeSealedWorkflow<T>(jobDir: string, admit: (pid: number,
 export const publishWorkflowLifetime = publishRunnerLifetime;
 
 const starting = new Map<string, ChildProcess>();
-export function wakeWorkflow(home: string, b: { flow: string; pane: string; cwd?: string; root?: string; pid?: number; start?: string; state: string; totals?: { running: number } }) {
+export function wakeWorkflow(home: string, b: { flow: string; pane: string; cwd?: string; root?: string; pid?: number; start?: string; state: string; totals?: { running: number } },
+  active = b.state === 'working' || !!b.totals?.running) {
   const key = `${home}\0${b.flow}`;
-  if ((b.state !== 'working' && !b.totals?.running) || starting.has(key) || (b.pid && b.start && !workerTreeRootGone(b.pid, b.start))) return;
+  if (!active || starting.has(key) || (b.pid && b.start && !workerTreeRootGone(b.pid, b.start))) return;
   const { HUD_JOB_DIR: _worker, HERDR_PANE_ID: _pane, ...env } = process.env;
   const child = spawn(process.execPath, [binScript('workflow-runner'), b.flow], { detached: true, stdio: 'ignore',
     cwd: b.cwd ?? b.root!, env: { ...env, HUD_HOME: home, ...(b.pane ? { HERDR_PANE_ID: b.pane } : {}) } });

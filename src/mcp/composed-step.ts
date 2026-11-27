@@ -6,7 +6,7 @@ import { CHECK_TIMEOUT_MS } from '../roles/job-checks.js';
 import { readFileBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { isProcAlive } from '../utils/proc.js';
 import { driveWorkflow } from '../workflows/driver.js';
-import { hashComposedGraph, readComposed, readComposedGraph, workflowGrants, type CheckResult, type ComposedCursor, type ComposedRun } from '../workflows/composed-state.js';
+import { composedActive, hashComposedGraph, readComposed, readComposedGraph, SONIC_INPUT_UNKNOWN, workflowGrants, type CheckResult, type ComposedCursor, type ComposedRun } from '../workflows/composed-state.js';
 import { pauseRun, type Tick } from '../workflows/engine.js';
 import { SONIC_BYTES_LIMIT, type Graph, type Step } from '../workflows/graph.js';
 import { failuresByReason, settleBatchItem } from '../workflows/policy.js';
@@ -16,7 +16,7 @@ import { wakeWorkflow } from '../workflows/wake.js';
 import { inputBytes } from './batch.js';
 import { batchJobOutcome } from './batch-step.js';
 import type { Args } from './dispatch/context.js';
-import { batchHasRoom, dispatchJob, dispatchLandRepair, releaseLandTurn } from './dispatch/orchestrator.js';
+import { batchHasRoom, dispatchJob, dispatchLandRepair, releaseLandTurn, workflowSonicHasRoom } from './dispatch/orchestrator.js';
 import type { Job } from './job-contracts.js';
 import { startLand } from './land.js';
 import { repairBaseline, repairSettled } from './land-repair.js';
@@ -45,12 +45,31 @@ function effect(run: ComposedRun, fn: () => Promise<number>): Tick {
   return { state: 'running', changed: true, effect: fn };
 }
 
-function admitSonicInput(run: ComposedRun, key: string, steps: Graph['steps'], index?: number): number | Tick {
+function pauseComposed(run: ComposedRun, key: string, why: string) {
+  pauseRun(run, key, why);
+  run.notices[`pause-${run.epoch}`] = `${run.flow} paused at ${key}: ${why}`;
+}
+
+function verifySonicLedger(run: ComposedRun, steps: Graph['steps']) {
+  if (run.state !== 'working' || run.cost !== 'cheap' || run.sonic_input_bytes !== undefined) return false;
+  const earlier = Object.entries(steps).find(([key, step]) => {
+    if ((step.kind !== 'job' && step.kind !== 'batch') || step.role !== 'sonic') return false;
+    const c = run.steps[key];
+    return step.kind === 'job' ? c.admitted || c.job || c.attempt : c.items?.some(i => i.state !== 'waiting' || i.attempt > 0);
+  });
+  if (earlier) { pauseComposed(run, earlier[0], SONIC_INPUT_UNKNOWN); return true; }
+  run.sonic_input_bytes = 0;
+  return false;
+}
+
+function admitSonicInput(run: ComposedRun, key: string, steps: Graph['steps'], brief: WorkflowBrief, index?: number): number | Tick {
   if (run.cost !== 'cheap') return 0;
   let admitted = 0, pending = 0;
-  const charge = (id: string, task: string, i?: number) => {
-    const bytes = inputBytes(run.cwd, task, undefined, []).input_bytes;
-    if (id === key && i === index) admitted = bytes;
+  const charge = (id: string, step: Extract<Step, { kind: 'job' | 'batch' }>, task: string, i?: number) => {
+    const current = id === key && i === index;
+    const { args, paths } = current ? brief : workflowBrief(run, task, step.from, step.ask === true);
+    const bytes = inputBytes(run.cwd, args.task, undefined, [], [...paths, ...args.from_jobs.map(reportPath)]).input_bytes;
+    if (current) admitted = bytes;
     pending += bytes;
   };
   // Do not give back bytes when a previously dispatched file shrinks, or
@@ -60,15 +79,14 @@ function admitSonicInput(run: ComposedRun, key: string, steps: Graph['steps'], i
     const c = run.steps[id];
     if (!['waiting', 'ready', 'running'].includes(c.state)) continue;
     if (step.kind === 'job') {
-      if (!c.admitted) charge(id, step.task!);
+      if (!c.admitted) charge(id, step, step.task!);
     } else step.items!.forEach((item, i) => {
-      if (!c.items || c.items[i].state === 'waiting') charge(id, item.task!, i);
+      if (!c.items || c.items[i].state === 'waiting') charge(id, step, item.task!, i);
     });
   }
-  const used = run.sonic_input_bytes ?? 0, total = used + pending;
+  const used = run.sonic_input_bytes!, total = used + pending;
   if (total > SONIC_BYTES_LIMIT) {
-    pauseRun(run, key, `${total} Sonic input bytes across the run (limit ${SONIC_BYTES_LIMIT}); re-plan or reduce inputs`);
-    run.notices[`pause-${run.epoch}`] = `${run.flow} paused at ${key}: ${run.reason}`;
+    pauseComposed(run, key, `${total} Sonic input bytes across the run (limit ${SONIC_BYTES_LIMIT}); re-plan or reduce inputs`);
     return { ...wait(), changed: true };
   }
   run.sonic_input_bytes = used + admitted;
@@ -102,11 +120,17 @@ function references(run: ComposedRun, from: string[]) {
   return { ids: [...ids], paths };
 }
 
-type DispatchOptions = { isolation?: string; member?: true; preset?: string; members?: string[]; synthesizer?: string };
-async function create(run: ComposedRun, request: string, role: string, task: string, from: string[], options: DispatchOptions = {}) {
-  const refs = references(run, from);
-  const args: Args = { role, cwd: run.cwd, request_key: request, task: refs.paths.length ? `${task}\n\nWorkflow results: ${refs.paths.join(', ')}` : task,
-    ...(refs.ids.length && { from_jobs: refs.ids }), ...(role !== 'council' ? { isolation: options.isolation ?? 'none', prewalk: false }
+function workflowBrief(run: ComposedRun, task: string, from: string[], workerAsk?: boolean) {
+  if (workerAsk !== undefined) task += `\n\n${workerAsk ? WORKFLOW_WORKER_RULE : WORKFLOW_WORKER_RULE_NO_ASK}`;
+  const { ids, paths } = references(run, from);
+  if (paths.length) task += `\n\nWorkflow results: ${paths.join(', ')}`;
+  return { args: { task, from_jobs: ids }, paths };
+}
+type WorkflowBrief = ReturnType<typeof workflowBrief>;
+type DispatchOptions = { isolation?: string; member?: true; preset?: string; members?: string[]; synthesizer?: string; ask?: boolean };
+async function create(run: ComposedRun, request: string, role: string, { args: brief }: WorkflowBrief, options: DispatchOptions = {}) {
+  const args: Args = { role, cwd: run.cwd, request_key: request, task: brief.task,
+    ...(brief.from_jobs.length && { from_jobs: brief.from_jobs }), ...(role !== 'council' ? { isolation: options.isolation ?? 'none', prewalk: false }
       : { members: options.members, synthesizer: options.synthesizer }) };
   const canAdmit = () => working(run);
   const result = await dispatchJob(args, pane(run), { dispatcher: run.dispatcher, workspace: run.workspace,
@@ -123,24 +147,29 @@ function tickJob(run: ComposedRun, key: string, cursor: ComposedCursor, role: st
   const job = cursor.job ? findJob(cursor.job) : cursor.admitted ? receipt(run, request) : undefined;
   if (job) {
     const changed = cursor.job !== job.job; cursor.job = job.job;
-    return { ...observeJob(job), ...(changed && { changed }) };
+    const outcome = observeJob(job);
+    if (run.state === 'working' && outcome.state === 'failed' && job.dispatch_code === 'workflow_cost_changed')
+      pauseComposed(run, key, outcome.reason!);
+    return { ...outcome, ...(changed && { changed }) };
   }
   if (cursor.admitted) return fail(cursor.reason || 'dispatch interrupted without a job receipt');
   if (run.state !== 'working') return wait();
-  const bytes = role === 'sonic' ? admitSonicInput(run, key, steps) : 0;
+  if (role === 'sonic' && run.cost === 'cheap' && !workflowSonicHasRoom()) return wait(1_000);
+  const brief = workflowBrief(run, task, from, steps[key].kind === 'job' ? options.ask === true : undefined);
+  const bytes = role === 'sonic' ? admitSonicInput(run, key, steps, brief) : 0;
   if (typeof bytes !== 'number') return bytes;
   cursor.admitted = true;
   return effect(run, async () => {
     let result: Awaited<ReturnType<typeof create>>;
-    try { result = await create(run, request, role, task, from, options); }
+    try { result = await create(run, request, role, brief, options); }
     catch (error) { result = { job: undefined, code: undefined, error: reason(error) }; }
     await update(run, key, (c, latest) => {
-      if (result.code === 'queue_stopped') {
+      if (result.code === 'queue_stopped' || result.code === 'role_busy') {
         delete c.admitted;
         if (bytes) latest.sonic_input_bytes! -= bytes;
       } else { c.job = result.job; c.reason = result.error; }
     });
-    return 0;
+    return result.code === 'role_busy' ? 1_000 : 0;
   });
 }
 
@@ -156,10 +185,7 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
     return result ? [{ item, i, ...result }] : [];
   }).sort((a, b) => a.at - b.at || a.i - b.i);
   const evidence = () => items.map((item, i) => ({ ...item, item: i + 1 }));
-  const pause = (why: string) => {
-    pauseRun(run, key, why);
-    run.notices[`pause-${run.epoch}`] = `${run.flow} paused at ${key}: ${why}`;
-  };
+  const pause = (why: string) => pauseComposed(run, key, why);
   for (const { item, i, failure, stall } of settled) {
     if (stall) {
       if (graph.policy.breaker === 'none' || run.state !== 'working' || item.stall === stall) continue;
@@ -177,7 +203,7 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
   if (changed) writeJsonPrivate(indexPath(run, key), evidence().map(item => ({ ...item, ...(item.state === 'done' && item.job && { report_path: reportPath(item.job) }) })));
   const running = items.filter(i => i.state === 'running').length;
   const next = items.findIndex(i => i.state === 'waiting');
-  if (run.state !== 'working') return { ...wait(), changed };
+  if (run.state !== 'working') return { ...wait(running ? 1_000 : undefined), changed };
   if (!running && next < 0) {
     if (!items.some(item => item.state === 'failed')) return { state: 'done' };
     cursor.failure_groups ??= failuresByReason(evidence());
@@ -187,13 +213,13 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
   }
   // While a pilot is pending, no other item may be admitted.
   if (items[0].state === 'running' || next < 0 || running >= step.max_parallel! || !batchHasRoom(step.role)) return { ...wait(1_000), changed };
-  const bytes = step.role === 'sonic' ? admitSonicInput(run, key, graph.steps, next) : 0;
+  const brief = workflowBrief(run, step.items![next].task!, step.from, step.ask === true);
+  const bytes = step.role === 'sonic' ? admitSonicInput(run, key, graph.steps, brief, next) : 0;
   if (typeof bytes !== 'number') return bytes;
   items[next].state = 'running';
   return effect(run, async () => {
-    const task = `${step.items![next].task}\n\n${step.ask === true ? WORKFLOW_WORKER_RULE : WORKFLOW_WORKER_RULE_NO_ASK}`;
     let result: Awaited<ReturnType<typeof create>>;
-    try { result = await create(run, request(next), step.role, task, step.from, { member: true, isolation: ['imp', 'frontend-imp'].includes(step.role) ? 'worktree' : 'none' }); }
+    try { result = await create(run, request(next), step.role, brief, { member: true, isolation: ['imp', 'frontend-imp'].includes(step.role) ? 'worktree' : 'none' }); }
     catch (error) { result = { job: undefined, code: undefined, error: reason(error) }; }
     await update(run, key, (c, latest) => {
       const item = c.items![next];
@@ -332,19 +358,23 @@ function tickHandback(run: ComposedRun, key: string, step: Extract<Step, { kind:
 }
 
 export async function driveComposed(id: string) {
-  if (readComposed(hudHome, id)?.state !== 'working') return;
+  const initial = readComposed(hudHome, id);
+  if (!initial || !composedActive(initial)) return;
   await driveWorkflow(hudHome, id, {
     read: () => readComposed(hudHome, id)!, header: run => run, save: run => saveHeader(hudHome, run),
     open: run => {
       if (!run.grant && run.cost === 'costly') throw Error('owner_grant_required');
       const graph = readComposedGraph(hudHome, id);
       if (hashComposedGraph(run.cwd, graph) !== run.hash || graph.cost !== run.cost) throw Error('workflow_plan_changed');
+      verifySonicLedger(run, graph.steps);
       return graph;
     },
     tick: (run, key, step, graph) => {
       const cursor = run.steps[key];
+      if (verifySonicLedger(run, graph.steps)) return { ...wait(0), changed: true };
+      if (run.state !== 'working' && !cursor.items?.some(i => i.state === 'running')) return wait();
       switch (step.kind) {
-        case 'job': return tickJob(run, key, cursor, step.role, `${step.task}\n\n${step.ask === true ? WORKFLOW_WORKER_RULE : WORKFLOW_WORKER_RULE_NO_ASK}`, step.from, graph.steps, step);
+        case 'job': return tickJob(run, key, cursor, step.role, step.task!, step.from, graph.steps, step);
         case 'council': return tickJob(run, key, cursor, 'council', step.task!, step.from, graph.steps, step);
         case 'batch': return tickBatch(run, key, step, cursor, graph);
         case 'check': return tickCheck(run, key, step, cursor);
@@ -354,7 +384,7 @@ export async function driveComposed(id: string) {
     },
     watches: run => [...new Set(Object.values(run.steps).filter(c => c.state === 'running').flatMap(c => [c.job, ...c.items?.filter(i => i.state === 'running').map(i => i.job) ?? []]))]
       .flatMap(job => job ? [{ dir: directory(job), filter: (file: string | null) => !file || file === jobFiles.status || file === jobFiles.job || file === jobFiles.report }] : []),
-    active: run => run.state === 'working', propagateSkips: true,
+    active: composedActive, propagateSkips: true,
     onEnd: run => { run.notices[`end-${run.epoch}`] = `${id} workflow completed`; },
     errorLine: run => `${id} workflow paused: ${run.reason}`,
   });
@@ -365,7 +395,7 @@ export async function driveComposed(id: string) {
     // notice. Its wake sees a live PID; hand off after releasing the driver lock.
     delete run.pid; delete run.start; saveHeader(hudHome, run);
     if (run.state === 'completed' && run.grant && !run.input_admitted) await workflowGrants.releaseUnused(hudHome, id);
-    if (run.state === 'working') return run;
+    if (composedActive(run)) return run;
   });
-  if (restart) wakeWorkflow(hudHome, restart);
+  if (restart) wakeWorkflow(hudHome, restart, true);
 }

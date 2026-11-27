@@ -5,7 +5,7 @@ import { capForRole, loadConcurrencySettings } from '../roles/concurrency.js';
 import { registeredProject, sharedRoot } from '../roles/projects.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { procStat } from '../utils/proc.js';
-import { hashComposedGraph, isComposedId, proposalFresh, readComposed, readComposedGraph, validPlanHash, workflowGrants,
+import { composedActive, hashComposedGraph, isComposedId, proposalFresh, readComposed, readComposedGraph, validPlanHash, workflowGrants,
   type ComposedGraph, type ComposedRun, type Scale } from '../workflows/composed-state.js';
 import { controlRun, type Control } from '../workflows/engine.js';
 import { checkArgv, loadGraph } from '../workflows/graph.js';
@@ -146,7 +146,7 @@ export async function callWorkflow(home: string, pane: string | null, args: Args
         return { value: { ok: false, code: 'sealed_land_not_replayable' } };
       if (controlRun(run, action, retryable)) {
         if (action === 'retry_failed') for (const [key, c] of failed) {
-          run.steps[key] = { state: 'waiting', attempt: (c.attempt ?? 0) + 1, ...(c.repairs && { repairs: c.repairs }),
+          run.steps[key] = { state: c.items?.some(i => i.state === 'running') ? 'running' : 'waiting', attempt: (c.attempt ?? 0) + 1, ...(c.repairs && { repairs: c.repairs }),
             ...(c.items && { items: c.items.map(i => i.state === 'failed' ? { state: 'waiting', attempt: i.attempt + 1 } : i) }) };
         }
         if (run.state === 'stopped') {
@@ -160,7 +160,7 @@ export async function callWorkflow(home: string, pane: string | null, args: Args
     }
     return { run, value: view(run, graph) };
   });
-  if (outcome.run) wakeWorkflow(home, outcome.run);
+  if (outcome.run) wakeWorkflow(home, outcome.run, composedActive(outcome.run));
   return outcome.value;
 }
 

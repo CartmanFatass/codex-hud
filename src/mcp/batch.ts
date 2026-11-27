@@ -19,8 +19,9 @@ import type { Job } from './job-contracts.js';
 import { BUNDLED_ROOT } from './paths.js';
 import { batchDir, batchIds, batchIndex, batchLock, failuresByReason, isBatchId, readBatch, saveBatch, type Batch, type BatchInput, type Manifest } from './batch-state.js';
 
-// Size existing project files, not prose, glob expansions, directories, URLs or prospective outputs.
-export function inputBytes(cwd: string, task: string, brief: string | undefined, context: string[]) {
+// Size named project files and explicitly declared workflow results, not glob expansions,
+// directories, URLs or prospective outputs.
+export function inputBytes(cwd: string, task: string, brief: string | undefined, context: string[], results: string[] = []) {
   const seen = new Set(brief ? [fs.realpathSync(resolve(cwd, brief))] : []);
   const inputs: { path: string; bytes: number }[] = [];
   const refs = task.matchAll(/`([^`\n]+)`|"([^"\n]+)"|(?<!\w)'([^'\n]+)'|(?:^|[\s(])([\w./-]+)/gm);
@@ -31,11 +32,12 @@ export function inputBytes(cwd: string, task: string, brief: string | undefined,
     if (m[4] && !/[./]/.test(m[4])) return [];
     return [m[1] ?? m[2] ?? m[3] ?? m[4].replace(/[.]$/, '')];
   });
-  for (const path of [...context, ...paths]) {
+  const declared = new Set(results);
+  for (const path of [...results, ...context, ...paths]) {
     if (!path || path.length > 4096 || path.includes('\0')) continue;
     try {
       const real = fs.realpathSync(resolve(cwd, path)), rel = relative(cwd, real);
-      if (seen.has(real) || rel === '..' || rel.startsWith('../') || isAbsolute(rel)) continue;
+      if (seen.has(real) || (!declared.has(path) && (rel === '..' || rel.startsWith('../') || isAbsolute(rel)))) continue;
       const stat = fs.statSync(real);
       if (stat.isFile()) { inputs.push({ path: rel, bytes: stat.size }); seen.add(real); }
     } catch (error) { if (!['ENOENT','ENOTDIR','ENAMETOOLONG'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error; }

@@ -8,8 +8,10 @@ import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
 import { panelDelivery } from '../../dist/mcp/panel-delivery.js';
+import { WORKFLOW_WORKER_RULE_NO_ASK } from '../../dist/mcp/workflow-lead.js';
+import { SONIC_BYTES_LIMIT } from '../../dist/workflows/graph.js';
 import { taskNoticeSource } from '../../dist/workflows/events.js';
-import { saveHeader } from '../../dist/workflows/store.js';
+import { noticeEvents, saveHeader } from '../../dist/workflows/store.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { enableOptionalRoles, fixture, sonicTask, until } from '../helpers/thin-mcp-harness.mjs';
 import { setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
@@ -296,39 +298,53 @@ test('an in-place repair waits for the new report before rerunning the check, ha
   assert.match(f.git(f.root, 'show', 'HEAD:repair.txt'), /Synthetic implementation/);
 });
 
-test('a composed batch settles the pilot and applies the first breaker before admitting the tail', { timeout: 30_000 }, async t => {
+test('a composed breaker settles staggered sibling failures while paused and retries both without admitting the tail early', { timeout: 30_000 }, async t => {
   const f = await fixture(t, { failedRetentionMs: 60_000 });
   sonicTask(f);
-  const p = await call(f, 'plan', { graph: { ...graph({ items: { ...batch('sonic', 3), max_parallel: 1 } }), policy: { breaker: 'first' } } });
+  const p = await call(f, 'plan', { graph: { ...graph({ items: { ...batch('sonic', 4), max_parallel: 2 } }), policy: { breaker: 'first' } } });
   assert.equal(p.cost, 'cheap');
   assert.equal((await start(f, p)).state, 'working');
   const dir = join(f.env.HUD_HOME, 'jobs');
   const run = () => JSON.parse(fs.readFileSync(join(f.env.HUD_HOME, 'flows', `${p.run}.json`), 'utf8'));
   const items = () => run().steps.items.items;
+  const status = () => call(f, 'status', { run: p.run });
+  const release = (job, fail = false) => {
+    if (fail) put(join(dir, job, 'fail-sonic'), '');
+    put(join(dir, job, 'release-sonic'), '');
+  };
   await until(() => items()?.[0].job, t.signal);
-  put(join(dir, items()[0].job, 'release-sonic'), '');
-  await until(() => items()[1].job, t.signal);
-  const failed = items()[1].job;
-  put(join(dir, failed, 'fail-sonic'), '');
-  put(join(dir, failed, 'release-sonic'), '');
+  assert.equal(items()[1].state, 'waiting');
+  release(items()[0].job);
+  await until(() => items()[1].job && items()[2].job, t.signal);
+  const [pilot, first, second] = items().map(i => i.job);
+  release(first, true);
   await until(() => run().state === 'paused', t.signal);
-  const value = await call(f, 'status', { run: p.run });
-  assert.match(value.reason, /failure circuit breaker/);
-  assert.deepEqual(value.steps.items.items.map(i => i.state), ['done', 'failed', 'waiting']);
-  assert.equal(value.steps.items.items[2].job, undefined);
+  const paused = await status();
+  assert.match(paused.reason, /failure circuit breaker/);
+  assert.deepEqual(paused.steps.items.items.map(i => i.state), ['done', 'failed', 'running', 'waiting']);
+  await delay(2_000, undefined, { signal: t.signal });
+  release(second, true);
+  await until(() => items()[2].state === 'failed', t.signal);
+  const value = await status();
+  assert.equal(value.state, 'paused');
+  assert.deepEqual(value.steps.items.items.map(i => i.state), ['done', 'failed', 'failed', 'waiting']);
+  assert.equal(value.steps.items.items[3].job, undefined);
   const reason = value.steps.items.items[1].reason;
   assert.match(reason, /exited/);
-  assert.deepEqual(value.steps.items.failure_groups, [{ reason, count: 1, example: failed }]);
-  assert.equal(run().settled, 2);
-  assert.equal(fs.readdirSync(dir).filter(name => /^j[0-9a-f]{16}$/.test(name)).length, 2);
-  assert.equal((await call(f, 'control', { run: p.run, action: 'retry_failed' })).state, 'working');
-  await until(() => items()[1].job && items()[1].job !== failed, t.signal);
-  const retried = items()[1].job;
-  assert.equal(items()[0].state, 'done');
-  assert.equal(items()[2].job, undefined);
-  put(join(dir, retried, 'release-sonic'), '');
-  await until(() => items()[2].job, t.signal);
-  put(join(dir, items()[2].job, 'release-sonic'), '');
+  assert.deepEqual(value.steps.items.failure_groups, [{ reason, count: 2, example: first }]);
+  assert.equal(run().settled, 2, 'a paused sibling does not change the breaker window');
+  assert.deepEqual(fs.readdirSync(dir).filter(name => /^j[0-9a-f]{16}$/.test(name)).sort(), [pilot, first, second].sort());
+  const retry = await call(f, 'control', { run: p.run, action: 'retry_failed' });
+  assert.equal(retry.state, 'working');
+  assert.deepEqual(retry.steps.items.items.map(i => i.attempt), [0, 1, 1, 0]);
+  await until(() => items()[1].job && items()[2].job, t.signal);
+  assert.deepEqual(items().map(i => i.state), ['done', 'running', 'running', 'waiting']);
+  assert.notEqual(items()[1].job, first);
+  assert.notEqual(items()[2].job, second);
+  release(items()[1].job);
+  release(items()[2].job);
+  await until(() => items()[3].job, t.signal);
+  release(items()[3].job);
   await until(() => run().state === 'completed', t.signal);
 });
 
@@ -358,6 +374,138 @@ test('a cheap workflow remeasures aggregate Sonic inputs when a later step is ad
   assert.deepEqual(fs.readdirSync(join(f.home, 'jobs')).filter(name => /^j[0-9a-f]{16}$/.test(name)), [first]);
 });
 
+test('the exact bare Sonic limit pauses but the exact dispatched task and file fit', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  sonicTask(f);
+  const file = join(f.root, 'sample.txt'), task = 'Read `sample.txt`';
+  put(file, Buffer.alloc(SONIC_BYTES_LIMIT - Buffer.byteLength(task)));
+  const p = await call(f, 'plan', { graph: graph({ read: { kind: 'job', role: 'sonic', task } }) });
+  assert.equal(p.cost, 'cheap');
+  assert.equal(p.scale.read.input_bytes, SONIC_BYTES_LIMIT);
+  await start(f, p);
+  await until(() => f.flow(p.run).state === 'paused', t.signal);
+  assert.match((await call(f, 'status', { run: p.run })).reason, /Sonic input bytes across the run.*re-plan/);
+  assert.equal(f.flow(p.run).sonic_input_bytes, 0);
+  assert.equal(f.flow(p.run).steps.read.job, undefined);
+  const finalTask = `${task}\n\n${WORKFLOW_WORKER_RULE_NO_ASK}`;
+  const specBytes = fs.statSync(join(f.root, 'docs', 'spec.md')).size; // Named by the worker rule.
+  fs.truncateSync(file, SONIC_BYTES_LIMIT - Buffer.byteLength(finalTask) - specBytes);
+  assert.equal((await call(f, 'control', { run: p.run, action: 'resume' })).state, 'working');
+  await until(() => f.flow(p.run).steps.read.job || f.flow(p.run).state === 'paused', t.signal);
+  assert.equal(f.flow(p.run).state, 'working', JSON.stringify(f.flow(p.run)));
+  assert.equal(f.flow(p.run).sonic_input_bytes, SONIC_BYTES_LIMIT);
+  const job = f.flow(p.run).steps.read.job;
+  assert.equal(fs.readFileSync(join(f.dir(job), 'brief.md'), 'utf8').slice(0, f.job(job).task_length), finalTask);
+  put(join(f.dir(job), 'release-sonic'), '');
+  await until(() => f.flow(p.run).state === 'completed', t.signal);
+});
+
+test('Sonic charges a prerequisite report once it exists', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  sonicTask(f);
+  put(join(f.env.HOME, 'defer-pi-report'), '');
+  put(join(f.root, 'sample.txt'), Buffer.alloc(1024 * 1024));
+  const readTask = 'Read `sample.txt` and the build report';
+  const p = await call(f, 'plan', { graph: graph({
+    build: sample.steps.build,
+    verify: sample.steps.verify,
+    read: { ...task, task: readTask, needs: ['verify'], from: ['build', 'verify'] },
+  }) });
+  assert.equal(p.cost, 'cheap');
+  await start(f, p);
+  await until(() => f.flow(p.run).steps.build.job, t.signal);
+  const build = f.flow(p.run).steps.build.job;
+  await f.settle(build, { file: 'feature.txt', report: 'r'.repeat(1024 * 1024) });
+  await until(() => f.flow(p.run).state === 'paused' || f.flow(p.run).steps.read.job, t.signal);
+  const status = await call(f, 'status', { run: p.run });
+  assert.equal(status.state, 'paused');
+  const check = join(f.home, 'flows', p.run, 'verify.check.json');
+  const total = Buffer.byteLength(`${readTask}\n\n${WORKFLOW_WORKER_RULE_NO_ASK}\n\nWorkflow results: ${check}`) +
+    [check, join(f.root, 'docs', 'spec.md'), join(f.root, 'sample.txt'), join(f.dir(build), 'report.md')]
+      .reduce((n, file) => n + fs.statSync(file).size, 0);
+  assert.equal(status.reason, `${total} Sonic input bytes across the run (limit ${SONIC_BYTES_LIMIT}); re-plan or reduce inputs`);
+  assert.equal(status.steps.read.job, undefined);
+});
+
+test('a cheap Sonic step waits in the workflow at the role cap and remeasures before starting', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  sonicTask(f);
+  put(f.env.HUD_SETTINGS_PATH, JSON.stringify({ autoPrewalk: false, roleCaps: { sonic: 1 } }));
+  const busy = await f.call('hud_create', { role: 'sonic', task: 'Occupy the synthetic Sonic slot' });
+  assert.equal(busy.state, 'working');
+  const file = join(f.root, 'sample.txt');
+  put(file, 'small input');
+  const p = await call(f, 'plan', { graph: graph({ read: { ...task, task: 'Read `sample.txt`' } }) });
+  assert.equal(p.cost, 'cheap');
+  await start(f, p);
+  await until(() => f.flow(p.run).steps.read.state === 'running', t.signal);
+  const held = await call(f, 'status', { run: p.run });
+  assert.equal(held.steps.read.admitted, undefined);
+  assert.equal(held.steps.read.job, undefined);
+  fs.truncateSync(file, SONIC_BYTES_LIMIT);
+  put(join(busy.task_dir, 'release-sonic'), '');
+  await until(() => f.flow(p.run).state === 'paused' || f.flow(p.run).steps.read.job, t.signal);
+  const paused = await call(f, 'status', { run: p.run });
+  assert.equal(paused.state, 'paused');
+  assert.match(paused.reason, /Sonic input bytes across the run.*re-plan/);
+  assert.equal(paused.steps.read.job, undefined);
+});
+
+for (const browser of [false, true]) test(`a legacy queued cheap Sonic job is fenced at launch (${browser ? 'browser' : 'unaccounted inputs'})`,
+  { timeout: 30_000 }, async t => {
+    const f = await fixture(t, { failedRetentionMs: 60_000 });
+    sonicTask(f);
+    put(f.env.HUD_SETTINGS_PATH, JSON.stringify({ autoPrewalk: false, roleCaps: { sonic: 1 } }));
+    const create = task => f.call('hud_create', { role: 'sonic', task });
+    const busy = await create('Occupy the synthetic Sonic slot');
+    const file = join(f.root, 'sample.txt');
+    put(file, 'small input');
+    const queued = await create('Read `sample.txt`');
+    assert.equal(queued.queued, true);
+    const path = join(queued.task_dir, 'job.json');
+    const receipt = JSON.parse(fs.readFileSync(path, 'utf8'));
+    put(path, JSON.stringify({ ...receipt, workflow: 'w0000000000000001', workflow_cheap: true }));
+    fs.truncateSync(file, SONIC_BYTES_LIMIT);
+    if (browser) {
+      const path = join(f.env.HUD_HOME, 'roles', 'sonic.json');
+      const role = JSON.parse(fs.readFileSync(path, 'utf8'));
+      role.run.push({ harness: 'bro', tool: 'jev-ask', provider: 'gemini' });
+      put(path, JSON.stringify(role));
+    }
+    put(join(busy.task_dir, 'release-sonic'), '');
+    const status = () => JSON.parse(fs.readFileSync(join(queued.task_dir, 'STATUS.json'), 'utf8'));
+    await until(() => status().state !== 'queued', t.signal);
+    assert.equal(status().state, 'failed', JSON.stringify(status()));
+    assert.match(status().error, browser ? /browser place; re-plan/ : /Earlier Sonic input bytes.*re-plan/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path, 'utf8')).attempts, []);
+  });
+
+test('resuming a cheap workflow with earlier Sonic admission and no ledger pauses for re-plan', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  sonicTask(f);
+  const p = await call(f, 'plan', { graph: graph({
+    a: task,
+    accept: { ...sample.steps.accept, needs: ['a'], from: ['a'] },
+    b: { ...task, needs: ['accept'] },
+  }) });
+  assert.equal(p.cost, 'cheap');
+  await start(f, p);
+  await until(() => f.flow(p.run).steps.a.job, t.signal);
+  assert.ok(f.flow(p.run).sonic_input_bytes > 0, 'a fresh run starts accounting at zero');
+  put(join(f.dir(f.flow(p.run).steps.a.job), 'release-sonic'), '');
+  await until(() => f.flow(p.run).handback?.request_id === 'h-accept' && !f.flow(p.run).pid, t.signal);
+  const legacy = f.flow(p.run);
+  delete legacy.sonic_input_bytes;
+  saveHeader(f.home, legacy);
+  assert.equal((await reply(f, p.run, 'land')).written, true);
+  await until(() => f.flow(p.run).state === 'paused' || f.flow(p.run).steps.b.job, t.signal);
+  const status = await call(f, 'status', { run: p.run });
+  assert.equal(status.state, 'paused');
+  assert.match(status.reason, /Earlier Sonic input bytes.*re-plan/);
+  assert.equal(status.steps.b.job, undefined);
+  assert.equal(f.flow(p.run).sonic_input_bytes, undefined);
+});
+
 test('a stopped job with a written report completes its composed step', { timeout: 30_000 }, async t => {
   const f = await setupWorkflowProject(t, { count: 0 });
   put(join(f.env.HOME, 'defer-pi-report'), '');
@@ -378,7 +526,7 @@ for (const fails of [false, true]) test(`a composed hand-back push ${fails ? 're
   const home = f.env.HUD_HOME, pane = f.env.HERDR_PANE_ID;
   const flow = 'w0000000000000001', line = `${flow} synthetic hand-back`;
   fs.mkdirSync(join(home, 'flows', flow), { recursive: true });
-  saveHeader(home, { flow, template: 'composed', state: 'paused', pane, project_root: f.root, notices: { 'handback-accept': line } });
+  saveHeader(home, { flow, template: 'composed', state: 'paused', pane, project_root: f.root, steps: {}, notices: { 'handback-accept': line } });
   const calls = [];
   const delivery = panelDelivery(home, pane, f.root, () => false, async text => {
     calls.push(text);
@@ -390,6 +538,25 @@ for (const fails of [false, true]) test(`a composed hand-back push ${fails ? 're
   await delay(1_100, undefined, { signal: t.signal });
   assert.deepEqual(calls, expected);
   assert.ok(fs.existsSync(join(home, 'flows', flow, 'handback-accept.noticed')));
+});
+
+test('a quiet composed notice tick claims a marker released by another reader', async t => {
+  const f = await fixture(t);
+  const home = f.env.HUD_HOME, pane = f.env.HERDR_PANE_ID, flows = join(home, 'flows');
+  const flow = 'w0000000000000001', line = `${flow} synthetic hand-back`;
+  fs.mkdirSync(join(flows, flow), { recursive: true });
+  const run = { flow, template: 'composed', state: 'paused', pane, project_root: f.root, steps: {}, notices: { 'handback-accept': line } };
+  saveHeader(home, run);
+  const [claim] = noticeEvents(home, run);
+  const tick = taskNoticeSource(home, pane, f.root);
+  assert.deepEqual(tick(), [], 'prime the quiet cache while another reader holds the claim');
+  const stamp = fs.statSync(flows, { bigint: true });
+  fs.unlinkSync(claim.marker);
+  const unchanged = fs.statSync(flows, { bigint: true });
+  assert.equal(unchanged.mtimeNs, stamp.mtimeNs);
+  assert.equal(unchanged.ctimeNs, stamp.ctimeNs);
+  assert.deepEqual(tick(), [{ line, marker: claim.marker }]);
+  assert.deepEqual(tick(), []);
 });
 
 test('the default lead hand-back closes its decision session before selecting a branch', { timeout: 30_000 }, async t => {
