@@ -117,10 +117,10 @@ test('worktree isolation validates before dispatch, links dependencies and carri
   assert.deepEqual(project.ledger, [], 'a job without a ticket does not count toward progress');
 });
 
-test('hud_create tries the next place after a pre-spawn RPC rejection', async (t) => {
+test('hud_create marks a pre-spawn budget rejection exhausted and tries the next place', async (t) => {
   const f = await fixture(t);
   fallbackRole(f, 'fallback-check');
-  const reason = 'rate limit reached; retry after 5m';
+  const reason = 'Budget-exceeded; retry after 5m';
   fs.writeFileSync(join(f.env.HOME, 'fail-start-grok'), reason);
   const job = await f.call('hud_create', { role: 'fallback-check', request_key: 'fallback', task: 'Synthetic fallback.' });
   assert.equal(job.state, 'working');

@@ -8,7 +8,7 @@ import { defaultSettings, loadSettings } from '../../dist/settings.js';
 import { pickEvenPreset } from '../../dist/mcp/imp-routing.js';
 import { SETTING_ROWS, handleSettingsInput, renderSettingsPage, resetSettingsGroup } from '../../dist/render/settings-page.js';
 import { stripAnsi } from '../../dist/render/colors.js';
-import { cliState, fixture, runSonic, until } from '../helpers/thin-mcp-harness.mjs';
+import { cliState, configureFakeDecision, fakeDecisionServer, fixture, runSonic, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
 
 const pi = (provider, model) => ({ harness: 'pi', pi_role: 'sonic', model: `${provider}/${model}`, thinking: 'high', split: false });
@@ -129,6 +129,74 @@ test('Sonic even skips unavailable or exhausted presets, reports them, and falls
     assert.match(fallback.route.fallback, reason);
     assert.equal(receipt(fallback.task_dir).model, 'synth-ds/deepseek');
   }
+});
+
+test('Sonic skips first places marked after planning in fixed, even and prewalk launches', async t => {
+  const f = await fixture(t);
+  const run = [pi('synthetic', 'first'), pi('synthetic', 'second')];
+  const keys = run.map(place => `pi:${place.model}`);
+  const dir = join(f.env.HUD_HOME, 'roles');
+  fs.mkdirSync(dir, { recursive: true });
+  write(join(dir, 'sonic.json'), JSON.stringify({
+    role: 'sonic', instructions: 'sonic', can_continue: false, run,
+    presets: [{ name: 'pair', run }], active_preset: 'pair',
+  }));
+  const file = join(f.env.HUD_HOME, 'exhausted.json');
+  const expire = () => {
+    const marks = read(file);
+    for (const mark of Object.values(marks.places)) mark.until = new Date(Date.now() - 1).toISOString();
+    write(file, JSON.stringify(marks));
+  };
+  let markOnPick = [keys[0]];
+  const decision = await fakeDecisionServer(t, () => {
+    // The Sonic thinking request runs after the dispatch has chosen its candidate list.
+    for (const key of markOnPick) markExhausted(f.env.HUD_HOME, key, 'HTTP 402: budget exceeded');
+    return { answers: [] };
+  });
+  configureFakeDecision(f, decision.baseUrl);
+  const place = sonicPlacement => settings(f, { sonicPlacement, sonicEvenPool: ['pair'], sonicAutoThinking: true });
+  const create = task => f.call('hud_create', { role: 'sonic', task });
+  const assertLaunch = async (job, index) => {
+    const expected = run[index].model;
+    assert.deepEqual(job.attempts, [{ index, place: `pi (${expected})` }]);
+    const dir = join(f.env.HUD_HOME, 'jobs', job.job);
+    await until(() => f.commands().some(command => command.dir === dir), t.signal);
+    assert.deepEqual(f.commands().filter(command => command.dir === dir).map(({ args }) => args[args.indexOf('--model') + 1]), [expected]);
+  };
+
+  for (const placement of ['fixed', 'even']) {
+    place(placement);
+    await assertLaunch(await create(`Synthetic ${placement} lookup.`), 1);
+    expire();
+  }
+
+  place('fixed');
+  const target = await f.call('hud_create', { role: 'imp', task: 'Scouted work.', scouts: [{ kind: 'code', ask: 'Find the file.' }] });
+  let scout;
+  await until(() => scout = sonicJobs(f).find(job => job.parent_job === target.job && job.dispatch_exit_code !== null), t.signal);
+  await assertLaunch(scout, 1);
+  assert.equal(scout.prewalk_kind, 'code');
+  expire();
+
+  markOnPick = keys;
+  const failed = await create('Both places marked after planning.');
+  assert.equal(failed.ok, false);
+  assert.equal(failed.state, 'failed');
+  assert.deepEqual(failed.attempts, []);
+  assert.equal(failed.used_place, null);
+  assert.match(failed.reason, /No launch attempted; exhausted places/);
+  const refused = await create('Both places already marked.');
+  assert.equal(refused.code, 'no_available_place');
+  for (const key of keys) {
+    assert.ok(failed.reason.includes(key));
+    assert.ok(refused.reason.includes(key));
+  }
+  assert.ok(!f.commands().some(command => command.dir === failed.task_dir));
+  assert.ok(!fs.existsSync(join(failed.task_dir, 'SESSION.txt')));
+
+  expire();
+  markOnPick = [];
+  await assertLaunch(await create('Marks expired.'), 0);
 });
 
 test('Sonic falls through after a pre-input rejection without creating a second job', async t => {

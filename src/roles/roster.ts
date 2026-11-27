@@ -785,9 +785,10 @@ export function roleRegistry(
       ],
       available: chosen !== null,
       ...(chosen ? {} : {
-        reason: evaluated.map(({ place, model, state, off_by, until, quota_reason, missing }) =>
-          `${describePlace(place, model.value)}: ${state === 'off' ? `off (${off_by})` : state === 'exhausted'
-            ? `${quota_reason} (until ${until})` : state === 'missing' ? `missing ${missing} on PATH` : 'not used for the explicit model override'}`
+        reason: evaluated.map(({ place, model, state, off_by, until, quota_reason, missing, key }) =>
+          state === 'exhausted' ? `${key}: exhausted (${quota_reason}; until ${until})`
+            : `${describePlace(place, model.value)}: ${state === 'off' ? `off (${off_by})` : state === 'missing'
+              ? `missing ${missing} on PATH` : 'not used for the explicit model override'}`
         ).join('; '),
       }),
       run,

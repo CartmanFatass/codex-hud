@@ -1200,20 +1200,11 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
   let result: DispatchResult = launchError('no launch attempted');
   let reason = '';
   let sonicPick: Promise<string | undefined> | undefined;
+  const skipped = new Map<string, string>();
   for (const [index, { candidate, prepared, effective, route }] of candidates.entries()) {
     const launchArgs = argsForPlace(args, candidate.place, retryInput);
     if ('code' in prepared) continue; // Explicit harness-only options still constrain this dispatch.
     if (base.workflow_cheap && prepared.place.harness === 'bro') { reason = 'Workflow role now has a browser place; re-plan'; break; }
-    const first = attempts.length === 0;
-    if (!first) {
-      const exhausted = readExhausted(hudHome);
-      const quota = isQuotaFailure(reason);
-      if ((quota && candidate.key === job.place_key) || exhausted.has(candidate.key)) continue;
-      if (quota && !exhausted.has(job.place_key!)) markExhausted(hudHome, job.place_key!, reason);
-      // The previous tab is closed. Don't carry its launch/turn state into a new worker.
-      for (const file of [jobFiles.session, jobFiles.status, jobFiles.turn]) fs.rmSync(join(dir, file), { force: true });
-      jobCache.invalidateJob(id);
-    }
     const { place, options } = prepared;
     let thinking_source: Job['thinking_source'];
     if (role === 'sonic' && place.harness !== 'bro') {
@@ -1223,6 +1214,28 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
         if (picked !== undefined) place.thinking = picked;
         thinking_source = picked === undefined ? 'default' : 'decision';
       }
+    }
+    // A plan can outlive the quota snapshot it was built with (e.g. while scouting).
+    const exhausted = readExhausted(hudHome);
+    const mark = exhausted.get(candidate.key);
+    if (mark) {
+      skipped.set(candidate.key, mark.until);
+      // Try other places in this preset before moving around the even pool.
+      if (hooks.even && route && index === candidates.length - 1) {
+        const next = await hooks.even(route, `${candidate.key} exhausted until ${mark.until}`);
+        if (next) candidates.push(...next.candidates);
+      }
+      continue;
+    }
+    const first = attempts.length === 0;
+    if (!first) {
+      if (isQuotaFailure(reason)) {
+        if (candidate.key === job.place_key) continue;
+        if (!exhausted.has(job.place_key!)) markExhausted(hudHome, job.place_key!, reason);
+      }
+      // The previous tab is closed. Don't carry its launch/turn state into a new worker.
+      for (const file of [jobFiles.session, jobFiles.status, jobFiles.turn]) fs.rmSync(join(dir, file), { force: true });
+      jobCache.invalidateJob(id);
     }
     const attempt: LaunchAttempt = { index: candidate.index, place: describePlace(place, candidate.model.value) };
     job = {
@@ -1264,6 +1277,17 @@ async function launchAttempts(base: Job, { cwd, args, retryInput, chain, plan, w
     if (next) candidates.splice(index + 1, candidates.length, ...next.candidates);
     else if (!canTryNext(job, result)) break;
     save(job);
+  }
+  if (!reason && !attempts.length && skipped.size) {
+    const exhausted = readExhausted(hudHome);
+    for (const { key } of plan.effective.exhausted) {
+      const mark = exhausted.get(key);
+      if (mark) skipped.set(key, mark.until);
+    }
+    reason = `No launch attempted; exhausted places: ${[...skipped].map(([key, until]) => `${key} (until ${until})`).join('; ')}`;
+    result = rejectLaunch(launchError(reason));
+    // Child dispatches normally create this directory when preparing the first attempt.
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
   if (plan.fallback && canTryNext(job, result) && job.route?.tier !== 'standard')
     job.route = plan.fallback;

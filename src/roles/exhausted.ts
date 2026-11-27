@@ -18,7 +18,7 @@ const ABSOLUTE_RESET =
 const UTC_RESET = /\b(?:until|at|resets?)[\s:=]+([01]?\d|2[0-3]):([0-5]\d)\s*UTC\b/gi;
 const TRUST_REFUSAL = /^(?:grok|agy|claude) has not trusted /;
 const BILLING_ERROR =
-  /(?:\b(?:billing_[a-z0-9_]+|budget[_ -]?exhausted|credit[_ -]?balance|payment[_ -]?required)\b|(?:\b(?:http(?:\/[\d.]+)?|status(?:[_ -]?code)?|code|error|api)\b[\s:(\["']*|^)402\b)/i;
+  /(?:\b(?:billing_[a-z0-9_]+|budget[_ -]?(?:exhausted|exceeded)|credit[_ -]?balance|payment[_ -]?required)\b|(?:\b(?:http(?:\/[\d.]+)?|status(?:[_ -]?code)?|code|error|api)\b[\s:(\["']*|^)402\b)/i;
 const QUOTA_ERROR =
   /(?:\b(?:rate[_ -]?limit(?:ed|s)?|quota(?:[_ -]?(?:exceeded|exhausted|reached))?|resource_exhausted|too many requests|usage limit|limit reached|insufficient[_ ]quota|out of credits)\b|\b(?:http|status|code)?[:\s]*429\b)/i;
 
