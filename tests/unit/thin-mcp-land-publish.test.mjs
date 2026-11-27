@@ -83,7 +83,7 @@ for (const [label, ownerTry, expectedStatus] of [
   const beforeBase = f.git(f.main, 'rev-parse', 'HEAD');
   fs.writeFileSync(join(f.main, 'owner'), 'unrelated staged edit'); f.git(f.main, 'add', 'owner');
   const { flow } = await f.call('hud_land', { job });
-  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), t.signal);
   const done = f.flowState(flow); assert.equal(done.state, 'completed', JSON.stringify(done));
   assert.equal(done.records_sha, undefined);
   assert.equal(done.unfinished_acceptance, undefined);

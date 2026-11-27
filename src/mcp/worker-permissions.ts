@@ -12,6 +12,7 @@ import { classifyPermission, provePermission, type PermissionDecision, type Perm
 
 const MAX_LOG = 12;
 const MAX_LEDGER_BYTES = 65_536;
+const PERMISSION_LOCK_TIMEOUT_MS = 10_000;
 const FOOTER = /^(?:(?:Enter to (?:select|confirm) · )?(?:(?:Tab\/arrow keys|↑\/↓|↑↓|arrows|arrow keys) to navigate · )?Esc to cancel|Enter to (?:select|confirm) · (?:Esc to cancel|Tab to amend)(?: · Esc to cancel)?|Press enter to confirm or esc to cancel)(?:\s*·\s*(?:Tab to amend|Ctrl\+e to explain))*$/i;
 const CLAUDE_TITLE = /^(?:Bash command|(?:Edit|Write|Create) file(?::?\s+.+)?|Do you want to allow this connection\?)$/i;
 const OTHER_TITLE = /^(?:Permission required|Permission request|Tool approval required|Command approval required|(?:Edit|Write|Create|File) approval required|(?:Edit|Write|Create) file(?::?\s+.+)?|Allow command\?|Would you like to (?:run the following command|make the following edits)\?)$/i;
@@ -436,7 +437,7 @@ export async function observeWorkerPermission(home: string, dir: string, job: Jo
     }
     save(dir, state);
     return entry;
-  }, { signal });
+  }, { timeoutMs: PERMISSION_LOCK_TIMEOUT_MS, signal });
 }
 
 export async function answerWorkerPermission(home: string, dir: string, job: Job, id: string, answer: string) {
@@ -454,5 +455,5 @@ export async function answerWorkerPermission(home: string, dir: string, job: Job
       return { ok: false, code: 'gone' };
     }
     return sendAnswer(home, dir, job, binding, state, entry, answer, await capture(home, job, binding));
-  });
+  }, { timeoutMs: PERMISSION_LOCK_TIMEOUT_MS });
 }

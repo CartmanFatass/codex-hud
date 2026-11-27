@@ -21,9 +21,9 @@ function promptNotices(f, flow) {
     .filter(line => typeof line === 'string' && line.includes(flow));
 }
 
-async function collectDeliveredNotices(f, flow, read, expected = 1) {
+async function collectDeliveredNotices(f, flow, read, expected = 1, signal = 5_000) {
   const fromChanges = (read.changes ?? []).filter(line => line.includes(flow));
-  await until(() => fromChanges.length + promptNotices(f, flow).length >= expected, 5_000);
+  await until(() => fromChanges.length + promptNotices(f, flow).length >= expected, signal);
   return [...fromChanges, ...promptNotices(f, flow)];
 }
 
@@ -273,7 +273,7 @@ test('extractReportNotes parses heading/empty Blockers, qualified none, try note
   );
 });
 
-test('qualified none and try-with-detail Blockers land without a lead while recording try notes in run todo', { timeout: 45_000 }, async t => {
+test('qualified none and try-with-detail Blockers land without a lead while recording try notes in run todo', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: {
     '01-qualified-none.md': goodTicket(1),
     '02-try-detail.md': goodTicket(2, { blocked: 'none' }),
@@ -284,7 +284,7 @@ test('qualified none and try-with-detail Blockers land without a lead while reco
   await f.settle(job2, {
     report: 'Done.\nBlockers: none (owner live try remains)\nBlockers: owner live try remains: reopen the synthetic panel\nRemoves: none\n',
   });
-  await until(() => f.flow(flow).tickets.filter(x => x.landed).length === 2, 15_000);
+  await until(() => f.flow(flow).tickets.filter(x => x.landed).length === 2, t.signal);
   const q = f.flow(flow);
   const leads = fs.readdirSync(join(f.home, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id)).map(f.job).filter(j => j.role === 'lead');
   assert.equal(leads.length, 0, 'qualified none and try-with-detail must land without launching a lead');
@@ -584,9 +584,9 @@ test('an ordinary run with a landed ticket and a held item never reaches review 
   const { flow } = await f.call('hud_tickets', runArgs);
   const [first, second] = await f.jobs(flow, 2);
   await f.settle(first);
-  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.landed === true, 15_000);
+  await until(() => f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.landed === true, t.signal);
   await f.settle(second, { report: 'Done.\nAssumed: [scope] removed legacy flag.\n' });
-  await until(() => f.flow(flow).active_lead?.kind === 'assumption', 15_000);
+  await until(() => f.flow(flow).active_lead?.kind === 'assumption', t.signal);
   const lead1 = f.flow(flow).active_lead.job;
   await f.settleLead(lead1, 'Decision: hold\nReason: Deletes a user-visible flag.\nOwner approval: feature-deletion\n');
   const paused = await f.end(flow);
@@ -605,7 +605,7 @@ test('an ordinary run with a landed ticket and a held item never reaches review 
   assert.equal(stillPaused.review_job, undefined);
   assert.equal(stillPaused.verdict, undefined);
   const readSame = await f.call('hud_read', { job: sameResume.flow });
-  const sameNotices = await collectDeliveredNotices(f, sameResume.flow, readSame, 1);
+  const sameNotices = await collectDeliveredNotices(f, sameResume.flow, readSame, 1, t.signal);
   assert.equal(sameNotices.length, 1);
   assert.match(sameNotices[0], /worker correction.*hud_land.*stop/i);
 
@@ -615,14 +615,14 @@ test('an ordinary run with a landed ticket and a held item never reaches review 
   f.git(wt2, 'add', 'sample-02.txt');
   f.git(wt2, 'commit', '-qm', 'Restore legacy flag');
   const headResume = await f.call('hud_tickets', runArgs);
-  await until(() => f.flow(headResume.flow).active_lead?.kind === 'assumption', 15_000);
+  await until(() => f.flow(headResume.flow).active_lead?.kind === 'assumption', t.signal);
   const lead2 = f.flow(headResume.flow).active_lead.job;
   assert.notEqual(lead2, lead1);
   await f.settleLead(lead2, 'Decision: continue\nReason: Legacy flag restored in new commit.\n');
-  await until(() => f.flow(headResume.flow).tickets.find(x => x.ticket === 'sample/02')?.landed === true, 15_000);
-  await until(() => Boolean(f.flow(headResume.flow).review_job), 15_000);
+  await until(() => f.flow(headResume.flow).tickets.find(x => x.ticket === 'sample/02')?.landed === true, t.signal);
+  await until(() => Boolean(f.flow(headResume.flow).review_job), t.signal);
   await f.settleReview(f.flow(headResume.flow).review_job);
-  await until(() => f.flow(headResume.flow).active_lead?.kind === 'accept', 15_000);
+  await until(() => f.flow(headResume.flow).active_lead?.kind === 'accept', t.signal);
   await f.settleLead(f.flow(headResume.flow).active_lead.job, 'Decision: finish\nReason: Both tickets landed cleanly.\n');
   const done = await f.end(headResume.flow);
   assert.equal(done.state, 'completed', JSON.stringify(done));

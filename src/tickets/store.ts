@@ -237,7 +237,8 @@ export function pruneTicketWrites(home: string, mainRoot: string, matched: Reado
 }
 
 /** A later land/commit uses this same lock around reading and sweeping the write record. */
-export const withTicketStoreLock = <T>(mainRoot: string, fn: () => T | Promise<T>) => withAbstractLock('tickets', mainRoot, fn);
+export const withTicketStoreLock = <T>(mainRoot: string, fn: () => T | Promise<T>) =>
+  withAbstractLock('tickets', mainRoot, fn, { timeoutMs: 10_000 });
 
 function isCleanInGitSync(mainRoot: string, rel: string): boolean {
   const opts = { cwd: mainRoot, env: safeGitEnv(process.env), encoding: 'utf8' as const, timeout: 5000 };

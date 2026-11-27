@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { reportSignature } from '../../dist/roles/cli-turn.js';
+import { statsMtimeMs } from '../../dist/roles/job-index-cache.js';
 import { parseMarkdownTicket } from '../../dist/tickets/migrate.js';
 import { serializeTicketFeature } from '../../dist/tickets/store.js';
 import { cleanupFixture } from './process-cleanup.mjs';
@@ -128,17 +129,27 @@ export async function setupWorkflowProject(t, {
       const q = flow(id);
       assert.equal(q.state, 'working', JSON.stringify(q));
       return q.tickets.filter(x => x.job).length === n;
-    }, 15_000);
+    }, t.signal);
     return flow(id).tickets.map(x => x.job);
+  };
+  const writeFreshPiReport = async (jobDir, receipt, report) => {
+    const sent = Date.parse(receipt.pi_sent_at ?? receipt.created_at);
+    const reportPath = join(jobDir, 'report.md');
+    let mtime = 0;
+    await until(() => {
+      writeFixtureFile(reportPath, report);
+      mtime = statsMtimeMs(fs.statSync(reportPath, { bigint: true }).mtimeNs);
+      return mtime > sent;
+    }, t.signal);
+    const settledAt = new Date(Math.max(Date.now(), Math.ceil(mtime))).toISOString();
+    writeFixtureFile(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: settledAt }));
   };
   const settle = async (id, { report = 'Synthetic finished report.\nRemoves: none\n', file, body = 'Synthetic implementation.\n' } = {}) => {
     const receipt = job(id), root = receipt.worktree.root;
     file ??= `${receipt.ticket.replace('/', '-')}.txt`;
     fs.writeFileSync(join(root, file), body);
     git(root, 'add', file); git(root, 'commit', '-qm', file);
-    await until(() => Date.now() > Date.parse(receipt.pi_sent_at ?? receipt.created_at) + 1, t.signal);
-    writeFixtureFile(join(dir(id), 'report.md'), report);
-    writeFixtureFile(join(dir(id), 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
+    await writeFreshPiReport(dir(id), receipt, report);
   };
   const settleCli = (id, report) => {
     const jobDir = dir(id);
@@ -155,18 +166,16 @@ export async function setupWorkflowProject(t, {
   const settleReview = async id => {
     const receipt = job(id), jobDir = dir(id);
     if (receipt.cli) {
-      await until(() => settleCli(id, 'Verdict: accept\n\nNo blocking findings.\n'), 10_000);
+      await until(() => settleCli(id, 'Verdict: accept\n\nNo blocking findings.\n'), t.signal);
       return;
     }
-    await until(() => Date.now() > Date.parse(receipt.pi_sent_at ?? receipt.created_at) + 1, t.signal);
-    writeFixtureFile(join(jobDir, 'report.md'), 'Verdict: accept\n\nNo blocking findings.\n');
-    writeFixtureFile(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
+    await writeFreshPiReport(jobDir, receipt, 'Verdict: accept\n\nNo blocking findings.\n');
   };
   const settleLead = async (id, report = 'Decision: finish\nReason: Accepted synthetic feature.\n') => {
-    await until(() => settleCli(id, report), 10_000);
+    await until(() => settleCli(id, report), t.signal);
   };
   const end = async id => {
-    await until(() => flow(id).state !== 'working', 25_000);
+    await until(() => flow(id).state !== 'working', t.signal);
     return flow(id);
   };
   const fakeLog = () => fs.readFileSync(f.env.FAKE_LOG, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l));

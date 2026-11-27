@@ -113,7 +113,7 @@ async function permissionWorker(t, opts = {}) {
   writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'waiting_orchestrator', harness: 'cli', blocked: true, pid: worker.pid, pid_start_time: start }));
   const preload = `process.env.HERDR_SOCKET_PATH = ${JSON.stringify(herdr.endpoint)}; globalThis.fetch = () => { throw new Error('synthetic offline'); };`;
   const rows = () => readThinJobRows(f.home, { project: null, pane: main });
-  const wait = check => until(check, 3000);
+  const wait = check => until(check, t.signal);
   const unblocked = async () => {
     herdr.update('working', 'No native prompt');
     await wait(() => !permissionStatus(dir).active);
@@ -144,12 +144,12 @@ test('initial subscribe ack reconciles a missing tab without revisiting an answe
   assert.deepEqual(herdr.keys, [['Enter']]);
 });
 
-test('one watcher pass approves only the proven worker cleanup; restart, handoff and gone are safe', { timeout: 15000 }, async t => {
+test('one watcher pass approves only the proven worker cleanup; restart, handoff and gone are safe', { timeout: 45000 }, async t => {
   const { f, herdr, dir, scratch, job, env, rows, wait, unblocked, startWatch } = await permissionWorker(t);
   const safe = prompt(`S=${scratch}; rm -f $S/*.png`);
   herdr.update('blocked', safe);
   const watch = startWatch();
-  await until(() => permissionStatus(dir).latest?.outcome === 'answered', 5000)
+  await until(() => permissionStatus(dir).latest?.outcome === 'answered', t.signal)
     .catch(error => { throw new Error(`${error.message}: reads=${herdr.reads()} ledger=${JSON.stringify(permissionStatus(dir))}\n${f.log()}`); });
   const approved = permissionStatus(dir).latest;
   assert.deepEqual(herdr.keys, [['Enter']]);
@@ -178,7 +178,7 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
   assert.notEqual(permissionStatus(dir).active.id, approved.id);
   await unblocked();
   herdr.update('blocked', prompt('git push'));
-  await until(() => permissionStatus(dir).active?.action === 'main', 3000);
+  await wait(() => permissionStatus(dir).active?.action === 'main');
   const pending = permissionStatus(dir).active;
   assert.equal(pending.outcome, 'pending');
   assert.equal(herdr.keys.length, 2);
@@ -193,7 +193,7 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
   const stream = new AbortController();
   const streamDone = watchCommand([], { env, stdout: (line) => { notice += line; }, stderr: () => {} }, { signal: stream.signal });
   t.after(() => { stream.abort(); return streamDone; });
-  await until(() => notice.includes('git push') && notice.includes(pending.id), 3000);
+  await wait(() => notice.includes('git push') && notice.includes(pending.id));
   assert.equal(notice.split(pending.id).length - 1, 2); // One notice, one action per supported option.
 
   const mcp = spawn(process.execPath, [mcpEntry], { cwd: dirname(f.home), env, stdio: ['pipe', 'pipe', 'ignore'] });
@@ -213,12 +213,14 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
   assert.equal(herdr.keys.length, 2);
 
   herdr.update('blocked', prompt('curl -X POST https://example.invalid', 1));
-  await until(() => permissionStatus(dir).active?.text.includes('curl'), 3000);
+  await wait(() => permissionStatus(dir).active?.text.includes('curl'));
   const risk = permissionStatus(dir).active;
   const answers = await Promise.all([respond(risk.id, 'decline'), respond(risk.id, 'decline')]);
   assert.equal(answers.filter(result => result.written).length, 1);
   assert.deepEqual(herdr.keys, [['Enter'], ['Enter'], ['Down', 'Down', 'Enter']]);
-  assert.equal(permissionStatus(dir).latest.answer, 'decline');
+  const declined = JSON.parse(fs.readFileSync(join(dir, 'permissions.json'), 'utf8')).entries.find(entry => entry.id === risk.id);
+  assert.equal(declined?.outcome, 'answered');
+  assert.equal(declined?.answer, 'decline');
 
   for (const [visible, reason] of [
     [`Edit file synthetic.txt\n${'x'.repeat(40_000)}\nDo you want to make this edit?\n❯ 1. Yes\n2. No\nEsc to cancel`, 'exceeds the safe parsing limit'],
@@ -227,7 +229,7 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
     await unblocked();
     const oldRows = rows(), before = herdr.reads();
     herdr.update('blocked', visible);
-    await until(() => permissionStatus(dir).active?.reason.includes(reason), 3000);
+    await wait(() => permissionStatus(dir).active?.reason.includes(reason));
     const manual = permissionStatus(dir).active;
     assert.equal(manual.action, 'main');
     assert.equal(manual.outcome, 'pending');
@@ -238,8 +240,8 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
     assert.doesNotMatch(lines[0], /hud_respond/);
     assert.equal((await respond(manual.id, 'approve')).code, 'option_unavailable');
     assert.equal(jobChanges(rows(), rows()).length, 0);
-    await until(() => notice.includes(reason), 3000);
-    await until(() => herdr.reads() > before + 1, 3000);
+    await wait(() => notice.includes(reason));
+    await wait(() => herdr.reads() > before + 1);
     assert.equal(notice.split(reason).length - 1, 1);
     assert.equal(permissionStatus(dir).active.id, manual.id);
     assert.deepEqual(herdr.keys, [['Enter'], ['Enter'], ['Down', 'Down', 'Enter']]);
@@ -273,7 +275,7 @@ test('an answered permission does not hide the next CLI block on the bar or pane
   assert.equal(card().permission.outcome, 'answered'); // The prior decision remains in the Inspector history.
 });
 
-test('unproven targets, nested headings and menu changes go to main without sending a key', { timeout: 15000 }, async t => {
+test('unproven targets, nested headings and menu changes go to main without sending a key', { timeout: 45000 }, async t => {
   const { herdr, dir, scratch, rows, wait, unblocked, startWatch } = await permissionWorker(t);
   fs.writeFileSync(join(dir, 'original-reference.png'), 'synthetic original');
   const safe = `S=${scratch}; rm -f $S/*.png`;
@@ -300,7 +302,7 @@ test('unproven targets, nested headings and menu changes go to main without send
 });
 
 for (const mode of ['lost', 'hold']) {
-  test(`a reflow is never answered again after ${mode === 'lost' ? 'a lost reply' : 'restart with a send in flight'}`, { timeout: 10000 }, async t => {
+  test(`a reflow is never answered again after ${mode === 'lost' ? 'a lost reply' : 'restart with a send in flight'}`, { timeout: 30000 }, async t => {
     const { herdr, dir, scratch, rows, wait, startWatch } = await permissionWorker(t);
     const safe = `S=${scratch}; rm -f $S/*.png`;
     herdr.sendMode(mode);

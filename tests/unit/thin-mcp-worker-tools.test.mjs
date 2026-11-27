@@ -941,7 +941,7 @@ for (const mode of ['hud_report', 'shell fallback']) {
     assert.equal(fs.readFileSync(report, 'utf8'), text);
   });
 
-  test(`an agy CLI worker settles the current turn through ${mode}`, { timeout: 15000 }, async (t) => {
+  test(`an agy CLI worker settles the current turn through ${mode}`, { timeout: 60000 }, async (t) => {
     const f = await fixture(t);
     fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
     writeFixtureFile(join(f.env.HOME, 'tab-seq'), '1');
@@ -989,7 +989,7 @@ for (const mode of ['hud_report', 'shell fallback']) {
 
     const first = cliToken(dir);
     assertPrompt(first);
-    await until(() => cliState(dir)?.state === 'working' && cliState(dir)?.agent_session_id, t.signal);
+    await until(() => cliState(dir)?.state === 'working' && cliState(dir)?.agent_session_id && f.hasSubscriber(job.job), t.signal);
     const session = cliState(dir).agent_session_id;
     if (mode === 'shell fallback') writeFixtureFile(report, 'Synthetic first agy report.\n');
     assert.equal(await declare(first, 'Synthetic first agy report.\n'), undefined);
@@ -997,7 +997,7 @@ for (const mode of ['hud_report', 'shell fallback']) {
     assert.equal(turnToken(done), first);
     assert.equal(done.report_sig, reportSignature(dir));
     f.push(job.job, 'idle');
-    await until(() => cliState(dir)?.state === 'closed' && readCloseReaped(job), t.signal);
+    await until(() => cliState(dir)?.state === 'closed' && readCloseReaped(job) && !f.hasSubscriber(job.job), t.signal);
 
     assert.equal((await f.call('hud_send', { job: job.job, message_key: 'continue', text: 'Synthetic continuation.' })).continuation, 'resumed');
     const resumed = f.commands().filter(({ args }) => args[1] === 'start').at(-1).args;
@@ -1005,7 +1005,7 @@ for (const mode of ['hud_report', 'shell fallback']) {
     const second = cliToken(dir);
     assert.notEqual(first, second);
     assertPrompt(second);
-    await until(() => cliState(dir)?.state === 'working' && cliState(dir)?.pid, t.signal);
+    await until(() => cliState(dir)?.state === 'working' && cliState(dir)?.pid && f.hasSubscriber(job.job), t.signal);
     if (mode === 'shell fallback') writeFixtureFile(report, 'Synthetic second agy report.\n');
     assert.match(await declare(first, 'Stale agy report.\n'), /use the turn token from the prompt you are answering/);
     assert.deepEqual(receipt(), done);

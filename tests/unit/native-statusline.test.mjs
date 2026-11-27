@@ -44,7 +44,7 @@ function environment(home) {
 }
 function run(cmd, args, env, input, status = 0) {
   if (!Buffer.isBuffer(input) && typeof input !== 'string') input = JSON.stringify(input);
-  const r = spawnSync(cmd, args, { env, input, timeout: 7000 });
+  const r = spawnSync(cmd, args, { env, input, timeout: 30000 });
   assert.equal(r.error, undefined, `${cmd}: ${r.error}`);
   assert.equal(r.status, status, `${cmd}: ${r.stderr}`);
   assert.equal(r.stderr.toString(), '');

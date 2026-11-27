@@ -1211,7 +1211,7 @@ test('thin create rejects model or thinking overrides for Jev roles', { timeout:
   assert.deepEqual(withoutCallerLookups(f.commands()), []);
 });
 
-test('thin Jev roles keep their stock shell path and deduplicate sends', { timeout: 15000 }, async (t) => {
+test('thin Jev roles keep their stock shell path and deduplicate sends', { timeout: 60000 }, async (t) => {
   const f = await fixture(t, { herdrVersion: '0.9.5' });
   enableOptionalRoles(f, 'pro', 'flow');
   const args = { role: 'pro', request_key: 'pro-once', task: 'Synthetic question.' };

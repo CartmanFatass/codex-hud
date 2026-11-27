@@ -5,6 +5,7 @@ import { registeredProject } from '../roles/projects.js';
 import { readBytes } from '../statusline-parity/storage.js';
 import { parseWorktreeList, WORKTREE_LIMIT, worktreeGit as git, type WorktreeGit } from '../collectors/worktrees.js';
 import { neutralizeFilters } from '../utils/git-safety.js';
+import { withTicketStoreLock } from '../tickets/store.js';
 import type { Job, ManagedWorktree } from './job-contracts.js';
 export type { ManagedWorktree } from './job-contracts.js';
 
@@ -14,10 +15,15 @@ const pathFor = (main: string, name: string) => join(dirname(main), `${basename(
 
 export async function planWorktree(cwd: string, job: string, label: string): Promise<ManagedWorktree> {
   const [main] = await list(cwd);
-  const base_head = (await git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim();
-  if (!main || main.bare || !oid(base_head) || (await git(cwd, ['rev-parse', '--is-inside-work-tree'])).trim() !== 'true')
+  if (!main || main.bare || (await git(cwd, ['rev-parse', '--is-inside-work-tree'])).trim() !== 'true')
     throw new Error('worktree isolation requires a Git checkout with a HEAD commit');
   const main_root = fs.realpathSync(main.path);
+  // Wait for any in-flight landing fast-forward + record amend so base_head is never a pre-amend tip.
+  const base_head = await withTicketStoreLock(main_root, async () =>
+    (await git(cwd, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
+  );
+  if (!oid(base_head))
+    throw new Error('worktree isolation requires a Git checkout with a HEAD commit');
   const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 48).replace(/^-+|-+$/g, '') || 'job';
   const name = `${slug}-${job.slice(-6)}`;
   return { main_root, root: pathFor(main_root, name), branch: `wt/${name}`, base_head };

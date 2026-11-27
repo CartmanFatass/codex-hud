@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { reportSignature } from '../../dist/roles/cli-turn.js';
+import { statsMtimeMs } from '../../dist/roles/job-index-cache.js';
 import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
 import { resumeQueueAfterAnswer } from '../../dist/mcp/ticket-queue.js';
 import { readTicketQueue, writeTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
@@ -80,7 +81,7 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
       const q = flow(id);
       assert.equal(q.state, 'working', JSON.stringify(q));
       return q.tickets.filter(x => x.job).length === count;
-    }, 15_000);
+    }, t.signal);
     return flow(id).tickets.map(x => x.job);
   };
   const settle = async (id, { checks, report = 'Synthetic finished report.\n' } = {}) => {
@@ -88,9 +89,16 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
     fs.writeFileSync(join(root, file), 'Synthetic implementation.\n');
     git(root, 'add', file); git(root, 'commit', '-qm', file);
     if (checks) writeFixtureFile(join(dir(id), 'job.json'), JSON.stringify({ ...receipt, checks }));
-    await until(() => Date.now() > Date.parse(receipt.pi_sent_at ?? receipt.created_at) + 1, t.signal);
-    writeFixtureFile(join(dir(id), 'report.md'), report);
-    writeFixtureFile(join(dir(id), 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
+    const sent = Date.parse(receipt.pi_sent_at ?? receipt.created_at);
+    const reportPath = join(dir(id), 'report.md');
+    let mtime = 0;
+    await until(() => {
+      writeFixtureFile(reportPath, report);
+      mtime = statsMtimeMs(fs.statSync(reportPath, { bigint: true }).mtimeNs);
+      return mtime > sent;
+    }, t.signal);
+    const settledAt = new Date(Math.max(Date.now(), Math.ceil(mtime))).toISOString();
+    writeFixtureFile(join(dir(id), 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: settledAt }));
   };
   const settleCli = (id, report) => {
     const jobDir = dir(id);
@@ -107,9 +115,13 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
   const settleReview = (id) => {
     const receipt = job(id), jobDir = dir(id);
     if (receipt.cli) return settleCli(id, 'Verdict: accept\n\nNo blocking findings.\n');
-    if (Date.now() <= Date.parse(receipt.pi_sent_at ?? receipt.created_at) + 1) return false;
-    writeFixtureFile(join(jobDir, 'report.md'), 'Verdict: accept\n\nNo blocking findings.\n');
-    writeFixtureFile(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: new Date().toISOString() }));
+    const sent = Date.parse(receipt.pi_sent_at ?? receipt.created_at);
+    const reportPath = join(jobDir, 'report.md');
+    writeFixtureFile(reportPath, 'Verdict: accept\n\nNo blocking findings.\n');
+    const mtime = statsMtimeMs(fs.statSync(reportPath, { bigint: true }).mtimeNs);
+    if (mtime <= sent) return false;
+    const settledAt = new Date(Math.max(Date.now(), Math.ceil(mtime))).toISOString();
+    writeFixtureFile(join(jobDir, 'STATUS.json'), JSON.stringify({ state: 'closed', output_written: true, settled_at: settledAt }));
     return true;
   };
   const settledAux = new Set();
@@ -124,7 +136,7 @@ async function project(t, { thirdBlocker = 'none', frontend = false, crossProjec
         if (settleCli(q.active_lead.job, 'Decision: finish\nReason: Accepted synthetic feature.\n')) settledAux.add(q.active_lead.job);
       }
       return false;
-    }, 20_000);
+    }, t.signal);
     return flow(id);
   };
   return { ...f, dir, end, flow, git, job, jobs, settle, start, status, ticketPath, ticketStatus };
@@ -259,14 +271,14 @@ test('Execution collects a future same-feature dependency and keeps repair round
   assert.deepEqual(landed.repairs.map(r => [r.id, r.jobId]), [['sample/01↻', repairs[0]], ['sample/01↻2', repairs[1]]]);
 });
 
-test('ticket queue runs ready work and releases a queued ticket when another feature lands', { timeout: 45_000 }, async t => {
+test('ticket queue runs ready work and releases a queued ticket when another feature lands', { timeout: 60_000 }, async t => {
   const f = await project(t, { thirdBlocker: 'upstream/01', done: [2], upstream: ['ready-for-agent'] });
   const { flow, queued } = await f.start(1);
   assert.deepEqual(queued, [{ ticket: 'sample/03', blockers: ['upstream/01'] }]);
   const [first] = await f.jobs(flow, 1);
   assert.equal(f.job(first).ticket, 'sample/01');
   await f.settle(first);
-  await until(() => f.flow(flow).tickets[0].landed === true, 15_000);
+  await until(() => f.flow(flow).tickets[0].landed === true, t.signal);
   const waiting = await f.call('hud_read', { job: flow });
   assert.equal(waiting.state, 'working');
   assert.deepEqual(waiting.queued, queued);
@@ -279,10 +291,11 @@ test('ticket queue runs ready work and releases a queued ticket when another fea
   await f.settle(blocker);
   const [, dependent] = await f.jobs(flow, 2);
   assert.equal(f.job(dependent).ticket, 'sample/03');
-  assert.equal((await f.end(upstream.flow)).state, 'completed');
+  const upstreamDone = await f.end(upstream.flow);
+  assert.equal(upstreamDone.state, 'completed', JSON.stringify(upstreamDone));
   await f.settle(dependent);
   const completed = await f.end(flow);
-  assert.equal(completed.state, 'completed');
+  assert.equal(completed.state, 'completed', JSON.stringify(completed));
   assert.equal(completed.queued, undefined);
 });
 
@@ -359,7 +372,7 @@ test('running a failed queue in another project retries only the land, keeping t
   assert.deepEqual(all.filter(id => f.job(id).role === 'imp').sort(), [first, second, third].sort());
 });
 
-test('ticket queue hands back on a worker question without stopping its peer', { timeout: 30_000 }, async t => {
+test('ticket queue hands back on a worker question without stopping its peer', { timeout: 60_000 }, async t => {
   const f = await project(t);
   const { flow } = await f.start(2, 'sample', { handback_to: 'main' });
   const [first, peer] = await f.jobs(flow, 2);

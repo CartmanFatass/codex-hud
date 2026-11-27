@@ -11,6 +11,7 @@ import { language } from '../../dist/render/i18n.js';
 import { handleMonitorInput, initialMonitorState } from '../../dist/render/monitor.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { main } from '../../dist/cli/hud.js';
+import { until } from '../helpers/until.mjs';
 
 const XSS = '<script>alert(1)</script>"><img src=x onerror=alert(1)>\'&';
 const diffOf = (x) => ({
@@ -268,11 +269,14 @@ test('hud board --open runs the opener detached, and only mentions a missing one
   assert.match(none.err, /no opener found \(wslview or xdg-open\)/);
   const quiet = await f.run(['board', '--cwd', f.cwd, '--out', join(f.root, 'b.html')]);
   assert.equal(quiet.err, '');
-  fs.writeFileSync(join(f.opener, 'xdg-open'), `#!/bin/sh\nprintf '%s' "$1" > "${f.marker}"\n`, { mode: 0o700 });
+  fs.writeFileSync(join(f.opener, 'xdg-open'), `#!/bin/sh\nprintf '%s\\n' "$1" > "${f.marker}"\n`, { mode: 0o700 });
   const opened = await f.run(['board', '--cwd', f.cwd, '--out', join(f.root, 'c.html'), '--open'], { PATH: f.opener });
   assert.deepEqual([opened.code, opened.err], [0, '']);
-  for (let i = 0; i < 100 && !fs.existsSync(f.marker); i++) await new Promise((r) => setTimeout(r, 20));
-  assert.equal(fs.readFileSync(f.marker, 'utf8'), join(f.root, 'c.html'));
+  await until(() => {
+    try { return fs.readFileSync(f.marker, 'utf8').endsWith('\n'); }
+    catch { return false; }
+  }, t.signal);
+  assert.equal(fs.readFileSync(f.marker, 'utf8').trimEnd(), join(f.root, 'c.html'));
 });
 
 test('hud board checks its arguments', async (t) => {

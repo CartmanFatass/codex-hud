@@ -394,6 +394,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     startCliSocket,
     piStatus: (get) => { piStatus = get; },
     push: (id, state) => { for (const client of subscribers) if (client.id === id) push(client, state); },
+    hasSubscriber: (id) => [...subscribers].some((client) => client.id === id && !client.socket.destroyed),
     // herdr's status changes but the push never arrives: only agent.get sees it.
     silent: (id, state) => { for (const client of subscribers) if (client.id === id) client.state = state; },
     drop: () => { for (const client of subscribers) client.socket.destroy(); },
