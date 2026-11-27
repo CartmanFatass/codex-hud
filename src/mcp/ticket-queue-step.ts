@@ -311,8 +311,12 @@ function objectiveWorkset(home: string, q: TicketQueue) {
   const selected = objectives.find(o => o.id === objective && o.state === 'active');
   if (!selected) return { tickets: [], queued: [], blocked: [], future: [] };
   const excluded = openRunTickets(home, root, flow);
-  for (const item of q.tickets) if (item.failed || item.held) excluded.add(item.ticket);
-  const readiness = ticketReadiness(root, jobCache, undefined, { home, excludeTickets: excluded });
+  const landedInRun: string[] = [];
+  for (const item of q.tickets) {
+    if (item.failed || item.held) excluded.add(item.ticket);
+    else if (item.landed) landedInRun.push(item.ticket);
+  }
+  const readiness = ticketReadiness(root, jobCache, undefined, { home, excludeTickets: excluded, landedInRun });
   const belongs = (t: { ticket: string; objective?: string }) => ticketObjectiveOwner(objectives, t.ticket, t.objective) === objective;
   return {
     tickets: readiness.tickets.filter(belongs),

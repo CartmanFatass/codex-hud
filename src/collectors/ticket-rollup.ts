@@ -51,7 +51,11 @@ export class TicketRollup {
       if (typeof job.slice === 'string') this.linkedSlices.set(t, job.slice); else this.linkedSlices.delete(t);
     }
   }
-  derive(now: number, readMarks?: (rows: LedgerSlice[]) => ReadonlyMap<string, string>, blockedTickets?: ReadonlySet<string>) {
+  derive(now: number, readMarks?: (rows: LedgerSlice[]) => ReadonlyMap<string, string>,
+    blockedTickets?: ReadonlySet<string>, admission?: {
+      replacements: ReadonlyMap<string, ReadonlySet<string>>;
+      landedInRun?: ReadonlySet<string>;
+    }) {
     const entries: { ticket: ProjectTicket; row: LedgerSlice }[] = [];
     // Oldest features first; later rows win ties when showing the newest landings.
     for (const { slug, tickets } of [...this.features].reverse()) for (const t of tickets) {
@@ -88,7 +92,16 @@ export class TicketRollup {
       const title = (ref: string) => tickets.find(x => x.title.toLowerCase() === ref.trim().toLowerCase());
       const refs = t.blockers.flatMap((raw) => title(raw) ? [raw] : raw.replace(/\([^()]*\)/g, '').split(/[,;]|\s+and\s+/i));
       t.blockers = [];
-      const deps = [];
+      const deps: (ProjectTicket | undefined)[] = [];
+      const waitOn = (target: ProjectTicket | undefined, cross: string | undefined, label: string) => {
+        if (cross && target && !blockedTickets?.has(targetKey(cross))) {
+          // A known external dependency is a queue wait, not a local stall (unless held/failed).
+          const waiting = crossBlockers.get(t) ?? [];
+          waiting.push(cross);
+          crossBlockers.set(t, waiting);
+        } else deps.push(target);
+        if (!t.blockers.includes(label)) t.blockers.push(label);
+      };
       const declared: string[] = [];
       for (const ref of refs.map(s => s.trim()).filter(Boolean)) {
         const m = /^(?:([\w.-]+)\/|#?)(\d+)\b/.exec(ref);
@@ -97,17 +110,28 @@ export class TicketRollup {
         const targetSlug = target ? this.slugs.get(target) : undefined;
         const canonical = target && targetSlug ? `${targetSlug}/${target.number}` : cross ?? ref;
         if (!declared.includes(canonical)) declared.push(canonical);
-        if (target && (target.state === 'done' || target.state === 'dropped' || (!cross && target.state === 'try'))) continue;
-        if (cross && target && !blockedTickets?.has(key(m![1]!, m![2]!))) {
-          // A known external dependency is a queue wait, not a local stall (unless held/failed).
-          const waiting = crossBlockers.get(t) ?? [];
-          waiting.push(cross);
-          crossBlockers.set(t, waiting);
-        } else {
-          deps.push(target);
-          if (cross && !target) missingCrossBlockers.set(t, cross);
+        if (target?.state === 'done') continue;
+        // An unattended run accepts at the end, so its landed owner tries can release ordinary local blockers.
+        if (target?.state === 'try' && !cross) {
+          const blockerKey = targetKey(canonical);
+          if (!admission || (admission.landedInRun?.has(blockerKey) && !blockedTickets?.has(blockerKey))) continue;
         }
-        t.blockers.push(cross ? ref : target?.number ?? ref);
+        if (target?.state === 'dropped') {
+          if (!admission) continue; // Display rollups retain the historical closed-ticket view.
+          const replacements = [...(admission.replacements.get(targetKey(canonical)) ?? [])]
+            .flatMap(id => this.index.get(id) ?? []).filter(r => r !== t && r.state !== 'dropped');
+          if (replacements.some(r => r.state === 'done')) continue;
+          if (!replacements.length) {
+            waitOn(undefined, undefined, `${canonical} is wontfix with no usable replacement; update blocked_by`);
+          } else for (const replacement of replacements) {
+            const replacementSlug = this.slugs.get(replacement)!;
+            const replacementRef = `${replacementSlug}/${replacement.number}`;
+            waitOn(replacement, replacementSlug !== slug ? replacementRef : undefined, replacementRef);
+          }
+          continue;
+        }
+        waitOn(target, cross, cross || (admission && m?.[1]) ? ref : target?.number ?? ref);
+        if (cross && !target) missingCrossBlockers.set(t, cross);
       }
       if (declared.length) declaredBlockers.set(t, declared);
       if (t.state === 'ready' && (deps.length || crossBlockers.has(t))) dependencies.set(t, deps);

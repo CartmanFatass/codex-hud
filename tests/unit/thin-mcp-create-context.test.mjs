@@ -530,6 +530,28 @@ test('legacy ready tickets are dispatchable and live jobs claim them in MCP, Hom
   assert.deepEqual((await ready()).tickets, [{ ticket: 'beta/01', path: second.path, title: 'Second slice', what: draft.what }]);
 });
 
+test('ready reports a wontfix blocker and requires the replacement named in its comment to be done', async t => {
+  const f = await fixture(t);
+  const ticketCall = (args) => f.call('hud_tickets', { feature: 'sample', ...args });
+  const ready = () => f.call('hud_tickets', { op: 'ready' });
+  const draft = { title: 'Synthetic ticket', what: 'Make a synthetic change.', acceptance: ['Checked'] };
+  await ticketCall({ op: 'add', tickets: [
+    { ...draft, status: 'wontfix', blocked_by: [] },
+    { ...draft, blocked_by: [1] },
+    { ...draft, status: 'ready-for-human', blocked_by: [] },
+    { ...draft, blocked_by: [3] },
+  ] });
+
+  const blocked = await ready();
+  assert.deepEqual(blocked.tickets, []);
+  assert.deepEqual(blocked.blocked.map(({ ticket }) => ticket), ['sample/02']);
+  assert.match(blocked.blocked[0].blockers[0], /sample\/01.*wontfix.*no usable replacement.*blocked_by/);
+  await ticketCall({ op: 'update', ticket: 1, comment: 'Replaced by `sample/03`.' });
+  assert.deepEqual((await ready()).tickets, []);
+  await ticketCall({ op: 'update', ticket: 3, status: 'done' });
+  assert.deepEqual((await ready()).tickets.map(({ ticket }) => ticket), ['sample/02', 'sample/04']);
+});
+
 test('ready mixes JSON and legacy; hud_create renders a ticket-only brief and ignores stale ticket paths', async t => {
   const f = await fixture(t);
   const feature = 'reports';

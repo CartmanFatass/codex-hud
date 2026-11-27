@@ -268,8 +268,10 @@ test('ticket queue runs ready work and releases a queued ticket when another fea
   assert.equal(completed.queued, undefined);
 });
 
-test('a queue with only cross-feature waits stays working and wontfix releases its last blocker', { timeout: 30_000 }, async t => {
+test('a running queue waits for a cross-feature wontfix blocker’s replacement to be done', { timeout: 30_000 }, async t => {
   const f = await project(t, { thirdBlocker: 'upstream/01, upstream/02', done: [1, 2], upstream: ['needs-triage', 'ready-for-human'] });
+  await f.call('hud_tickets', { op: 'add', feature: 'revisions', tickets: [{ title: 'Synthetic replacement',
+    what: 'Supersedes upstream/02, which is no longer being worked on.', status: 'ready-for-human', blocked_by: [], acceptance: ['Checked'] }] });
   const { flow } = await f.start(1);
   const read = () => f.call('hud_read', { job: flow });
   const update = (ticket, status) => f.call('hud_tickets', { op: 'update', feature: 'upstream', ticket, status });
@@ -285,6 +287,11 @@ test('a queue with only cross-feature waits stays working and wontfix releases i
   assert.deepEqual(stillWaiting.queued, [{ ticket: 'sample/03', blockers: ['upstream/02'] }]);
   assert.deepEqual(stillWaiting.jobs, []);
   await update(2, 'wontfix');
+  await until(() => f.flow(flow).queued?.[0]?.blockers.includes('revisions/01'), 10_000);
+  assert.equal(f.flow(flow).state, 'working');
+  assert.deepEqual(f.flow(flow).tickets, []);
+  assert.deepEqual((await f.call('hud_tickets', { op: 'ready' })).tickets, []);
+  await f.call('hud_tickets', { op: 'update', feature: 'revisions', ticket: 1, status: 'done' });
   const [dependent] = await f.jobs(flow, 1);
   assert.equal(f.job(dependent).ticket, 'sample/03');
 });

@@ -325,7 +325,17 @@ export function checkTicketPaths(cwd: string, items: readonly { ticket: string; 
   return results;
 }
 
-type LocalTicket = ProjectTicket & { what: string; objective?: string; role: 'imp' | 'frontend-imp'; runningList: boolean; repairs?: string[]; repo?: string };
+function supersession(body: string, comments: string) {
+  const names = (text: string, pattern: RegExp) => Array.from(text.matchAll(pattern), m => targetKey(m[1]));
+  return {
+    supersedes: names(`${body}\n${comments}`, /\bsupersedes\b[ \t]*:?[ \t`*]*([a-z0-9-]+\/\d+)(?![\w/-])/gi),
+    replacedBy: names(comments, /\b(?:superseded by|replaced by|replacement(?=:))[ \t]*:?[ \t`*]*([a-z0-9-]+\/\d+)(?![\w/-])/gi),
+  };
+}
+
+type LocalTicket = ProjectTicket & ReturnType<typeof supersession> & {
+  what: string; objective?: string; role: 'imp' | 'frontend-imp'; runningList: boolean; repairs?: string[]; repo?: string;
+};
 const FRONTEND_ROLE_RE = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*frontend-(?:imp|implementer)(?=[ \t\r\n·(]|$)/im;
 const declaredReady = (t: LocalTicket) => /^ready-for-agent$/i.test(t.status);
 const readinessRef = (slug: string, t: LocalTicket) => `${slug}/${nn(Number(t.number))}`;
@@ -343,7 +353,7 @@ function parseTicketForReadiness(path: string, num: number, slug: string): Local
   let parsed: LocalTicket | null = null;
   if (!truncated) {
     const text = bytes.toString('utf8');
-    const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
+    const [body, comments = ''] = text.split(/^## Comments[ \t]*\r?$/m, 2);
     const heading = ticketHeading(body, num);
     const { status, blocked, repairs: rawRepairs, items, checked, landed } = ticketFileEvidence(text);
     if (heading && status && blocked !== undefined) {
@@ -355,6 +365,7 @@ function parseTicketForReadiness(path: string, num: number, slug: string): Local
       const repairs = parseMarkdownRepairRefs(rawRepairs, slug);
       parsed = { ...heading, path, what, role, repo, runningList: isRunningListTicket(body), ...(objective && { objective }),
         ...(repairs.length && { repairs }), status, at: 0, items, checked,
+        ...supersession(body, comments.split(/^## /m, 1)[0]),
         total: items.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],
         state: landed ?? (/^ready-for-human$/i.test(status) ? 'try' : 'ready') };
     }
@@ -373,6 +384,7 @@ function jsonReadiness(root: string, doc: TicketFeatureDoc, record: TicketRecord
   return { number: nn(record.number), title, status, state, repo: record.repo, path: ticketFeaturePath(root, doc.feature), at: 0,
     what: record.what.trimStart().split(/\r?\n/, 1)[0].replace(/\s+/g, ' ').trim(), role: record.role ?? 'imp', runningList: record.kind === 'flake-list',
     objective: record.objective ?? doc.objective, ...(record.repairs?.length && { repairs: [...record.repairs] }), items, checked, total: items.length,
+    ...supersession(`${title}\n${record.what}`, record.comments.map(c => c.text).join('\n')),
     blockers: record.blocked_by.length ? [record.blocked_by.join(', ')] : [] };
 }
 
@@ -401,11 +413,27 @@ export function declaredReadyTickets(cwd: string, feature?: string) {
     .map(t => ({ ticket: readinessRef(slug, t), role: t.role, objective: t.objective, repo: t.repo })));
 }
 
+function ticketReplacements(features: ReturnType<typeof readTicketFeatures>) {
+  const replacements = new Map<string, Set<string>>();
+  const add = (original: string, replacement: string) => {
+    if (original === replacement) return;
+    const refs = replacements.get(original) ?? new Set();
+    refs.add(replacement);
+    replacements.set(original, refs);
+  };
+  for (const { slug, tickets } of features) for (const t of tickets) {
+    const id = targetKey(readinessRef(slug, t));
+    for (const ref of t.supersedes) add(ref, id);
+    for (const ref of t.replacedBy) add(id, ref);
+  }
+  return replacements;
+}
+
 /** Resolve blockers across ticket features using the same TicketRollup pass as ticketReadiness. */
 export function ticketBlockersByKey(cwd: string): Map<string, readonly string[]> {
   const blockers = new Map<string, readonly string[]>();
   const features = readTicketFeatures(cwd);
-  new TicketRollup(features).derive(Date.now());
+  new TicketRollup(features).derive(Date.now(), undefined, undefined, { replacements: ticketReplacements(features) });
   for (const { slug, tickets } of features) {
     for (const t of tickets) blockers.set(targetKey(`${slug}/${t.number}`), t.blockers);
   }
@@ -415,6 +443,7 @@ export function ticketBlockersByKey(cwd: string): Map<string, readonly string[]>
 export interface ReadinessOptions {
   home?: string;
   excludeTickets?: ReadonlySet<string>;
+  landedInRun?: readonly string[];
 }
 
 export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: string, options?: ReadinessOptions) {
@@ -447,7 +476,10 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
     for (const ticket of options.excludeTickets) blockedSet.add(targetKey(ticket));
   }
   const { declaredBlockers, crossBlockers, missingCrossBlockers } = rollup.derive(
-    Date.now(), undefined, blockedSet.size ? blockedSet : undefined,
+    Date.now(), undefined, blockedSet.size ? blockedSet : undefined, {
+      replacements: ticketReplacements(features),
+      landedInRun: options?.landedInRun && new Set(options.landedInRun.map(targetKey)),
+    },
   );
   const repos = new Map<string, string | undefined>();
   const candidates = features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) =>
