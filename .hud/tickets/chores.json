@@ -70,15 +70,15 @@
         }
       ],
       "landing": {
-        "at": "2026-11-27T06:39:45.984Z",
+        "at": "2026-11-27T07:55:08.082Z",
         "job": "legacy",
         "flow": "legacy",
         "replay_base": "078bb2180697fafe8e8bbeb0e83b1c899af864e6",
         "gates": 5
       },
       "comments": [],
-      "created_at": "2026-11-27T06:39:45.984Z",
-      "updated_at": "2026-11-27T06:39:45.984Z"
+      "created_at": "2026-11-27T07:55:08.082Z",
+      "updated_at": "2026-11-27T07:55:08.082Z"
     },
     {
       "number": 28,
@@ -157,7 +157,7 @@
     {
       "number": 30,
       "title": "Auto-dispatched flake jobs land by themselves",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -167,22 +167,29 @@
         {
           "id": 1,
           "text": "Test: a promoted flake job settling with a commit and a clean report gets a land flow without any main call",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: a flake report with a Blockers line or scope assumption does not land and notifies main",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T07:55:08.088Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "0648f094ab621e21de39ac0f1a668f305f34d411",
+        "gates": 5
+      },
       "comments": [],
-      "created_at": "2026-11-27T06:39:45.984Z",
-      "updated_at": "2026-11-27T06:39:45.984Z"
+      "created_at": "2026-11-27T07:55:08.088Z",
+      "updated_at": "2026-11-27T07:55:08.088Z"
     },
     {
       "number": 31,
