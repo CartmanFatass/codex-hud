@@ -12,7 +12,7 @@ import { binScript, jobFiles } from './paths.js';
 import type { Job, JobStatus } from './job-contracts.js';
 import { publishRunnerLifetime } from '../utils/runner-lifetime.js';
 import { procStat, readBootId } from '../utils/proc.js';
-import { readFileBounded, readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
+import { readFileBounded, readJsonBounded, readJsonFile, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
 import { cliStreamSession } from '../roles/job-sessions.js';
 import { killDescendantTree, rememberWorkerTree, sonicRoot } from '../roles/worker-tree.js';
 import { readDone, readTurn, receiptForTurn, reportSignature } from '../roles/cli-turn.js';
@@ -81,10 +81,10 @@ export function startHeadlessProcess(dir: string, job: Job, args: string[], sess
 type HeadlessExit = { code: number | null; signal?: string | null; paused?: boolean; error?: string; agent_session_id?: string };
 
 async function launchTurn(dir: string, argv: string[], status: JobStatus, command: string,
-  onChild?: (child: { pid: number; start: string } | undefined) => void) {
+  onChild: (child: { pid: number; start: string } | undefined) => void, options?: { cwd: string; env: NodeJS.ProcessEnv }) {
   const pause = join(dir, jobFiles.pauseRequested);
   if (status.harness === 'cli') fs.rmSync(pause, { force: true }); // A fresh handoff for each native turn.
-  const child = spawn(command, argv, { stdio: ['ignore', 'inherit', 'inherit'] });
+  const child = spawn(command, argv, { ...options, stdio: ['ignore', 'inherit', 'inherit'] });
   const exit = new Promise<HeadlessExit>(resolve => {
     child.once('error', error => { onChild?.(undefined); resolve({ code: null, error: error.message }); });
     child.once('exit', (code, signal) => { onChild?.(undefined); resolve({ code, signal }); });
@@ -113,6 +113,16 @@ async function launchTurn(dir: string, argv: string[], status: JobStatus, comman
     escalation = setTimeout(() => child.kill('SIGKILL'), 1000);
     return { ...await exit, paused: true };
   } finally { controller.abort(); clearTimeout(escalation); }
+}
+
+async function launchClaudeAdvisor(dir: string, argv: string[], status: JobStatus, onChild: Parameters<typeof launchTurn>[4]) {
+  // Ignore TMPDIR: it may point into a checkout. Keep the recorded job cwd for HUD attribution only.
+  const root = fs.realpathSync('/tmp'), source = process.cwd();
+  if (source === '/' || root === source || root.startsWith(`${source}/`)) throw Error('no temporary cwd outside the advisor source project');
+  const cwd = fs.mkdtempSync(join(root, 'hud-claude-advisor-'));
+  const env = { ...process.env, PWD: cwd, CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', CLAUDE_CODE_DISABLE_CLAUDE_MDS: '1' };
+  try { return await launchTurn(dir, argv, status, 'claude', onChild, { cwd, env }); }
+  finally { fs.rmSync(cwd, { recursive: true, force: true }); }
 }
 
 /** Run in the owned runner, after the dispatch handshake. Capture the child before a crash could orphan it. */
@@ -164,13 +174,16 @@ export async function runHeadlessTurn(dir: string, argv: string[]) {
     }
   }, 1000) : undefined;
   try {
-    let result = await launchTurn(dir, argv, status, agent ?? 'pi', child => { activeChild = child; });
+    const onChild = (child: typeof activeChild) => { activeChild = child; };
+    const advisor = agent === 'claude' && (readJsonFile(join(dir, jobFiles.job)) as Job).selection_advisor;
+    let result = advisor ? await launchClaudeAdvisor(dir, argv, status, onChild)
+      : await launchTurn(dir, argv, status, agent ?? 'pi', onChild);
     // JSON mode emits the session header before input. Only retry a rejected Sonic open,
     // never replay work after Pi may already have taken the continuation.
     if (resuming && result.code !== null && result.code !== 0 && fs.statSync(join(dir, jobFiles.sonicStdout)).size === 0 &&
         Date.now() < headlessDeadline(status) && ![jobFiles.stopRequested, jobFiles.sonicStop, jobFiles.sonicTimeout].some(f => fs.existsSync(join(dir, f)))) {
       fs.renameSync(session, `${session}.rejected`);
-      result = await launchTurn(dir, [...argv.slice(0, -1), briefPrompt(join(dir, jobFiles.brief))], status, 'pi', child => { activeChild = child; });
+      result = await launchTurn(dir, [...argv.slice(0, -1), briefPrompt(join(dir, jobFiles.brief))], status, 'pi', onChild);
     }
     if (agent && (result.code === 0 || result.paused)) {
       try {

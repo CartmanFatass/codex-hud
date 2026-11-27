@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { cliState, entry, fixture, resultValue, taskCall, taskJob, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
@@ -19,7 +19,8 @@ import { rpcClient, until } from ${JSON.stringify(url('../helpers/thin-mcp-harne
 const agent = ${JSON.stringify(agent)}, dir = process.env.HUD_JOB_DIR;
 const args = process.argv.slice(2), value = flag => args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined;
 const prompt = args.at(-1), resumed = value(agent === 'claude' ? '--resume' : '--conversation');
-const advisor = Boolean(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).selection_advisor);
+const job = JSON.parse(fs.readFileSync(join(dir, 'job.json')));
+const advisor = Boolean(job.selection_advisor);
 assert.equal(process.env.HERDR_PANE_ID, undefined);
 assert.equal(value('--output-format'), 'stream-json');
 assert.ok(args.includes('-p'));
@@ -38,6 +39,15 @@ if (agent === 'claude') {
     assert.equal(value('--setting-sources'), '');
     assert.match(value('--system-prompt'), /^Discuss only the supplied selection\./);
     assert.ok(!args.includes('--append-system-prompt-file'));
+    const cwd = process.cwd();
+    assert.notEqual(cwd, job.cwd);
+    assert.ok(!cwd.startsWith(job.cwd + '/'));
+    assert.equal(fs.statSync(cwd).mode & 0o777, 0o700);
+    assert.deepEqual(fs.readdirSync(cwd), []);
+    assert.equal(process.env.PWD, cwd);
+    assert.equal(process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
+    assert.equal(process.env.CLAUDE_CODE_DISABLE_CLAUDE_MDS, '1');
+    console.log(JSON.stringify({ advisorCwd: cwd }));
   }
 } else {
   assert.equal(args.at(-2), '-p');
@@ -102,14 +112,16 @@ try {
 assert.deepEqual(await exited, [0, null]);
 `;
 
-test('default selection advisor runs a report-only Claude Code turn', { timeout: 20000 }, async t => {
+test('default selection advisor runs a report-only Claude Code turn in a private temp cwd', { timeout: 20000 }, async t => {
   const f = await fixture(t);
   f.overrideBin('claude', fakeCli('claude'));
   const code = `import { startSelectionAdvisor } from ${JSON.stringify(url('../../dist/roles/selection-advisor.js'))};
     const { advisor: row } = await startSelectionAdvisor(process.env.HUD_HOME, { excerpt: '+ synthetic guard', question: 'Why?',
       source: { project: 'fixture', projectRoot: process.cwd(), pane: 'w4E:p1', job: null, role: null, time: new Date().toISOString() } }, process.env);
     console.log(JSON.stringify(row));`;
-  const row = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', code], { cwd: f.root, env: f.env, encoding: 'utf8' }));
+  const row = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', code], {
+    cwd: f.root, env: { ...f.env, TMPDIR: f.root }, encoding: 'utf8',
+  }));
   const dir = join(f.env.HUD_HOME, 'jobs', row.target);
   assert.equal(row.role, 'oracle');
   assert.equal(read(join(dir, 'job.json')).cli.agent, 'claude');
@@ -120,6 +132,9 @@ test('default selection advisor runs a report-only Claude Code turn', { timeout:
   }, t.signal);
   assert.equal(fs.readFileSync(join(dir, 'report.md'), 'utf8'), 'Synthetic advisor answer.');
   assert.equal(read(join(f.env.HUD_HOME, 'selection-excerpts.json'))[0].answer.text, 'Synthetic advisor answer.');
+  const { advisorCwd } = fs.readFileSync(join(dir, 'stdout.jsonl'), 'utf8').trim().split('\n').map(JSON.parse).find(row => row.advisorCwd);
+  assert.equal(dirname(advisorCwd), fs.realpathSync('/tmp'));
+  assert.ok(!fs.existsSync(advisorCwd), 'the runner removes its temporary cwd before settling');
 });
 
 test('working headless Claude resumes queued input after a plain turn end', { timeout: 60000 }, async t => {

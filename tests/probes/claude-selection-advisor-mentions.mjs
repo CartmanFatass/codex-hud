@@ -38,13 +38,19 @@ function reply(res, body, index) {
   res.end();
 }
 
-test('Claude selection advisor keeps @-file mentions literal across native turns', { timeout: 45000 }, async t => {
-  const root = fs.mkdtempSync(join(tmpdir(), 'hud-claude-advisor-probe-'));
+test('Claude selection advisor keeps mentions literal and omits project memory across native turns', { timeout: 45000 }, async t => {
+  const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-claude-advisor-probe-')));
   const home = join(root, 'home'), hud = join(root, 'hud'), cwd = join(root, 'checkout'), config = join(root, 'claude');
   cleanupFixture(t, { root, hudHome: hud });
   const sentinel = 'SYNTHETIC_UNSELECTED_CONTENT_MUST_NOT_TRAVEL';
+  const instructions = 'SYNTHETIC_PROJECT_INSTRUCTIONS_MUST_NOT_TRAVEL';
+  const memory = 'SYNTHETIC_PROJECT_MEMORY_MUST_NOT_TRAVEL';
+  const memoryDir = join(config, 'projects', cwd.replace(/[^a-zA-Z0-9_-]/g, '-'), 'memory');
   const relative = join(cwd, 'NOTES.md'), absolute = join(cwd, 'absolute-link.md'), homeFile = join(home, 'home-note.md');
   for (const dir of [home, hud, cwd, config]) fs.mkdirSync(dir);
+  fs.mkdirSync(memoryDir, { recursive: true });
+  fs.writeFileSync(join(memoryDir, 'MEMORY.md'), `${memory}\n`);
+  fs.writeFileSync(join(cwd, 'CLAUDE.md'), `${instructions}\n`);
   fs.writeFileSync(relative, sentinel);
   fs.symlinkSync(relative, absolute); // The owner-supplied absolute spelling is not the resolved file path.
   fs.writeFileSync(homeFile, sentinel);
@@ -69,6 +75,7 @@ test('Claude selection advisor keeps @-file mentions literal across native turns
   await once(server, 'listening');
   const env = { PATH: process.env.PATH, HOME: home, HUD_HOME: hud, CLAUDE_CONFIG_DIR: config,
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.address().port}`, ANTHROPIC_API_KEY: 'synthetic',
+    CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0', // The owner may have explicitly enabled auto-memory.
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', NO_PROXY: '127.0.0.1',
     HTTP_PROXY: 'http://127.0.0.1:1', HTTPS_PROXY: 'http://127.0.0.1:1' };
   const dispatch = async code => {
@@ -107,6 +114,8 @@ test('Claude selection advisor keeps @-file mentions literal across native turns
       if (turn) assert.ok(visible.includes(followUp), 'the owner-supplied follow-up must arrive visibly intact');
       assert.ok(!raw.includes(sentinel) && !raw.includes(relative) && !raw.includes(homeFile),
         'file contents or a resolved path reached the provider');
+      assert.ok(!raw.includes(memory) && !raw.includes(memoryDir), 'project memory reached the provider');
+      assert.ok(!raw.includes(instructions) && !raw.includes(join(cwd, 'CLAUDE.md')), 'project instructions reached the provider');
       assert.ok(!raw.includes('Called the Read tool') && !raw.includes('File contents are not attached automatically'),
         'a mention produced an extra native attachment');
       assert.equal(raw.split(absolute).length - 1, turn ? 3 : 2, 'the absolute spelling must appear only in the owner prompt');
