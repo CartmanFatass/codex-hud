@@ -26,9 +26,10 @@ const DEFAULT_TEXT_ENTRY_LIMIT = 64 * 1024 * 1024;
 const DEFAULT_TEXT_TOTAL_LIMIT = 64 * 1024 * 1024;
 const STREAM_IO_CHUNK_BYTES = 256 * 1024;
 
-export const COLD_ID_RE = /^[jqbw][0-9a-f]{16}$/;
+const COLD_ID = '(?:[jqbw][0-9a-f]{16}|f[0-9a-f]{16}(?:-[1-9]\\d*)?|te[0-9a-f]{32})';
+export const COLD_ID_RE = new RegExp(`^${COLD_ID}$`);
 const MONTH_RE = /^\d{4}-\d{2}$/;
-const MEMBER_RE = /^([jqbw][0-9a-f]{16})\.(text|raw)\.tar\.zst$/;
+const MEMBER_RE = new RegExp(`^(${COLD_ID})\\.(text|raw)\\.tar\\.zst$`);
 
 export type ColdPart = 'text' | 'raw';
 
@@ -481,7 +482,7 @@ export function archiveJobFlowsCold(
   return mergeColdMember(home, month, jobId, 'text', entries, timestampMs, options);
 }
 
-/** Archive a standalone flow run (q*, b*, w*) into its own <flow>.text.tar.zst. */
+/** Archive a standalone flow (q*, b*, w*, te*, or an orphan f* gate log) into its own <flow>.text.tar.zst. */
 export function archiveFlowCold(
   home: string,
   flowId: string,

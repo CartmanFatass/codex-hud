@@ -194,8 +194,12 @@ export async function submitTicketEdit(cwd: string, args: Record<string, unknown
       if (pending.length >= MAX_PENDING) throw Error('Ticket edit queue is full; try again after receipts settle');
       if (Buffer.byteLength(JSON.stringify(args)) > MAX_REQUEST_BYTES) throw Error('Ticket edit is too large to queue');
       const seq = rows.length ? BigInt(`0x${rows.at(-1)!.receipt.slice(2, 18)}`) + 1n : 1n;
-      for (const old of rows.filter(row => !activeTicketEdit(row)).slice(0, Math.max(0, rows.length - MAX_RECEIPTS + 1)))
-        pruneTicketEdit(canonicalHome, old.receipt);
+      for (const old of rows.filter(row => !activeTicketEdit(row)).slice(0, Math.max(0, rows.length - MAX_RECEIPTS + 1))) {
+        try { pruneTicketEdit(canonicalHome, old.receipt); }
+        catch (error) {
+          throw Error(`Ticket edit receipt limit: could not archive and evict ${old.receipt}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
       const queued: TicketEdit = { receipt: `te${seq.toString(16).padStart(16, '0')}${randomBytes(8).toString('hex')}`,
         cwd, checkout, project, pane, origin: process.cwd(), op, state: 'queued', args };
       saveTicketEdit(canonicalHome, queued);

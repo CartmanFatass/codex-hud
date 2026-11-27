@@ -367,7 +367,9 @@ async function shutdown() {
 }
 function sessionFolders(dir: string) {
   const dispatch = join(dir, '.dispatch');
-  return [join(dir, 'sessions'), ...(fs.existsSync(dispatch)
+  const dispatchStat = fs.lstatSync(dispatch, { throwIfNoEntry: false });
+  // A linked .dispatch tree is not job-local and is skipped by the cold snapshot too.
+  return [join(dir, 'sessions'), ...(dispatchStat && !dispatchStat.isSymbolicLink()
     ? fs.readdirSync(dispatch, { withFileTypes: true }).filter((entry) => entry.isDirectory())
       .map((entry) => join(dispatch, entry.name, 'sessions')) : [])]
     .filter((folder) => fs.lstatSync(folder, { throwIfNoEntry: false })?.isDirectory());
@@ -1210,20 +1212,21 @@ function scan(retryWatch = false) {
       const now = Date.now();
       if (!landing && !checkingReport && !resumable && !launchUnknown && !retained && closedAt + JOB_RETENTION_MS < now && (!tab || job?.reaped_at)) {
         if (job && now <= closedAt + 7 * JOB_RETENTION_MS && hasLocalPiSession(dir, job, status, piLocalFiles)) continue;
-        // Preserve legacy Pi history. CLI and browser keep theirs in their own stores.
-        if (!(job?.cli || job?.bro || job?.jev) && !preserveSessions(dir)) continue;
-        let cold: { wroteText: boolean; wroteRaw: boolean };
+        let cold: { wroteRaw: boolean };
         try { cold = archiveJobCold(home, dir, id, job, status, now); }
         catch (error) {
           warn(`keep ${id} cold archive`, `keep ${id} cold archive: ${(error as Error).message}`);
           continue;
         }
-        archiveJob(home, dir, id, job, status, now, log);
-        fs.rmSync(dir, { recursive: true, force: true });
+        // The raw snapshot has the job-local bytes; now preserve legacy Pi history in its native store.
+        const sessionsPreserved = job?.cli || job?.bro || job?.jev || preserveSessions(dir);
         if (cold.wroteRaw) {
           try { enforceColdRawCap(home); }
           catch (error) { warn('cold raw cap', `cold raw cap: ${(error as Error).message}`); }
         }
+        if (!sessionsPreserved) continue;
+        archiveJob(home, dir, id, job, status, now, log);
+        fs.rmSync(dir, { recursive: true, force: true });
         jobCache.evictJob(id);
         reapRetries.delete(id);
         log(`delete ${id} state=${status.state}`);

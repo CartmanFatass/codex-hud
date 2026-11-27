@@ -129,7 +129,7 @@ for (const name of ${JSON.stringify(names)}) test(name, () => assert.ok(seen, 's
   assert.equal((await f.call('hud_read', { job: flow })).reruns[0].output_path, path);
   fs.unlinkSync(join(f.home, 'flows', `${flow}.json`));
   assert.equal((await f.call('hud_read', { job: flow })).code, 'flow_not_found');
-  assert.equal(fs.existsSync(path), false);
+  assert.equal(fs.readFileSync(path, 'utf8'), excerpt, 'the orphan log stays intact for archive-first retention');
 });
 
 test('gate reruns a timed-out test file once, not its passing neighbor', async t => {

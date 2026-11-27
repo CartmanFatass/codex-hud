@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
-import { join } from 'node:path';
-import { readJsonFile, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { basename, join } from 'node:path';
+import { archiveFlowCold } from '../roles/cold-archive.js';
+import { readJsonFile, readRegularNoFollow, writeJsonPrivate } from '../utils/atomic-fs.js';
 
 export type TicketEdit = {
   receipt: string;
@@ -37,6 +38,19 @@ export function ticketEditView(row: TicketEdit) {
 }
 
 export function pruneTicketEdit(home: string, id: string) {
+  if (!isTicketEditId(id)) throw Error('invalid ticket edit receipt id');
   const path = ticketEditFile(home, id);
-  for (const file of [path, `${path}.noticed`, `${path}.observed`]) fs.rmSync(file, { force: true });
+  const receipt = readRegularNoFollow(path);
+  if (!receipt) throw Error('ticket edit receipt is missing or not a regular file');
+  const files = [{ file: path, ...receipt }];
+  const markers = [`${path}.noticed`, `${path}.observed`];
+  for (const file of markers) {
+    const read = readRegularNoFollow(file);
+    if (read) files.push({ file, ...read });
+  }
+  archiveFlowCold(home, id, files.map(({ file, data, stat }) => ({
+    name: basename(file), data, mode: 0o600, mtime: Math.floor(stat.mtimeMs / 1000),
+  })), receipt.stat.mtimeMs);
+  // Also clear any empty notice claim created while the archive write was in progress.
+  for (const file of [path, ...markers]) fs.rmSync(file, { force: true });
 }

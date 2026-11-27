@@ -66,9 +66,9 @@ for (const odd of ['dispatch file', 'linked helper file', 'unreadable sessions']
     assert.equal(fs.readFileSync(join(f.home, 'reaps'), 'utf8'), tabbed + '\n');
     assert.ok(JSON.parse(fs.readFileSync(join(tabbed, 'job.json'), 'utf8')).reaped_at);
     const errors = f.log().split('\n').filter((line) => line.includes(`keep ${bad.split('/').at(-1)} `));
-    assert.equal(errors.length, kept ? 2 : 0, 'housekeeping and preservation each report their failure');
+    assert.equal(errors.length, kept ? 2 : 0, 'housekeeping and the failing retention step each report their failure');
     if (kept) assert.match(errors[0], odd === 'dispatch file' ? /ENOTDIR/ : /EACCES/);
-    if (odd === 'unreadable sessions') assert.match(f.log(), /session preservation: .*EACCES/);
+    if (odd === 'unreadable sessions') assert.match(f.log(), /cold archive: .*EACCES/);
     assert.equal(fs.existsSync(join(f.home, 'watch.pid')), false);
   });
 }
@@ -283,7 +283,7 @@ syncBuiltinESMExports();` : '';
     assert.equal(child.exitCode, 0);
     assert.ok(fs.existsSync(join(dir, 'report.md')), 'the whole job must stay');
     assert.equal(fs.existsSync(join(dir, '.archived')), false);
-    assert.equal(fs.existsSync(join(f.home, 'archive')), false);
+    assert.deepEqual(fs.readdirSync(join(f.home, 'archive')), ['cold'], 'cold snapshot precedes native preservation, but facts wait for deletion');
     assert.deepEqual(fs.readFileSync(source), bytes);
     assert.equal(f.log().split('\n').filter((line) => line.includes(`keep ${dir.split('/').at(-1)} `)).length, 1);
     assert.equal(f.log().includes('delete '), false);
@@ -293,16 +293,16 @@ syncBuiltinESMExports();` : '';
   });
 }
 
-for (const layout of ['sessions', '.dispatch/helper/sessions']) {
+for (const layout of ['sessions', '.dispatch/helper/sessions', '.dispatch']) {
   test(`retention skips a symlinked ${layout} folder without moving target files`, async (t) => {
     const f = fixture(t), dir = f.job(expired());
     const outside = join(f.home, 'outside');
-    fs.mkdirSync(outside);
-    const { source, bytes } = realSession(outside);
+    const linkDispatch = layout === '.dispatch';
+    const { source, bytes } = realSession(outside, linkDispatch ? '.dispatch/helper/sessions' : 'sessions');
     const before = fs.statSync(source);
     const folder = join(dir, layout);
     fs.mkdirSync(resolve(folder, '..'), { recursive: true });
-    fs.symlinkSync(join(outside, 'sessions'), folder, 'dir');
+    fs.symlinkSync(join(outside, linkDispatch ? '.dispatch' : 'sessions'), folder, 'dir');
     const { child, exited } = f.start();
     await exited;
     assert.equal(child.exitCode, 0);
@@ -325,7 +325,7 @@ test('retention uses pi cwd encoding for colons and backslashes', async (t) => {
 });
 
 for (const oversized of [false, true]) {
-  test(`retention reads only a 1 MiB prefix and ${oversized ? 'keeps a header beyond the bound' : 'moves a large transcript'}`, async (t) => {
+  test(`native preservation reads only a 1 MiB prefix and ${oversized ? 'keeps a header beyond the bound' : 'moves a large transcript'}`, async (t) => {
     const f = fixture(t), dir = f.job(expired());
     const { source } = realSession(dir, 'sessions', oversized
       ? { type: 'session', padding: 'x'.repeat(1024 * 1024), cwd: '/synthetic/work.space/repo' }
@@ -339,12 +339,13 @@ import { syncBuiltinESMExports } from 'node:module';
 const source = ${JSON.stringify(source)}, readFile = fs.readFileSync, open = fs.openSync, read = fs.readSync, close = fs.closeSync;
 let sessionFd, total = 0;
 fs.readFileSync = (file, ...args) => {
-  if (${!oversized}) assert.notEqual(file, source, 'must not read the whole session file');
+  if (${!oversized}) assert.notEqual(file, source, 'native preservation must not read the whole file by path');
   return readFile(file, ...args);
 };
 fs.openSync = (file, ...args) => {
   const fd = open(file, ...args);
-  if (file === source) sessionFd = fd;
+  // The archive snapshots the entire transcript through its own fd; probe only Pi's header read.
+  if (file === source && args[0] === 'r') sessionFd = fd;
   return fd;
 };
 fs.closeSync = (fd) => {

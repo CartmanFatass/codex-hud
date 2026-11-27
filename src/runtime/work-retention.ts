@@ -11,6 +11,7 @@ import {
   archiveJobRawEntries,
   COLD_ID_RE,
   enforceColdRawCap,
+  findColdMember,
 } from '../roles/cold-archive.js';
 import { epoch } from '../roles/job-usage.js';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
@@ -231,6 +232,22 @@ async function pruneExpiredWorkflow(home: string, id: string, cutoff: number) {
   } finally { await release(); }
 }
 
+function pruneOrphanGateLog(home: string, dir: string, name: string, flow: string, job: string, cutoff: number): boolean {
+  const receipt = join(dir, `${flow}.json`);
+  if (fs.lstatSync(receipt, { throwIfNoEntry: false })) return false;
+  const path = join(dir, name), stat = fs.lstatSync(path);
+  if (!stat.isFile() || stat.mtimeMs >= cutoff) return true;
+  // Land IDs encode the candidate job. Keep merging into it after job expiry if it was archived.
+  const owned = fs.lstatSync(join(home, 'jobs', job), { throwIfNoEntry: false })?.isDirectory() ||
+    findColdMember(home, job, 'text') || findColdMember(home, job, 'raw');
+  const pinned = statPinnedRegular(path, owned ? `flows/${name}` : name);
+  if (!pinned || !sameInode(stat, pinned.stat) || stat.ctimeMs !== pinned.stat.ctimeMs) return true;
+  if (owned) archiveJobFlowsCold(home, job, [pinned.entry], stat.mtimeMs);
+  else archiveFlowCold(home, flow, [pinned.entry], stat.mtimeMs);
+  if (!fs.lstatSync(receipt, { throwIfNoEntry: false }) && sameReceipt(path, stat)) fs.unlinkSync(path);
+  return true;
+}
+
 export function pruneLandFlows(home: string, now = Date.now()): void {
   const cutoff = now - JOB_RETENTION_MS;
   try {
@@ -296,9 +313,15 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
           } catch { /* Missing or unreadable queue receipt, or archive failure: leave it alone. */ }
           continue;
         }
-        const match = /^f([a-f0-9]{16})(?:-[1-9]\d*)?(?:\.json(?:\.(?:cancel|noticed|observed|gate-[1-9]\d*(?:-rerun)?\.log))?)?$/.exec(name);
+        const match = /^(f([a-f0-9]{16})(?:-[1-9]\d*)?)(?:\.json(?:\.(?:cancel|noticed|observed|(gate-[1-9]\d*(?:-rerun)?\.log)))?)?$/.exec(name);
         if (!match) continue;
-        const job = `j${match[1]}`, files = jobs.get(job);
+        const [, flow, hex, gateLog] = match;
+        const job = `j${hex}`;
+        if (gateLog) {
+          try { if (pruneOrphanGateLog(home, dir, name, flow!, job, cutoff)) continue; }
+          catch { continue; /* Unreadable log or archive failure: keep the orphan for the next sweep. */ }
+        }
+        const files = jobs.get(job);
         if (files) files.push(name); else jobs.set(job, [name]);
       }
       const pinned = jobs.size ? pinnedQueueJobs(home) : null;

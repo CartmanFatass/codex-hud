@@ -65,13 +65,6 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
   let pending = false;
   const pass = workflowHeaders(home);
   for (const file of pass.files) {
-    const sidecar = /^(.*)\.json\.gate-[1-9]\d*(?:-rerun)?\.log$/.exec(file);
-    if (sidecar && isFlowId(sidecar[1])) {
-      try {
-        if (!fs.lstatSync(landFile(home, sidecar[1]), { throwIfNoEntry: false })) fs.unlinkSync(join(home, 'flows', file));
-      } catch { /* Retry at the next scan. */ }
-      continue;
-    }
     if (!file.endsWith('.json')) continue;
     const id = file.slice(0, -5);
     if (isTicketEditId(id)) {

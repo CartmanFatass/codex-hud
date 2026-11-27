@@ -59,6 +59,24 @@ export function readDirSafe(dir: string): string[] {
   }
 }
 
+/** Read a regular file through one fd without following a leaf symlink or blocking on a FIFO. */
+export function readRegularNoFollow(file: string): { data: Buffer; stat: fs.Stats } | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ELOOP') return null;
+    throw error;
+  }
+  try {
+    const stat = fs.fstatSync(fd);
+    return stat.isFile() ? { data: fs.readFileSync(fd), stat } : null;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 /** Read from one opened inode; never block opening a FIFO. Probe one extra byte
  * and handle short reads, without allocating the full limit for a small file. */
 export function readFileBounded(file: string, limit: number, options: {

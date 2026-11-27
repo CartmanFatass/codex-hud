@@ -70,7 +70,7 @@ export async function archiveCommand(args: readonly string[], io: HudIO): Promis
   }
   if (sub === 'extract') {
     const id = rest[0];
-    if (!id || !COLD_ID_RE.test(id)) throw new CliError('invalid or missing archive id (expected j/q/b/w + 16 hex)');
+    if (!id || !COLD_ID_RE.test(id)) throw new CliError('invalid or missing archive id (expected a job or flow id)');
     let outDir: string | undefined;
     let part: 'all' | 'text' | 'raw' = 'all';
     let json = false;

@@ -20,7 +20,8 @@ import {
 import { writeReportMeta } from '../../dist/roles/report-meta.js';
 import { pruneJobLogs, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { decodeTarZst, encodeTarZst } from '../../dist/utils/tar-zst.js';
-import { fixture as retentionFixture, hour, until } from '../helpers/job-retention-fixture.mjs';
+import { workflowEvents } from '../../dist/workflows/events.js';
+import { destination, fixture as retentionFixture, hour, realSession, until } from '../helpers/job-retention-fixture.mjs';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { fixture as mcpFixture } from '../helpers/thin-mcp-harness.mjs';
@@ -489,6 +490,92 @@ syncBuiltinESMExports();`);
   assert.ok(listColdArchive(f.home).some((item) => item.id === flowId));
   const out = join(f.home, 'verify-extract');
   assert.ok((await extractColdArchive(f.home, id, out, 'text'))?.files.includes('report.md'));
+});
+
+test('orphan gate logs survive notice scans and failed retention writes, then archive under their job or flow', async (t) => {
+  const f = retentionFixture(t);
+  const at = Date.parse('2030-08-02T12:00:00Z'), now = at + 25 * hour;
+  const liveJob = basename(f.job({ state: 'working' }));
+  const archivedJob = 'j000000000000beef';
+  const cases = [
+    { job: liveJob, flow: `f${liveJob.slice(1)}`, suffix: 'gate-1.log' },
+    { job: archivedJob, flow: `f${archivedJob.slice(1)}-2`, suffix: 'gate-2-rerun.log' },
+    { flow: 'f000000000000dead-3', suffix: 'gate-3-rerun.log' },
+  ].map(({ job, flow, suffix }) => {
+    const name = `${flow}.json.${suffix}`, data = Buffer.from(`Synthetic evidence for ${flow}\r\n`);
+    const source = put(join(f.home, 'flows', name), data);
+    fs.utimesSync(source, at / 1000, at / 1000);
+    return { job, flow, name, data, source };
+  });
+  assert.deepEqual(workflowEvents(f.home, null, true).lines, []);
+  for (const { source, data } of cases) assert.deepEqual(fs.readFileSync(source), data, 'notice scan leaves log alone');
+
+  const blocker = put(join(f.home, 'archive', 'cold'), 'block the cold directory');
+  pruneLandFlows(f.home, now);
+  for (const { source, data } of cases) assert.deepEqual(fs.readFileSync(source), data, 'failed sweep keeps log');
+  fs.unlinkSync(blocker);
+  const priorReport = Buffer.from('Archived report from a prior month.\n');
+  mergeColdMember(f.home, '2030-07', archivedJob, 'text', [{ name: 'report.md', data: priorReport }]);
+  pruneLandFlows(f.home, now);
+  for (const { job, flow, name, data, source } of cases) {
+    assert.equal(exists(source), false, 'successful sweep can remove live log');
+    const archive = await readColdJobText(f.home, job ?? flow);
+    assert.deepEqual(archive?.entries.get(job ? `flows/${name}` : name), data);
+    if (job === archivedJob) {
+      assert.equal(archive.month, '2030-07');
+      assert.deepEqual(archive.entries.get('report.md'), priorReport);
+    }
+  }
+  fs.chmodSync(f.home, 0o700);
+  const orphan = cases.at(-1), out = join(f.home, 'orphan-extract');
+  const ext = await runCli(['extract', orphan.flow, '--out', out], { ...process.env, HUD_HOME: f.home });
+  assert.equal(ext.code, 0, ext.err);
+  assert.deepEqual(fs.readFileSync(join(out, orphan.name)), orphan.data);
+});
+
+test('expired headless Pi snapshots both local session layouts before moving them to the native store', async (t) => {
+  const f = retentionFixture(t);
+  const ended = '2030-09-01T12:00:00Z', endedMs = Date.parse(ended);
+  const dir = f.job({ state: 'closed', slot: 'headless', ended_at: ended }, { role: 'imp', headless: true, reaped_at: ended });
+  const id = basename(dir);
+  const primary = realSession(dir, 'sessions', { type: 'session', cwd: '/synthetic/work.space/repo', id: 'primary' });
+  const helper = realSession(dir, '.dispatch/helper/sessions', { type: 'session', cwd: '/synthetic/helper', id: 'helper' });
+  const primaryNative = destination(f.pi);
+  const helperNative = join(f.pi, 'sessions', '--synthetic-helper--', basename(helper.source));
+  const run = async (now) => {
+    const { child, exited, stderr } = f.start(`Date.now = () => ${now};`);
+    await exited;
+    assert.equal(child.exitCode, 0, stderr());
+  };
+  const checkLive = () => {
+    for (const { source, bytes } of [primary, helper]) assert.deepEqual(fs.readFileSync(source), bytes);
+    assert.equal(exists(primaryNative), false);
+    assert.equal(exists(helperNative), false);
+  };
+  const expiry = endedMs + 7 * day;
+  await run(expiry);
+  checkLive();
+  assert.equal(exists(join(f.home, 'archive', 'cold')), false, 'the seven-day guard precedes the cold snapshot');
+
+  const rawMember = join(f.home, 'archive', 'cold', '2030-09', `${id}.raw.tar.zst`);
+  fs.mkdirSync(rawMember, { recursive: true }); // Reject the raw publication even though the text snapshot succeeds.
+  await run(expiry + 1);
+  checkLive();
+  assert.ok((await readColdJobText(f.home, id))?.entries.has('job.json'));
+  assert.match(f.log(), /keep j[0-9a-f]{16} cold archive:/);
+
+  fs.rmdirSync(rawMember);
+  await run(expiry + 1);
+  assert.equal(exists(dir), false);
+  assert.deepEqual(fs.readFileSync(primaryNative), primary.bytes);
+  assert.deepEqual(fs.readFileSync(helperNative), helper.bytes);
+  assert.equal(modeOf(rawMember), 0o600);
+  fs.chmodSync(f.home, 0o700);
+  const out = join(f.home, 'pi-extract');
+  const ext = await runCli(['extract', id, '--part', 'raw', '--out', out], { ...process.env, HUD_HOME: f.home });
+  assert.equal(ext.code, 0, ext.err);
+  assert.deepEqual(fs.readFileSync(join(out, 'sessions', basename(primary.source))), primary.bytes);
+  assert.deepEqual(fs.readFileSync(join(out, '.dispatch', 'helper', 'sessions', basename(helper.source))), helper.bytes);
 });
 
 test('watcher refresh scans never touch archive/cold and refresh cost is unchanged with 200 cold members', { timeout: 60000 }, async (t) => {

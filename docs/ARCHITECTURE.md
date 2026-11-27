@@ -382,7 +382,7 @@ Width applies to tmux/herdr panels on Save and containing-window resize, not unr
 | `unattended.json`, `unattended.pid.json` | Explicit on/off and up to 32 project-local Objective IDs; resident PID, start ticks and boot ID, checked against `/proc` |
 | `unattended-runs.json`, `unattended-diagnostics.json` | Up to 128 indexed Objective queue receipts (keep up to 16 recent completions on each sweep) and up to 16 scheduler diagnostics; indexed open holds survive normal flow pruning and pin their held source jobs, reports and worktrees in watcher retention until the hold clears |
 | `archive/YYYY-MM.jsonl` | Private, append-only prose-free job facts written by the watcher before retention deletes a job; no expiry |
-| `archive/cold/YYYY-MM/` | Private (`0700` dirs, `0600` files) zstd-compressed tar cold archive written atomically before pruning: `<job>.text.tar.zst` (job records, brief, report, QA, owned `f*`/`j*` flows and gate logs; kept forever), `<job>.raw.tar.zst` (raw logs/session copies, including early `resume_s` prunes; oldest dropped past `config.json` `retention.coldRawCapGB`, default 20), and `<flow>.text.tar.zst` (`q*`/`b*`/`w*` runs; kept forever). Read only on demand by `hud_read` fallback and `hud archive`; never scanned on panel or watcher refresh |
+| `archive/cold/YYYY-MM/` | Private (`0700` dirs, `0600` files) zstd-compressed tar cold archive written atomically before pruning: `<job>.text.tar.zst` (job records, brief, report, QA, owned `f*`/`j*` flows and gate logs; kept forever), `<job>.raw.tar.zst` (raw logs/session copies, including early `resume_s` prunes; oldest dropped past `config.json` `retention.coldRawCapGB`, default 20), and `<flow>.text.tar.zst` (`q*`/`b*`/`w*` runs, `te*` edit receipts and unowned `f*` gate logs; kept forever). Read on demand by `hud_read` fallback and `hud archive`; never scanned on panel or watcher refresh |
 
 An EXP-enabled pi footer draw initiates asynchronous snapshot collection.
 A per-HUD-home Linux abstract socket excludes concurrent refreshes; the bounded Codex app-server stdio request is only for account rate limits, not inference.
@@ -394,7 +394,7 @@ If a Pi worker exits before publishing shutdown status, `hud_close` and the watc
 The watcher scans on the marker.
 Pi tab workers have no HUD runner socket, so pending stop settlement and read-close preflight may still need a timed recheck (`HUD_WATCH_CLI_CHECK_MS`, default 30 s).
 It reaps finished tabs, keeps failed tabs for two hours, and prunes settled job directories one day after closure on a later scan, not a dedicated expiry timer.
-Before deletion it moves legacy real JSONL sessions to pi's store and writes the job's compressed cold archive under `archive/cold/YYYY-MM/` (early `resume_s` raw-log pruning also moves logs into `<job>.raw.tar.zst` instead of deleting them); write or move failures retain the source for the next sweep.
+Before deletion it writes the job's compressed cold archive under `archive/cold/YYYY-MM/`, then moves legacy real JSONL sessions to pi's store (early `resume_s` raw-log pruning also moves logs into `<job>.raw.tar.zst` instead of deleting them). A failed cold write leaves the sessions at their source; a failed native move leaves the job directory for the next sweep.
 Raw archive cap trimming (`retention.coldRawCapGB`, default 20) runs only when a raw member is written, never during ordinary refresh scans.
 No session-link target is deleted.
 CLI sessions stay in that CLI's store.

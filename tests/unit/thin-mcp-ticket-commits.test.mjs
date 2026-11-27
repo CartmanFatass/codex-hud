@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative, resolve } from 'node:path';
+import { basename, join, relative, resolve } from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { assertLandingRecord, checkout, job, jobDir, settle } from '../helpers/thin-mcp-land.mjs';
@@ -11,6 +11,7 @@ import { entry, rpcClient, resultValue, taskCall, taskRpc, until } from '../help
 import { findFixtureProcesses, stopChild } from '../helpers/process-cleanup.mjs';
 import { setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 import { takeLease } from '../../dist/roles/lease.js';
+import { listColdArchive, readColdJobText } from '../../dist/roles/cold-archive.js';
 import { cancelTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
 import { isProcAlive, procStat } from '../../dist/utils/proc.js';
 import { wakeWorkflow } from '../../dist/workflows/wake.js';
@@ -191,6 +192,51 @@ test('a task-capable caller receives a queued edit completion without polling', 
   assert.equal(result.state, 'completed');
   assert.equal(result.changes, undefined);
   assert.equal(notices().length, 1);
+});
+
+test('Markdown ticket edit admission at the receipt limit archives the oldest settled receipt and keeps it on failure', { timeout: 15000 }, async t => {
+  const f = await legacyCheckout(t, ['true']);
+  const flows = join(f.home, 'flows');
+  fs.mkdirSync(flows, { recursive: true });
+  const id = seq => `te${seq.toString(16).padStart(16, '0')}${'0'.repeat(16)}`;
+  for (let seq = 1; seq <= 128; seq++) {
+    fs.writeFileSync(fileOf(f, id(seq)), JSON.stringify({
+      receipt: id(seq), cwd: f.main, checkout: f.main, project: f.main, pane: 'synthetic-other-pane', origin: f.main,
+      op: 'add', state: 'completed', result: { ok: true },
+    }) + '\n');
+  }
+  const oldest = fileOf(f, id(1)), sidecars = [`${oldest}.noticed`, `${oldest}.observed`];
+  for (const file of sidecars) fs.writeFileSync(file, `Synthetic ${file.split('.').at(-1)} marker.\n`);
+  const original = [oldest, ...sidecars].map(file => [file, fs.readFileSync(file)]);
+  const count = () => fs.readdirSync(flows).filter(name => /^te[0-9a-f]{32}\.json$/.test(name)).length;
+  const blocker = join(f.home, 'archive', 'cold');
+  fs.mkdirSync(join(f.home, 'archive'), { recursive: true });
+  fs.writeFileSync(blocker, 'Block the cold directory.\n');
+  const args = { op: 'add', feature: 'sample', tickets: [draft('First')] };
+  const lease = { cwd: f.main, home: f.home, holder: 'synthetic-land' };
+  assert.deepEqual(await takeLease({ name: 'main-checkout', wait_s: 0 }, lease), { granted: true });
+  let admitted;
+  try {
+    const { result } = await f.rpc('tools/call', { name: 'hud_tickets', arguments: args });
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /Ticket edit receipt limit: could not archive and evict/);
+    for (const [file, bytes] of original) assert.deepEqual(fs.readFileSync(file), bytes);
+    assert.equal(count(), 128, 'refused admission does not add a receipt');
+
+    fs.unlinkSync(blocker);
+    admitted = queued(await f.call('hud_tickets', args));
+    assert.equal(count(), 128);
+    assert.equal(read(f, id(2)).state, 'completed', 'only the oldest receipt was evicted');
+    const archive = await readColdJobText(f.home, id(1));
+    assert.ok(listColdArchive(f.home).some(item => item.id === id(1) && item.text));
+    for (const [file, bytes] of original) {
+      assert.equal(fs.existsSync(file), false);
+      assert.deepEqual(archive?.entries.get(basename(file)), bytes);
+    }
+  } finally {
+    await takeLease({ name: 'main-checkout', release: true }, lease);
+  }
+  await until(() => read(f, admitted).state === 'completed', t.signal);
 });
 
 test('the MCP re-drives a helper killed during land without another submission or read', { timeout: 20000 }, async t => {
