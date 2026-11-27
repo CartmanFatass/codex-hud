@@ -102,7 +102,7 @@
     {
       "number": 3,
       "title": "fork: running workflows as miniature graphs in the agents tree and the 13-column rail",
-      "status": "ready-for-agent",
+      "status": "done",
       "role": "imp",
       "repo": "~/projects/herdr-hud",
       "owner_try": false,
@@ -117,32 +117,40 @@
         {
           "id": 1,
           "text": "Fork tests: a run renders its graph in the agents tree and in the 13-column rail; folding hides it",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Fork tests: live-pane step click focuses the pane; other step clicks emit hud_activate with the step",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Fork test: folded widths stay 13/4/0 with and without runs",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Fork test: the folded-form preference persists per client",
-          "done": false
+          "done": true
         },
         {
           "id": 5,
           "text": "Fork gate passes; report names the built binary",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T19:43:44.150Z",
+        "job": "j05a3167f40b34ed4",
+        "flow": "f05a3167f40b34ed4",
+        "replay_base": "70c00b3d279cce64699ad8ebb69e17e941cda9e1",
+        "gates": 4,
+        "commit": "cad1caa69952d20737d4bcde11e5aab2895304c3"
+      },
       "comments": [],
       "created_at": "2026-11-27T18:04:42.556Z",
-      "updated_at": "2026-11-27T18:05:01.445Z"
+      "updated_at": "2026-11-27T19:43:44.150Z"
     },
     {
       "number": 4,
@@ -242,7 +250,9 @@
       "approved_removals": [],
       "blocked_by": [
         "unified-left/04",
-        "unified-left/05"
+        "unified-left/05",
+        "unified-left/07",
+        "unified-left/08"
       ],
       "objective": "interaction",
       "what": "D-2026-11-27-05. Settings → Panel → Pages: center tab (default) or docked edge (today's side/mode settings). `/hud` in every client, `prefix+d` and launcher clicks show the center tab at the page; `q` hides and returns focus, never quits; the tab label follows the open page. Dock shown/hidden state is event-driven from dock.updated and focus events: delete the 250 ms dock.status poll in src/panel/scheduler.ts and stop all timers while hidden. While Project or Execution is open, focusing a workspace selects its project. Update docs/reference.md.",
@@ -268,9 +278,146 @@
           "done": false
         }
       ],
-      "comments": [],
+      "comments": [
+        {
+          "at": "2026-11-27T20:01:44.304Z",
+          "author": "main",
+          "text": "Per docs/delegation.md (sample is the acceptance standard): the center tab must reproduce frames C2 and C4 of docs/design/unified-left/tui/preview.mjs; add a golden test of the tab's page output against the C2 main area with the sample's fixture data. Waits for 07/08 so the sidebar matches first."
+        }
+      ],
       "created_at": "2026-11-27T18:04:42.556Z",
-      "updated_at": "2026-11-27T18:04:42.556Z"
+      "updated_at": "2026-11-27T20:01:44.304Z"
+    },
+    {
+      "number": 7,
+      "title": "fork: the sidebar matches frames C1/C3/C5 cell for cell (golden tests); run members are not listed twice",
+      "status": "ready-for-agent",
+      "role": "imp",
+      "repo": "~/projects/herdr-hud",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unified-left/03"
+      ],
+      "what": "Repo: ~/projects/herdr-hud. Owner live view 2026-11-27 after 01/03/05 installed: (1) every running worker appears twice, once as a flat agent row (`● MyHUD · imp 04: …`) and again as a step under `run unified-left`; (2) flat worker rows show a yellow `●` instead of the state shape glued to the role glyph (`◐⚒`); (3) a run renders as a vertical list of steps with full titles instead of the miniature graph. Reference: frames C1 (expanded), C3 (13-column rail) and C5 (4-column minimal) in ~/projects/MyHUD/docs/design/unified-left/tui/preview.mjs; design ~/projects/MyHUD/docs/design/unified-left/README.md. Required: an agent whose pane is a step of a projected run is shown only inside that run (no flat row); every other worker row shows state shape + role glyph from `hud_icon` (never the bare status dot); a run renders as the frame shows: `run <name>  age` header, parallel steps fanned on one row between box rules (`╭────┬────╮` / `✓01  ×02⚒ ?03⚒` / `├╌╌╌╌┴╌╌╌╌╯`), sequential tail on one row (`○ review ╌ ○ accept`), step labels short (the projection's short label), role glyph after the step number (`×02⚒`), and a single-step run as one row (`◐◈ run audit  12m`). Add golden tests: feed the projection and snapshot that correspond to C1, C3 and C5 and assert the sidebar column matches the frame text cell for cell. Where a frame and the current projection schema disagree, change the renderer to match the frame and name any projection field you need in the report (HUD side is unified-left/08).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Golden tests for C1, C3 and C5 sidebar columns pass cell for cell",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a worker pane that is a run step has no flat agent row",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: non-run worker rows show glued state+role glyph, never the bare dot",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Fork gate passes; report names the built binary",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T20:00:29.242Z",
+      "updated_at": "2026-11-27T20:00:29.242Z"
+    },
+    {
+      "number": 8,
+      "title": "HUD projection carries short step labels, roles and parallel structure the frames need",
+      "status": "done",
+      "role": "imp",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unified-left/02"
+      ],
+      "what": "Owner live view 2026-11-27: run steps in the sidebar show full ticket titles (`fork: sidebar.set_…`, `HUD pages open in …`) where frame C1 in docs/design/unified-left/tui/preview.mjs shows short labels (`✓01 ×02 ?03`, `review`, `accept`). In src/collectors/sidebar-projection.ts send the short label (ticket number `NN` for ticket steps, the step kind word for review/lead/accept/land, the role-free job label otherwise), keep the full title in a separate optional field if the fork wants a tooltip, send the role glyph for every step that has a worker, and send edges so parallel tickets (same blockers) share a fan and the review/accept tail follows. Coordinate field names with unified-left/07 (fork) through its report if it lands first; otherwise keep the existing schema fields. Tests compare the projection built from a fixture queue with the C1 frame's run.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a fixture ticket queue with three parallel tickets and review/accept yields labels 01/02/03, review, accept and fan edges",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: steps with a worker carry the role glyph",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "No other projection field changes meaning",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T20:36:40.837Z",
+        "job": "jd3c3e656883b9c98",
+        "flow": "fd3c3e656883b9c98",
+        "replay_base": "a1ebe50bec24c37a12072039726ed19de6d938b4",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T20:00:29.242Z",
+      "updated_at": "2026-11-27T20:36:40.837Z"
+    },
+    {
+      "number": 9,
+      "title": "Projection: only ticket runs and workflows, one group per project, neutral role glyphs, one age format",
+      "status": "ready-for-agent",
+      "role": "imp",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unified-left/02"
+      ],
+      "what": "Main's live capture 2026-11-27 (after 08): the sidebar projection also publishes land flows as runs (`run One reader…` with steps lease/pick/gate/merge), which the frames never show; and it mixes age formats (`40分` next to English). In src/collectors/sidebar-projection.ts: publish only ticket-queue runs and composed workflows (no land, gate or merge flows; a land in progress shows as its ticket step's state); group every run under its tracker project (`hud_group` = the project that owns the ticket, also for cross-repo tickets whose worker runs in another repo, so the fork can match the worker); set `hud_group`/`hud_subgroup` pane tokens for every worker the same way (src/runtime/pane-group.ts, direct-exec.ts) so workers of a cross-repo ticket group with their run; give every role a glyph, with a neutral fallback for roles without one (frontier-imp, prototyper, innovator, general); ages in one compact format matching the frames (`47m`, `12m`, `3h`), independent of panel language. Golden test: a fixture with one ticket queue, one land flow and one cross-repo ticket yields exactly the C1 run shape.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: land flows produce no projected run",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a cross-repo ticket's run and its worker pane tokens share hud_group = tracker project",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: unknown roles get the neutral glyph",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Test: ages render as 47m/12m/3h in zh and en",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Golden test against frame C1's run",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T20:29:26.221Z",
+          "author": "main",
+          "text": "Role glyph rule (main, agreed with 07): derive from the role's instructions: implementer-instruction roles (imp, frontier-imp, prototyper, general borrowing imp) `⚒`, oracle-instruction roles (oracle, innovator) `◈`, reviewer `⚖`; a HUD worker whose role still has no glyph gets `▫` (never `◇`, which is Execution's review mark). Step labels follow the frames exactly: ticket numbers glued to the shape (`✓01`), word labels spaced as drawn."
+        }
+      ],
+      "created_at": "2026-11-27T20:28:48.285Z",
+      "updated_at": "2026-11-27T20:29:26.221Z"
     }
   ]
 }

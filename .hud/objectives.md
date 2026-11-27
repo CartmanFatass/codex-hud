@@ -20,7 +20,7 @@
 
 **State:** done
 **Next:** 用 toktrack 测交接等待的前后对比，按你 11-25 的意思留到之后做 toktrack 时再说
-**Features:** handoff
+**Features:** handoff, repair-route
 
 ## engine: 一个工作流引擎运行 HUD 的固定流程（批次、prewalk、council、land），MCP 重启不再丢流程
 

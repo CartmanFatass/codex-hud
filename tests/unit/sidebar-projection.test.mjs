@@ -69,9 +69,9 @@ test('sidebar reuses Home request order and Execution steps; no new generation f
   assert.deepEqual(p.requests, { count: 2, project: 'orchard', age: p.requests.age, sentence: 'Choose the orchard layout' });
   assert.equal(p.extra_projects, 1);
   assert.deepEqual(p.launcher, { execution: 1 });
-  assert.deepEqual(p.runs[0].steps.map(({ id, state, role, pane_id }) => [id, state, role, pane_id]), [
-    ['01', 'running', roleIcon('imp'), 'wS:p2'], ['02', 'done', roleIcon('imp'), undefined],
-    ['review', 'queued', roleIcon('reviewer'), undefined], ['accept', 'queued', roleIcon('lead'), undefined],
+  assert.deepEqual(p.runs[0].steps.map(({ id, label, state, role, pane_id }) => [id, label, state, role, pane_id]), [
+    ['01', '01', 'running', roleIcon('imp'), 'wS:p2'], ['02', '02', 'done', undefined, undefined],
+    ['review', 'review', 'queued', undefined, undefined], ['accept', 'accept', 'queued', undefined, undefined],
   ]);
   assert.ok(p.runs[0].edges.some(edge => edge.join(':') === 'review:accept'));
   const sends = [], publisher = createSidebarPublisher(async params => { sends.push(params); return true; });
@@ -186,4 +186,164 @@ test('a live hidden panel shows the requested run station on sidebar activation'
   assert.equal(ready.projection.runs[0].hud_group, 'orchard');
   fake.activate(hit);
   await shown;
+});
+
+test('C1 dock-ux fixture queue projects short labels, full titles, worker roles and parallel fan edges', async (t) => {
+  const f = fixture(t, { withRun: false, requests: false });
+  const now = f.now, at = new Date(now - 47 * 60_000).toISOString();
+  const qFlow = 'q2000000000000001', j01 = 'j2000000000000001', j02 = 'j2000000000000002', j03 = 'j2000000000000003';
+  const ticketEntry = (number, title, status) => ({
+    number, title, status, role: 'imp', owner_try: false, live_try: 'none', approved_removals: [],
+    blocked_by: [], what: title, acceptance: [{ id: 1, text: title, done: status === 'done' }],
+    comments: [], created_at: at, updated_at: at,
+  });
+  put(join(f.project, '.hud', 'tickets', 'dock-ux.json'), {
+    version: 1, feature: 'dock-ux',
+    tickets: [
+      ticketEntry(1, 'Left dock geometry', 'done'),
+      ticketEntry(2, 'Push dock width', 'ready-for-agent'),
+      ticketEntry(3, 'Dock mode default', 'ready-for-agent'),
+    ],
+  });
+  put(join(f.home, 'flows', `${qFlow}.json`), {
+    flow: qFlow, root: f.project, project_root: f.project, feature: 'dock-ux', pane: 'wS:p1', state: 'working', created_at: at,
+    tickets: [
+      { ticket: 'dock-ux/01', role: 'imp', job: j01, blockers: [], landed: true },
+      // Omit item.role to verify the worker's job.json role still carries into the projection.
+      { ticket: 'dock-ux/02', job: j02, blockers: [], failed: { reason: 'gate failed', at } },
+      { ticket: 'dock-ux/03', role: 'imp', job: j03, blockers: [] },
+    ],
+    steps: { tickets: { state: 'running' }, review: { state: 'waiting' }, accept: { state: 'waiting' } },
+  });
+  for (const [id, state] of [[j01, 'done'], [j02, 'failed'], [j03, 'waiting_orchestrator']]) {
+    put(join(f.home, 'jobs', id, 'job.json'), { job: id, role: 'imp', cwd: f.project, project_root: f.project, created_at: at });
+    put(join(f.home, 'jobs', id, 'STATUS.json'), { state, started_at: at });
+  }
+  const portfolio = await new HomePortfolioCollector(f.home).read(projectList(f.home, f.project), { workers: [] }, now);
+  const runs = readExecutionRuns(f.home, { root: f.project, pane: null }, new Map(), now);
+  const { projection } = buildSidebarProjection(
+    portfolio,
+    runs.map(run => ({ root: f.project, group: 'harbor-api', run })),
+    new Set([f.project]),
+    id => (id === j03 ? 'wS:p3' : undefined),
+    now,
+  );
+  assert.equal(projection.runs.length, 1);
+  const [run] = projection.runs;
+  assert.equal(run.hud_group, 'harbor-api');
+  assert.equal(run.hud_subgroup, 'dock-ux');
+  assert.equal(run.name, 'dock-ux');
+  assert.equal(run.age, '47m');
+  // Matches C1 frame: ╭────┬────╮ / ✓01  ×02⚒ ?03⚒ / ├╌╌╌╌┴╌╌╌╌╯ / ○ review ╌ ○ accept
+  assert.deepEqual(run.steps, [
+    { id: 'dock-ux/01', label: '01', title: 'Left dock geometry', state: 'done' },
+    { id: 'dock-ux/02', label: '02', title: 'Push dock width', state: 'blocked', role: roleIcon('imp') },
+    { id: 'dock-ux/03', label: '03', title: 'Dock mode default', state: 'asked', role: roleIcon('imp'), pane_id: 'wS:p3' },
+    { id: 'review', label: 'review', state: 'queued' },
+    { id: 'accept', label: 'accept', state: 'queued' },
+  ]);
+  assert.deepEqual(run.edges, [
+    ['dock-ux/01', 'review'],
+    ['dock-ux/02', 'review'],
+    ['dock-ux/03', 'review'],
+    ['review', 'accept'],
+  ]);
+});
+
+test('shared-blocker parallel tickets fan together and active review/accept/non-queue workers carry short role-free labels and roles', async (t) => {
+  const f = fixture(t, { withRun: false, requests: false });
+  const now = f.now, at = new Date(now - 12 * 60_000).toISOString();
+  const qFlow = 'q3000000000000001', jRev = 'j3000000000000002', jLead = 'j3000000000000003', jAudit = 'j3000000000000004';
+  put(join(f.home, 'flows', `${qFlow}.json`), {
+    flow: qFlow, root: f.project, project_root: f.project, feature: 'fan', pane: 'wS:p1', state: 'working', created_at: at,
+    tickets: [
+      { ticket: 'fan/01', role: 'imp', blockers: [], landed: true },
+      { ticket: 'fan/02', role: 'imp', blockers: ['fan/01'], landed: true },
+      { ticket: 'fan/03', role: 'imp', blockers: ['fan/01'], landed: true },
+      { ticket: 'fan/04', role: 'imp', blockers: ['fan/01'], landed: true },
+    ],
+    review_job: jRev,
+    active_lead: { job: jLead, kind: 'accept', step: 'accept', round: 1 },
+    steps: { tickets: { state: 'done' }, review: { state: 'running' }, accept: { state: 'running' } },
+  });
+  put(join(f.home, 'jobs', jRev, 'job.json'), { job: jRev, role: 'reviewer', cwd: f.project, project_root: f.project, created_at: at });
+  put(join(f.home, 'jobs', jRev, 'STATUS.json'), { state: 'working', started_at: at });
+  put(join(f.home, 'jobs', jLead, 'job.json'), { job: jLead, role: 'lead', cwd: f.project, project_root: f.project, created_at: at });
+  put(join(f.home, 'jobs', jLead, 'STATUS.json'), { state: 'working', started_at: at });
+
+  // Single-step graph run matching C1 lantern-ui's `◐◈ run audit  12m`, plus step kinds & role-free labels.
+  const gAudit = 'g3000000000000001', gCustom = 'g3000000000000002';
+  put(join(f.home, 'flows', `${gAudit}.json`), {
+    flow: gAudit, project_root: f.project, state: 'working', created_at: at,
+    steps: { audit: { state: 'running', job: jAudit } },
+  });
+  put(join(f.home, 'flows', gAudit, 'graph.json'), {
+    version: 1, name: 'audit',
+    steps: { audit: { kind: 'job', role: 'oracle', needs: [], from: [], optional: false, task: 'Audit cache keys' } },
+  });
+  put(join(f.home, 'jobs', jAudit, 'job.json'), { job: jAudit, role: 'oracle', cwd: f.project, project_root: f.project, created_at: at });
+  put(join(f.home, 'jobs', jAudit, 'STATUS.json'), { state: 'working', started_at: at });
+
+  put(join(f.home, 'flows', `${gCustom}.json`), {
+    flow: gCustom, project_root: f.project, state: 'working', created_at: at,
+    steps: {
+      'oracle-cache': { state: 'done', job: jAudit },
+      land: { state: 'running' },
+      code_review: { state: 'waiting' },
+      lead: { state: 'waiting' },
+      signoff: { state: 'waiting' },
+    },
+  });
+  put(join(f.home, 'flows', gCustom, 'graph.json'), {
+    version: 1, name: 'pipeline',
+    steps: {
+      'oracle-cache': { kind: 'job', role: 'oracle', needs: [], from: [], optional: false, task: 'Audit' },
+      land: { kind: 'land', job: 'oracle-cache', needs: ['oracle-cache'], from: [], optional: false },
+      code_review: { kind: 'job', role: 'reviewer', needs: ['land'], from: [], optional: false, task: 'Review' },
+      lead: { kind: 'job', role: 'lead', needs: ['code_review'], from: [], optional: false, task: 'Lead' },
+      signoff: { kind: 'handback', needs: ['lead'], from: [], optional: false, ask: 'Approve?', options: ['yes'] },
+    },
+  });
+
+  const portfolio = await new HomePortfolioCollector(f.home).read(projectList(f.home, f.project), { workers: [] }, now);
+  const runs = readExecutionRuns(f.home, { root: f.project, pane: null }, new Map(), now);
+  const { projection } = buildSidebarProjection(
+    portfolio,
+    runs.map(run => ({ root: f.project, group: 'lantern-ui', run })),
+    new Set([f.project]),
+    () => undefined,
+    now,
+  );
+  const byName = new Map(projection.runs.map(r => [r.name, r]));
+
+  const fan = byName.get('fan');
+  assert.deepEqual(fan.steps.map(({ label, state, role }) => [label, state, role]), [
+    ['01', 'done', undefined],
+    ['02', 'done', undefined],
+    ['03', 'done', undefined],
+    ['04', 'done', undefined],
+    ['review', 'running', roleIcon('reviewer')],
+    ['accept', 'running', roleIcon('lead')],
+  ]);
+  assert.deepEqual(fan.edges, [
+    ['fan/01', 'fan/02'],
+    ['fan/01', 'fan/03'],
+    ['fan/01', 'fan/04'],
+    ['fan/02', 'review'],
+    ['fan/03', 'review'],
+    ['fan/04', 'review'],
+    ['review', 'accept'],
+  ]);
+
+  const audit = byName.get('audit');
+  assert.deepEqual(audit.steps, [{ id: 'audit', label: 'audit', state: 'running', role: roleIcon('oracle') }]);
+
+  const pipeline = byName.get('pipeline');
+  assert.deepEqual(pipeline.steps.map(({ id, label, role }) => [id, label, role]), [
+    ['oracle-cache', 'cache', undefined],
+    ['land', 'land', roleIcon('oracle')],
+    ['code_review', 'review', undefined],
+    ['lead', 'lead', undefined],
+    ['signoff', 'accept', undefined],
+  ]);
 });

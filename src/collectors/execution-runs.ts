@@ -500,6 +500,13 @@ function projectTicketItem(
 ): ExecutionRunTicket {
   const worker = item.job ? workers.get(item.job) : undefined;
   const execJob = jobTargetFor(home, worker, item.job);
+  const jobRole = !item.role && item.job
+    ? (worker?.role ?? (JOB_ID_RE.test(item.job) ? (() => {
+      const read = cache.readJob<Job>(item.job);
+      return read.status === 'ok' && read.value.job === item.job ? read.value.role : undefined;
+    })() : undefined))
+    : undefined;
+  const ticketRole = item.role ?? (jobRole === 'imp' || jobRole === 'frontend-imp' ? jobRole : undefined);
   const heading = worker?.ticketTitle ?? worker?.briefTitle;
   const first = heading?.match(/^[^\s:]+/)?.[0];
   const title = first && (first === worker?.displayId || first === item.ticket) ? heading!.slice(first.length).replace(/^[:–—\s]+/, '') : heading;
@@ -508,7 +515,7 @@ function projectTicketItem(
   const landDetails = ticketLand(home, item, pass, workers, cache);
   const base = {
     ticket: item.ticket,
-    role: item.role,
+    role: ticketRole,
     ...(item.job ? { jobId: item.job } : {}),
     ...(title ? { title } : {}),
     ...(worker?.startedAt != null ? { since: worker.startedAt } : {}),
@@ -1032,7 +1039,9 @@ function readFixedExecutionRun(
           : 'waiting';
     const gateState: RunStepState = progress?.kind === 'gate' ? 'running'
       : gateTiming?.ok === false ? 'failed' : gateTiming?.ok && gate?.index === gate?.total ? 'done' : 'waiting';
-    const job = workers.get(land.job), source = { jobId: land.job, execJob: jobTargetFor(home, job, land.job) };
+    const job = workers.get(land.job);
+    const sourceRole = job?.role ?? (JOB_ID_RE.test(land.job) ? getJob(land.job)?.role : undefined);
+    const source = { jobId: land.job, ...(sourceRole ? { role: sourceRole } : {}), execJob: jobTargetFor(home, job, land.job) };
     const current = progress?.kind === 'repair' && metroRepair?.jobId
       ? { jobId: metroRepair.jobId, execJob: metroRepair.execJob } : source;
     const createdAt = parseTime(land.created_at);
@@ -1172,7 +1181,7 @@ function readFixedExecutionRun(
     });
     const scoutNodes = nodes.length ? nodes : [{ key: 'scouts', word: 'Scouts', state: cursorState(run.steps?.scouts),
       changedAt: parseTime(run.steps?.scouts?.changed_at) ?? undefined }];
-    const targetNode = nodeFor('target', id, cursorState(run.steps?.target), { word: 'Worker', role: parent?.role ?? undefined });
+    const targetNode = nodeFor('target', id, cursorState(run.steps?.target), { word: 'Worker', role: parent?.role ?? owner?.role ?? undefined });
     const scoutsStepAt = parseTime(run.steps?.scouts?.changed_at) ?? undefined;
     const targetStepAt = parseTime(run.steps?.target?.changed_at) ?? undefined;
     const scoutStations: MetroStation[] = scoutNodes.map((n) => {
@@ -1233,7 +1242,7 @@ function readFixedExecutionRun(
       ? maxTime(parseTime(cursor?.changed_at), batchMembersChangedAt(cursor?.items))
       : parseTime(cursor?.changed_at) ?? undefined;
     return { key, state: cursorState(cursor), blockers: step.needs, reason: cursor?.reason,
-      role: step.kind === 'job' || step.kind === 'batch' ? step.role : undefined,
+      role: step.kind === 'job' || step.kind === 'batch' ? step.role : (worker?.role ?? (jobId && JOB_ID_RE.test(jobId) ? getJob(jobId)?.role : undefined)),
       jobId, ...(jobId && jobId === inputJobId ? { borrowedJob: true as const } : {}),
       execJob: jobTargetFor(home, worker, jobId), since: worker?.startedAt ?? undefined,
       changedAt };

@@ -535,6 +535,51 @@
       "comments": [],
       "created_at": "2026-11-27T17:43:59.631Z",
       "updated_at": "2026-11-27T19:29:50.213Z"
+    },
+    {
+      "number": 34,
+      "title": "One reader-eligibility rule for every notice path; settled stores cost nothing per tick",
+      "status": "ready-for-agent",
+      "role": "imp",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/32",
+        "unattended/33"
+      ],
+      "what": "Milestone review jb3f023619aa9d4e3 (read with hud_read) repeats three kinds earlier rounds already repaired: the wrong reader consumes a notice, a reader sees a permission it cannot answer, quiet clients do steady-state work. Root cause to fix, not the five instances: who may see, consume and answer a worker notice (permission or question) is decided separately in adoption (src/roles/job-project.ts, src/collectors/thin-jobs.ts), the question collector and hud_ask routing (src/worker/qa.ts, batch-step), the permission answer path (src/mcp/mcp/operations.ts, src/roles/select-send.ts) and task notices (src/workflows/events.ts, scope.ts). Make one eligibility function (origin main, connection owner, or validated non-worker main fallback in the same project) and route every path through it, deleting the per-path variants: a reader that sees a notice can answer it; a reader that cannot collect a question is never credited with delivery; adoption only promotes a validated non-worker main. Quiet clients: on a settled store the one-second tick does no flow-directory enumeration or ledger scan (reuse the unchanged-directory stamp; retry only obligations eligible for this reader's project). Keep what the review says to keep (/31 fixes, /32's consolidated send gate, Antigravity acknowledgement, Pi refusal, /33's accepted-marker check). Delete `notifyOutcome` if it only returns `.outcome`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests, one per finding 1-5 of jb3f023619aa9d4e3, each failing before the change",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Grep shows one eligibility function used by adoption, question collection, permission answer and task notices",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Idle-timer test with flow history and a foreign-project pending permission does no per-tick directory enumeration",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Net line count of src and packages is negative",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "npm run gate (or the project's check) passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T19:39:07.153Z",
+      "updated_at": "2026-11-27T19:39:07.153Z"
     }
   ]
 }

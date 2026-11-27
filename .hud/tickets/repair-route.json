@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "feature": "repair-route",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "Register the frontier-imp role (Astra xhigh); repair jobs go to it",
+      "status": "ready-for-agent",
+      "role": "imp",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "objective": "handoff",
+      "what": "D-2026-11-27-06 as revised by the owner: a dedicated role `frontier-imp` handles escalated repairs; imp's placement and frontend-imp are unchanged. (1) Register `frontier-imp` as a first-class implementer role: shipped default role file (implementer instructions, can_continue, one pi place `openai/gpt-6.2-astra` thinking `xhigh`), accepted everywhere `imp` is (hud_create role, ticket `role` enum, roster, role caps, worktree isolation, hud_land, panel/Control listing). The owner's ~/.hud/roles/frontier-imp.json already exists with that content; roster must list it. (2) A repair job goes to frontier-imp instead of imp placement: (a) a ticket dispatch whose ticket has a non-empty `repairs` list and role imp (ticket queue, unattended runs, main's hud_create with `ticket`); (b) a `hud_send` repair of an imp job that starts a new job because the source closed outside the resume window (`continued_as`). Unchanged: land-gate check repairs and native-session resumes keep the source worker; explicit `retry_of` keeps its role/preset; frontend-imp tickets stay frontend-imp. If frontier-imp is unavailable (quota, trust, cap), fall back to imp placement and record why. Record `route.source: \"repair-route\"` on the job. Update docs/reference.md (roles list, placement section, the land-repair line).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: hud_roster lists frontier-imp; hud_create role frontier-imp with worktree isolation runs on pi astra xhigh",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: an imp repair ticket under even placement dispatches as frontier-imp with route source repair-route; a frontend-imp repair ticket stays frontend-imp",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: hud_send repair after close starts a frontier-imp job; within the resume window the source session resumes",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Test: land-gate repair and retry_of keep the source; frontier-imp unavailable falls back to imp with a recorded reason",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Shipped role file and reference.md updated",
+          "done": false
+        }
+      ],
+      "comments": [
+        {
+          "at": "2026-11-27T19:44:26.647Z",
+          "author": "main",
+          "text": "Owner correction 2026-11-27: a separate frontier-imp role, not a per-role repair place; frontend-imp must not change."
+        }
+      ],
+      "created_at": "2026-11-27T19:42:30.451Z",
+      "updated_at": "2026-11-27T19:44:26.647Z"
+    }
+  ]
+}
