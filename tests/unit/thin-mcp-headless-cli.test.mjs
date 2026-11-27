@@ -36,6 +36,7 @@ if (agent === 'claude') {
   if (advisor) {
     assert.equal(value('--tools'), '');
     assert.equal(value('--setting-sources'), '');
+    assert.match(value('--system-prompt'), /^Discuss only the supplied selection\./);
     assert.ok(!args.includes('--append-system-prompt-file'));
   }
 } else {
@@ -100,7 +101,7 @@ test('default selection advisor runs a report-only Claude Code turn', { timeout:
   const f = await fixture(t);
   f.overrideBin('claude', fakeCli('claude'));
   const code = `import { startSelectionAdvisor } from ${JSON.stringify(url('../../dist/roles/selection-advisor.js'))};
-    const row = await startSelectionAdvisor(process.env.HUD_HOME, { excerpt: '+ synthetic guard', question: 'Why?',
+    const { advisor: row } = await startSelectionAdvisor(process.env.HUD_HOME, { excerpt: '+ synthetic guard', question: 'Why?',
       source: { project: 'fixture', projectRoot: process.cwd(), pane: 'w4E:p1', job: null, role: null, time: new Date().toISOString() } }, process.env);
     console.log(JSON.stringify(row));`;
   const row = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', code], { cwd: f.root, env: f.env, encoding: 'utf8' }));

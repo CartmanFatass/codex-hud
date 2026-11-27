@@ -53,15 +53,17 @@ await extension({ on: (name, fn) => hooks.set(name, [...hooks.get(name) ?? [], f
   registerTool: t => tools[t.name] = t, sendMessage: message => notices.push(message),
   getAllTools: () => Object.keys(tools).map(name => ({ name })), getActiveTools: () => active,
   setActiveTools: names => { active = names; }, getThinkingLevel: () => option('--thinking') ?? 'off' });
-const emit = (key, event, context = ctx) => { for (const fn of hooks.get(key) ?? []) fn(event, context); };
+const emit = (key, event, context = ctx) => (hooks.get(key) ?? []).map(fn => fn(event, context));
 emit('session_start', {});
 const advisor = Boolean(JSON.parse(fs.readFileSync(join(dir, 'job.json'))).selection_advisor);
 assert.deepEqual([...active].sort(), advisor ? ['hud_report'] : ['hud_ask', 'hud_lease', 'hud_progress', 'hud_report', 'hud_sonic']);
 const opts = { sections: {}, skills: [] };
-emit('before_agent_start', { systemPromptOptions: opts });
+const results = emit('before_agent_start', { systemPromptOptions: opts });
 if (advisor) {
+  assert.match(results.find(result => result?.systemPrompt)?.systemPrompt, /^Discuss only the supplied selection\\./);
   assert.equal(opts.sections.role, undefined);
   assert.ok(args.includes('--no-context-files'));
+  assert.equal(option('--tools'), 'hud_report');
   assert.ok(!args.includes('--skill') && !args.includes('--append-system-prompt'));
 } else fs.writeFileSync(join(dir, 'role-section'), opts.sections.role);
 const prompt = args.at(-1);
@@ -199,7 +201,8 @@ test('selection advisor popup hides and reopens one native conversation, with in
     return { send: keys => child.stdin.write(keys), see: async text => {
       try { await until(() => buffer.includes(text), 6000); }
       catch { assert.fail(`popup did not show ${text}: ${err}\n${buffer.slice(-1600)}`); }
-    }, hide: async () => { child.stdin.end('\x1b'); assert.deepEqual(await exited, [0, null], err); } };
+      return buffer.split('\n').find(line => line.includes(text));
+    }, hide: async () => { child.stdin.end('\x1b'); assert.deepEqual(await exited, [0, null], err); return buffer; } };
   };
   const select = async text => {
     const ui = popup({ context: { selected_text: text, focused_pane_id: 'w4E:p1', focused_pane_cwd: f.root } });
@@ -214,6 +217,7 @@ test('selection advisor popup hides and reopens one native conversation, with in
   const first = await select('- duplicate()');
   const [original] = excerpts(), dir = join(home, 'jobs', original.target);
   assert.equal(original.role, 'oracle');
+  assert.equal(original.source.projectRoot, f.root);
   assert.equal(original.question, 'Why is this needed?');
   await first.hide();
   assert.equal(cliState(dir).state, 'working');
@@ -258,6 +262,24 @@ test('selection advisor popup hides and reopens one native conversation, with in
   assert.equal(excerpts()[1].answer.text, 'The hunk removes the duplicate.');
   await second.hide();
   assert.ok(noTab(f));
+
+  await t.test('failed launch with a job receipt leaves the composer draft editable', async () => {
+    write(f.env.HUD_SETTINGS_PATH, JSON.stringify({ selectionAdvisorRole: 'fixture-advisor' }));
+    write(join(roles, 'fixture-advisor.json'), JSON.stringify({ role: 'fixture-advisor', instructions: 'oracle', can_continue: true,
+      run: [{ harness: 'cli', agent: 'claude' }] }));
+    write(join(f.env.CLAUDE_CONFIG_DIR, '.claude.json'), '{}');
+    const ui = popup({ context: { selected_text: '+ launch guard', focused_pane_id: 'w4E:p1', focused_pane_cwd: f.root } });
+    await ui.see('+ launch guard');
+    ui.send('\t\x1b[F\rKeep this draft.\r');
+    const frame = await ui.see('Could not start advisor. Draft kept.');
+    assert.match(frame, /claude has not trusted/);
+    assert.match(frame, /Ask an advisor.*Question: Keep this draft\./);
+    ui.send('\x7f!');
+    await ui.see('Question: Keep this draft!');
+    assert.doesNotMatch(await ui.hide(), /Selection advisor/);
+    const [failed] = excerpts();
+    assert.equal(cliState(join(home, 'jobs', failed.target)).state, 'failed');
+  });
 });
 
 test('resumed Pi rejects a replacement session ID or file before delivering the answer', async t => {

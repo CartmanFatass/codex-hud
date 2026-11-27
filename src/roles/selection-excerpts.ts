@@ -1,11 +1,11 @@
 /** Private, bounded receipts for selection replies, advisors and next-turn notes, independent of the source pane. */
 import { randomUUID } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { isShellLaunchedWorker } from '../runtime/herdr-socket.js';
-import { withAbstractLock } from '../utils/abstract-lock.js';
+import { tryAbstractLock, withAbstractLock } from '../utils/abstract-lock.js';
 import { readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
 import { herdrId } from './herdr-run.js';
 import { sharedRoot } from './projects.js';
@@ -58,6 +58,12 @@ function storeFile(home: string): string {
   try { root = realpathSync(home); } catch { root = resolve(home); }
   return join(root, 'selection-excerpts.json');
 }
+const advisorLockKey = (file: string, id: string) => join(dirname(file), id);
+
+export function withSelectionAdvisorLock<T>(home: string, id: string, run: () => Promise<T>): Promise<T> {
+  return withAbstractLock('selection-advisor', advisorLockKey(storeFile(home), id), run);
+}
+
 function readStore(file: string): SelectionExcerpt[] {
   try { return readJsonBounded(file, MAX_BYTES) as SelectionExcerpt[]; }
   catch (error) {
@@ -120,16 +126,36 @@ export async function recordAdvisorAnswer(home: string, id: string, target: stri
 
 type ExcerptInput = Omit<SelectionExcerpt, 'id' | 'delivery' | 'answer' | 'note'>;
 
-function appendExcerpt(home: string, file: string, row: SelectionExcerpt): void {
+function advisorSettled(cache: JobIndexCache, row: SelectionExcerpt): boolean {
+  if (row.advisor?.ended) return true;
+  const status = cache.readStatus<JobStatus>(row.target);
+  if (status.status === 'ok') return ['done', 'closed', 'failed', 'stopped'].includes(status.value.state);
+  // Initial dispatch creates the job directory before recording the card; no status yet is not a terminal state.
+  return status.status === 'missing' && !cache.readJobDirMeta(row.target);
+}
+
+async function appendExcerpt(home: string, file: string, row: SelectionExcerpt): Promise<void> {
   const rows = readStore(file);
-  if (rows.length >= MAX_RECORDS) {
-    const cache = getJobIndexCache(home);
-    let evict = rows.length - 1;
-    while (evict >= 0 && rows[evict].delivery === 'pending' && !noteUndelivered(home, cache, rows[evict])) evict--;
-    if (evict < 0) throw new Error('selection excerpt store full');
-    rows.splice(evict, 1);
+  if (rows.length < MAX_RECORDS) {
+    writeJsonPrivate(file, [row, ...rows]);
+    return;
   }
-  writeJsonPrivate(file, [row, ...rows]);
+  const cache = getJobIndexCache(home);
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const candidate = rows[i];
+    if (candidate.delivery === 'pending' && !noteUndelivered(home, cache, candidate)) continue;
+    // A follow-up holds this lock before replacing its preceding turn's terminal status.
+    // Never wait for it here: a follow-up takes the store lock to record its question.
+    const release = candidate.advisor && await tryAbstractLock('selection-advisor', advisorLockKey(file, candidate.id));
+    if (candidate.advisor && !release) continue;
+    try {
+      if (candidate.advisor && !advisorSettled(cache, candidate)) continue;
+      rows.splice(i, 1);
+      writeJsonPrivate(file, [row, ...rows]);
+      return;
+    } finally { await release?.(); }
+  }
+  throw new Error('selection excerpt store full');
 }
 
 export async function recordSelectionExcerpt(home: string, input: ExcerptInput, id = randomUUID() as string): Promise<SelectionExcerpt> {
@@ -142,7 +168,7 @@ export async function recordSelectionExcerpt(home: string, input: ExcerptInput, 
 export function recordSelectionNote(home: string, input: Omit<ExcerptInput, 'question' | 'advisor'> & { note: string },
   endpoint: string | undefined, signal?: AbortSignal) {
   const file = storeFile(home), cache = getJobIndexCache(home);
-  return withAbstractLock('selection-excerpts', file, () => {
+  return withAbstractLock('selection-excerpts', file, async () => {
     const row: SelectionExcerpt = { ...input, question: '', id: randomUUID(), delivery: 'pending' };
     if (noteUndelivered(home, cache, row)) row.delivery = 'undelivered';
     else {
@@ -152,7 +178,7 @@ export function recordSelectionNote(home: string, input: Omit<ExcerptInput, 'que
           status.status !== 'ok' || !['working', 'idle_grace'].includes(status.value.state) ||
           !excerptTargetSupported(job.value, fields, endpoint) || fields.launchId !== input.launchId) return null;
     }
-    appendExcerpt(home, file, row);
+    await appendExcerpt(home, file, row);
     return row;
   }, { signal });
 }

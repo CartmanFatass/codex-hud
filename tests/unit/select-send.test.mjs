@@ -35,7 +35,7 @@ import { setDisplayConfig } from '../../dist/render/hud-config.js';
 import { setLanguage } from '../../dist/render/i18n.js';
 import { visualLength } from '../../dist/render/colors.js';
 import { getJobIndexCache } from '../../dist/roles/job-index-cache.js';
-import { readSelectionExcerpts } from '../../dist/roles/selection-excerpts.js';
+import { readSelectionAdvisor, readSelectionExcerpts, recordAdvisorAnswer, recordSelectionExcerpt, withSelectionAdvisorLock } from '../../dist/roles/selection-excerpts.js';
 import { PanelExecution } from '../../dist/panel/execution.js';
 import { executionRows } from '../../dist/render/execution-view.js';
 import { selectionExcerptRows } from '../../dist/render/selection-excerpts.js';
@@ -44,6 +44,41 @@ import { workInspectorRows } from '../../dist/render/work-inspector.js';
 const root = resolve(new URL('../..', import.meta.url).pathname);
 const guardedPong = { result: { type: 'pong', version: '0.9.5-hud.a26432a7', capabilities: { guarded_prompt: true, hidden_tabs: true, pane_strip: true } } };
 const prompted = { result: { type: 'agent_prompted' } };
+
+test('excerpt retention protects running advisors and follow-up admission but expires settled cards', async t => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'hud-selection-retention-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const source = { project: 'fixture', projectRoot: '/synthetic/project', pane: 'w4E:p1', job: null, role: null, time: new Date(0).toISOString() };
+  const input = { source, excerpt: '+ guard()', question: 'Why?', role: 'oracle', launchId: '' };
+  const status = (job, state) => fs.writeFileSync(join(home, 'jobs', job, 'STATUS.json'), JSON.stringify({ state }));
+  const advisor = async (n, state) => {
+    const target = `j${String(n).padStart(16, '0')}`;
+    fs.mkdirSync(join(home, 'jobs', target), { recursive: true });
+    const row = await recordSelectionExcerpt(home, { ...input, target, advisor: { followups: [] } });
+    if (state) status(target, state);
+    return row;
+  };
+  const active = await advisor(1); // The card is recorded before dispatch publishes STATUS.
+  const resuming = await advisor(2, 'closed');
+  const settled = await advisor(3, 'closed');
+  const newer = () => recordSelectionExcerpt(home, { ...input, target: settled.target });
+  for (let i = 0; i < 61; i++) await newer();
+  await withSelectionAdvisorLock(home, resuming.id, async () => {
+    await newer();
+    assert.ok(readSelectionAdvisor(home, active.id));
+    assert.ok(readSelectionAdvisor(home, resuming.id)); // Old terminal status during admission.
+    assert.equal(readSelectionAdvisor(home, settled.id), undefined);
+  });
+  status(active.target, 'working');
+  await recordAdvisorAnswer(home, active.id, active.target, 'The guard runs once.');
+  await newer();
+  assert.equal(readSelectionAdvisor(home, active.id)?.answer.text, 'The guard runs once.');
+  assert.equal(readSelectionAdvisor(home, resuming.id), undefined);
+  status(active.target, 'closed');
+  await newer();
+  assert.equal(readSelectionAdvisor(home, active.id), undefined);
+  assert.equal(readSelectionExcerpts(home, getJobIndexCache(home), { project: source.projectRoot }).length, 64);
+});
 
 async function fakeFork(t, handler) {
   const dir = fs.mkdtempSync(join(tmpdir(), 'hud-select-send-'));

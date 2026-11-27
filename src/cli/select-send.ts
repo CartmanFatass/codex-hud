@@ -337,10 +337,11 @@ export async function runComposerSession(opts: ComposerSessionOptions): Promise<
         }
         const source = { ...state.source, time: now().toISOString() };
         if (askAdvisor) {
-          advisor = await startSelectionAdvisor(opts.hudHome, { excerpt: state.excerpt.text, source, question: state.question }, opts.env);
+          const result = await startSelectionAdvisor(opts.hudHome, { excerpt: state.excerpt.text, source, question: state.question }, opts.env);
+          advisor = result.advisor;
           advisorId = advisor?.id;
           state = { ...state, phase: 'editing', ...(advisor ? { question: '', cursor: 0, scroll: 0 }
-            : { error: t('Could not start advisor. Draft kept.') }) };
+            : { error: [t('Could not start advisor. Draft kept.'), result.error].filter(Boolean).join(' ') }) };
           if (!finished) paint();
           return;
         }

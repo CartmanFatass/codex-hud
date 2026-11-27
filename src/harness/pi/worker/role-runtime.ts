@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { selectionAdvisorInstructions } from '../../../roles/selection-advisor-prompt.js';
 import { sessionProtocolTools, sonicProtocolTools, type WorkerContract } from './contract.js';
 import type { WorkerPi } from './host.js';
 
@@ -29,8 +30,11 @@ export function roleRuntime(pi: WorkerPi, contract: WorkerContract, fatal = fail
     }
   });
   pi.on('before_agent_start', ({ systemPromptOptions }) => {
+    // Pi projects a returned systemPrompt over all system messages in the provider
+    // request, including previously recorded messages on a native resume.
+    if (advisor) return { systemPrompt: selectionAdvisorInstructions };
     if (!systemPromptOptions) return;
-    if (!advisor) systemPromptOptions.sections.role = instructions;
+    systemPromptOptions.sections.role = instructions;
     systemPromptOptions.skills = systemPromptOptions.skills.filter(skill => skill.name !== 'helper-pane');
   });
 }

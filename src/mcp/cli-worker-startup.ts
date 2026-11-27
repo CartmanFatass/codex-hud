@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writePrivateFile } from '../utils/atomic-fs.js';
 import type { RolePlace } from '../roles/roster.js';
+import { selectionAdvisorInstructions } from '../roles/selection-advisor-prompt.js';
 import { jobFiles } from './paths.js';
 import { briefPrompt, readInlineText } from './brief-prompt.js';
 import { codexWorkerMcp } from './codex-worker-mcp.js';
@@ -90,7 +91,7 @@ export function cliWorkerStartup(place: RolePlace, cwd: string, dir: string, ins
     // https://code.claude.com/docs/en/mcp#exempt-a-server-from-deferral
     writePrivateFile(file, JSON.stringify({ mcpServers: Object.fromEntries([['hud', { ...hud, alwaysLoad: true }], ...claudeServers(names)]) }));
     const args = ['--strict-mcp-config', '--mcp-config', file];
-    if (advisor) return { args: [...args, '--tools', '', '--setting-sources', ''], prompt };
+    if (advisor) return { args: [...args, '--tools', '', '--setting-sources', '', '--system-prompt', selectionAdvisorInstructions], prompt };
     return isHerdrAgentArg(instructions)
       ? { args: [...args, '--append-system-prompt-file', instructions], prompt }
       : { args, prompt: firstPromptWithRole(briefPath, instructions) };
