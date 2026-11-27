@@ -379,7 +379,7 @@
     {
       "number": 36,
       "title": "A needs-triage ticket is not shown as blocked",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "Open nav-redesign on the Feature page and confirm 15 shows the triage word",
       "approved_removals": [],
@@ -389,17 +389,24 @@
         {
           "id": 1,
           "text": "Test: a needs-triage ticket with no blockers renders the triage state word in EN and ZH and is not counted as blocked",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T08:37:00.191Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "efc8bc273d89fff4a5ff00d4fc2a3acfb21029c7",
+        "gates": 5
+      },
       "comments": [],
-      "created_at": "2026-11-27T06:39:27.936Z",
-      "updated_at": "2026-11-27T06:39:27.936Z"
+      "created_at": "2026-11-27T08:37:00.191Z",
+      "updated_at": "2026-11-27T08:37:00.191Z"
     },
     {
       "number": 37,
@@ -434,7 +441,7 @@
     {
       "number": 38,
       "title": "A headless sonic that answers in chat without hud_report keeps its answer",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -444,27 +451,34 @@
         {
           "id": 1,
           "text": "Test: a fake headless sonic that settles with final text and no hud_report yields a done job whose report is that text with the salvaged marker",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: aborted, errored or empty-final-text runs still fail with the current reason",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: the parent's collection notice for a salvaged sonic shows the marker",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T08:37:00.196Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "efc8bc273d89fff4a5ff00d4fc2a3acfb21029c7",
+        "gates": 5
+      },
       "comments": [],
-      "created_at": "2026-11-27T06:58:31.899Z",
-      "updated_at": "2026-11-27T06:58:31.899Z"
+      "created_at": "2026-11-27T08:37:00.196Z",
+      "updated_at": "2026-11-27T08:37:00.196Z"
     },
     {
       "number": 39,
