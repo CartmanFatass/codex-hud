@@ -626,6 +626,81 @@ test('ready names an unregistered ticket repo for JSON and legacy Markdown ticke
   assert.deepEqual((await ready()).tickets.map(t => [t.ticket, t.repo]), [['json/01', repo], ['legacy/01', repo]]);
 });
 
+test('ticket repo stores $HOME paths as ~/..., accepts ~/..., leaves outside-$HOME unchanged and expands for readiness/dispatch', async t => {
+  const f = await fixture(t);
+  const homeProjects = join(f.env.HOME, 'projects');
+  fs.mkdirSync(homeProjects, { recursive: true });
+  const homeTarget = join(homeProjects, 'target');
+  fs.renameSync(initRepo(homeProjects), homeTarget);
+  const realHomeTarget = fs.realpathSync(homeTarget);
+  const outsideTarget = initRepo(f.root);
+  const draft = { title: 'Repo test', blocked_by: [], acceptance: ['Checked'], what: 'Synthetic repo goal.' };
+
+  const { tickets: [{ path }] } = await f.call('hud_tickets', {
+    op: 'add',
+    feature: 'repos',
+    tickets: [
+      { ...draft, title: 'Abs home', repo: homeTarget },
+      { ...draft, title: 'Tilde home', repo: '~/projects/target' },
+      { ...draft, title: 'Updated home' },
+      { ...draft, title: 'Outside home', repo: outsideTarget },
+    ],
+  });
+  await f.call('hud_tickets', { op: 'update', feature: 'repos', ticket: 3, repo: homeTarget });
+  await f.call('hud_tickets', { op: 'update', feature: 'repos', ticket: 4, repo: outsideTarget });
+
+  const rawJson = fs.readFileSync(path, 'utf8');
+  assert.equal(rawJson.includes(f.env.HOME), false, 'serialized feature JSON must not contain $HOME');
+  const stored = JSON.parse(rawJson).tickets;
+  assert.deepEqual(stored.map(item => item.repo), [
+    '~/projects/target',
+    '~/projects/target',
+    '~/projects/target',
+    outsideTarget,
+  ]);
+
+  // Relative and other-user ~user paths are still rejected.
+  for (const badRepo of ['projects/target', '~other/projects/target', '']) {
+    const { result } = await f.rpc('tools/call', {
+      name: 'hud_tickets',
+      arguments: { op: 'update', feature: 'repos', ticket: 1, repo: badRepo },
+    });
+    assert.equal(result.isError, true);
+    assert.match(JSON.parse(result.content[0].text).error, /invalid_arguments: repo/);
+  }
+
+  // Unregistered repos stay not-ready with reasons naming their expanded absolute paths.
+  const ready = () => f.call('hud_tickets', { op: 'ready' });
+  const blocked = await ready();
+  assert.deepEqual(blocked.tickets, []);
+  assert.deepEqual(blocked.blocked, [
+    { ticket: 'repos/01', blockers: [`repo ${JSON.stringify(homeTarget)} is not a registered project root`] },
+    { ticket: 'repos/02', blockers: [`repo ${JSON.stringify(homeTarget)} is not a registered project root`] },
+    { ticket: 'repos/03', blockers: [`repo ${JSON.stringify(homeTarget)} is not a registered project root`] },
+    { ticket: 'repos/04', blockers: [`repo ${JSON.stringify(outsideTarget)} is not a registered project root`] },
+  ]);
+
+  // Once registered, ready returns expanded real target roots and hud_create dispatches in the target while keeping the brief home-relative.
+  fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({
+    version: 1,
+    projects: [{ root: f.root }, { root: realHomeTarget }, { root: outsideTarget }],
+  }));
+  assert.deepEqual((await ready()).tickets.map(item => [item.ticket, item.repo]), [
+    ['repos/01', realHomeTarget],
+    ['repos/02', realHomeTarget],
+    ['repos/03', realHomeTarget],
+    ['repos/04', outsideTarget],
+  ]);
+
+  const job = await f.call('hud_create', { role: 'general', ticket: 'repos/02', cwd: realHomeTarget });
+  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+  assert.equal(receipt.cwd, realHomeTarget);
+  assert.equal(receipt.ticket_root, f.root);
+  const brief = fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8');
+  assert.match(brief, /\*\*Repo:\*\* ~\/projects\/target/);
+  assert.equal(brief.includes(f.env.HOME), false);
+});
+
 test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const f = await fixture(t, true, watchStatsProbe);
   const initialized = await f.rpc('initialize', { protocolVersion: '2024-11-05' });

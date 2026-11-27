@@ -191,6 +191,7 @@ test('ticket queue lands in the registered target and records the landing only i
   const draft = { title: 'Tracker ticket', what: 'Write the sample in the target.', blocked_by: [], acceptance: ['File exists.'] };
   const add = (cwd, ticket) => f.call('hud_tickets', { op: 'add', feature: 'cross', cwd, tickets: [ticket] });
   const { tickets: [{ path }] } = await add(f.root, { ...draft, repo });
+  assert.equal(read(path).tickets[0].repo, repo); // Outside-$HOME repo root is stored unchanged.
   const { tickets: [{ path: decoy }] } = await add(repo, { ...draft, title: 'Unrelated same-ref ticket' });
   f.git(repo, 'add', '.hud');
   f.git(repo, 'commit', '-qm', 'Synthetic target');
@@ -221,6 +222,68 @@ test('ticket queue lands in the registered target and records the landing only i
   assert.deepEqual(ticket.landing, { at: land.landed_at, job: id, flow: item.land, replay_base: land.base_sha, gates: 1, commit: land.landed_sha });
   assert.equal(read(decoy).tickets[0].status, 'ready-for-agent');
   assert.equal(f.git(f.root, 'rev-parse', 'HEAD'), trackerHead);
+});
+
+test('ticket queue stores $HOME repo as ~/... for add, update and ~/... input, and dispatches/lands in a target worktree', { timeout: 45_000 }, async t => {
+  const f = await project(t);
+  const target = join(f.env.HOME, 'projects', 'target');
+  fs.mkdirSync(target, { recursive: true });
+  const realTarget = fs.realpathSync(target);
+  f.git(target, 'init', '-qb', 'target-base');
+  f.git(target, 'config', 'user.name', 'Synthetic');
+  f.git(target, 'config', 'user.email', 'synthetic@example.invalid');
+  fs.mkdirSync(join(target, '.hud'));
+  const config = { base: 'target-base', gate: ['true'], after: [], push: false };
+  fs.writeFileSync(join(target, '.hud/project.json'), JSON.stringify({ land: config }));
+  fs.writeFileSync(join(f.root, '.hud/project.json'), '{}'); // Only the target needs a land block.
+  f.git(f.root, 'commit', '-qm', 'Tracker without land config', '--', '.hud/project.json');
+  fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: f.root }, { root: realTarget }] }));
+
+  const draft = { title: 'Home target ticket', what: 'Write the sample in the home target.', blocked_by: [], acceptance: ['File exists.'] };
+  const { tickets: [{ path }] } = await f.call('hud_tickets', {
+    op: 'add', feature: 'cross-home', cwd: f.root,
+    tickets: [
+      { ...draft, title: 'Added with $HOME', repo: target },
+      { ...draft, title: 'Updated with $HOME' },
+      { ...draft, title: 'Added with tilde', repo: '~/projects/target' },
+    ],
+  });
+  await f.call('hud_tickets', { op: 'update', feature: 'cross-home', ticket: 2, cwd: f.root, repo: target });
+
+  const rawJson = fs.readFileSync(path, 'utf8');
+  assert.equal(rawJson.includes(f.env.HOME), false, 'serialized feature JSON must not contain $HOME');
+  assert.deepEqual(read(path).tickets.map(item => item.repo), ['~/projects/target', '~/projects/target', '~/projects/target']);
+
+  f.git(target, 'add', '.hud');
+  f.git(target, 'commit', '-qm', 'Synthetic home target');
+  const { flow } = await f.start(3, 'cross-home');
+  const ids = await f.jobs(flow, 3);
+  const worktrees = f.git(target, 'worktree', 'list', '--porcelain');
+  for (const id of ids) {
+    const job = f.job(id);
+    assert.equal(job.worktree.main_root, realTarget);
+    assert.equal(job.cwd, job.worktree.root);
+    assert.equal(job.project_root, realTarget);
+    assert.equal(job.ticket_root, f.root);
+    assert.ok(worktrees.includes(`worktree ${job.cwd}\n`));
+    const brief = fs.readFileSync(join(f.dir(id), 'brief.md'), 'utf8');
+    assert.match(brief, /\*\*Repo:\*\* ~\/projects\/target/);
+    assert.equal(brief.includes(f.env.HOME), false, 'rendered ticket brief must keep repo home-relative');
+    await f.settle(id);
+  }
+  const run = await f.end(flow);
+  assert.equal(run.state, 'completed', JSON.stringify(run));
+  assert.equal(run.tickets.every(item => item.landed), true);
+  assert.equal(f.git(target, 'show', 'target-base:cross-home-01.txt'), 'Synthetic implementation.');
+  assert.equal(f.git(target, 'show', 'target-base:cross-home-02.txt'), 'Synthetic implementation.');
+  assert.equal(f.git(target, 'show', 'target-base:cross-home-03.txt'), 'Synthetic implementation.');
+  const landedJson = fs.readFileSync(path, 'utf8');
+  assert.equal(landedJson.includes(f.env.HOME), false, 'landed feature JSON must keep repo home-relative');
+  assert.deepEqual(read(path).tickets.map(item => [item.status, item.repo]), [
+    ['done', '~/projects/target'],
+    ['done', '~/projects/target'],
+    ['done', '~/projects/target'],
+  ]);
 });
 
 test('Execution collects a future same-feature dependency and keeps repair rounds after its blocker lands', { timeout: 45_000 }, async t => {

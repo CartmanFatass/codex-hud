@@ -731,7 +731,7 @@
     {
       "number": 44,
       "title": "A ticket's repo field is stored home-relative in the public tracker",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -745,32 +745,39 @@
         {
           "id": 1,
           "text": "Test: add/update with repo `$HOME/projects/target` stores `~/projects/target` in the serialized feature JSON, and the item is still dispatched with cwd = the real target root in a target worktree",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: repo given as `~/projects/target` is accepted and behaves the same",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: a repo root outside $HOME is stored unchanged",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Test: an unregistered repo still stays not-ready with the reason naming it",
-          "done": false
+          "done": true
         },
         {
           "id": 5,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T10:17:44.682Z",
+        "job": "j2b42abba79dc0f03",
+        "flow": "f2b42abba79dc0f03",
+        "replay_base": "fa745e7299c5165eea5b08d371cc27f48187b9cd",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T09:55:57.004Z",
-      "updated_at": "2026-11-27T09:55:57.004Z"
+      "updated_at": "2026-11-27T10:17:44.682Z"
     }
   ]
 }

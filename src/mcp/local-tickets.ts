@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, sep } from 'node:path';
 import { ticketsCommand } from '../cli/tickets.js';
 import { objectiveLink, readObjectives, type Objective } from '../collectors/objectives.js';
 import type { ProjectTicket } from '../collectors/project-board.js';
@@ -11,7 +11,7 @@ import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
 import { localProjectRoots, projectList, projectRoot } from '../roles/projects.js';
 import {
-  legacyTicketRepo, LEGACY_TICKET_HEADER_END, normalizeHomePaths, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature,
+  compactHomePath, expandHomePath, legacyTicketRepo, LEGACY_TICKET_HEADER_END, normalizeHomePaths, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature,
   renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath, ticketFeatureSlugs, withTicketStoreLock,
   writeTicketFeature, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
@@ -87,21 +87,25 @@ function namedTicketPath(root: string, ticket: unknown): string | undefined {
   if (matches.length === 1) return matches[0].path;
 }
 
-export function repoFieldValue(value: unknown): string {
-  if (typeof value !== 'string' || /[\0\r\n·]/.test(value) || !isAbsolute(value.trim())) return invalid('repo (expected an absolute project root)');
-  return value.trim();
+export function repoFieldValue(value: unknown, homeDir?: string): string {
+  if (typeof value !== 'string' || /[\0\r\n·]/.test(value)) return invalid('repo (expected an absolute or ~/ project root)');
+  const trimmed = value.trim();
+  const homeRel = trimmed === '~' || trimmed.startsWith('~/') || (sep === '\\' && trimmed.startsWith('~\\'));
+  if (!trimmed || (!isAbsolute(trimmed) && !homeRel)) return invalid('repo (expected an absolute or ~/ project root)');
+  return compactHomePath(trimmed, homeDir);
 }
 
 /** Exact, available registration: neither a child directory nor a linked worktree is a target root. */
 export function registeredTicketRepo(home: string, repo: string): string | undefined {
-  if (!isAbsolute(repo)) return;
+  const expanded = expandHomePath(repo);
+  if (!isAbsolute(expanded)) return;
   try {
-    const real = fs.realpathSync(repo);
+    const real = fs.realpathSync(expanded);
     if (localProjectRoots(real).mainRoot === real && projectList(home, real).some(p => p.root === real && !p.unavailable)) return real;
   } catch { /* Missing or unavailable root. */ }
 }
 
-export const unregisteredRepoReason = (repo: string) => `repo ${JSON.stringify(repo)} is not a registered project root`;
+export const unregisteredRepoReason = (repo: string) => `repo ${JSON.stringify(expandHomePath(repo))} is not a registered project root`;
 
 export function ticketBrief(cwd: string, ticket: unknown, legacy: boolean, target?: { home: string; root: string }) {
   const matches = (repo?: string) => !target || (repo && registeredTicketRepo(target.home, repo) === target.root);

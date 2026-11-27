@@ -236,7 +236,7 @@ export const ROLE_TOOLS = [
   }, ['op']),
   tool(
     'hud_tickets',
-    'Get/edit JSON tickets; commit HUD writes. Add links feature to Objective. repo: absolute registered target root.',
+    'Get/edit JSON tickets; commit HUD writes. Add links feature to Objective. repo: registered target root (~/... or absolute).',
     {
       op: { ...text, enum: ['guide', 'ready', 'get', 'run', 'add', 'update', 'commit', 'sync'], default: 'guide' },
       cwd: text,

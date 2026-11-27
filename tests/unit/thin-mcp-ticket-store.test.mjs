@@ -9,7 +9,7 @@ import { collectGateFlakes } from '../../dist/mcp/land-flakes.js';
 import { recordUnattendedAcceptance, ticketReadiness } from '../../dist/mcp/local-tickets.js';
 import { JobIndexCache } from '../../dist/roles/job-index-cache.js';
 import { takeLease } from '../../dist/roles/lease.js';
-import { normalizeHomePaths, parseMarkdownRepairRefs, readTicketWrites, serializeTicketFeature, ticketWritesPath, validateTicketFeature } from '../../dist/tickets/store.js';
+import { compactHomePath, expandHomePath, normalizeHomePaths, parseMarkdownRepairRefs, readTicketWrites, serializeTicketFeature, ticketWritesPath, validateTicketFeature } from '../../dist/tickets/store.js';
 import { checkout, job } from '../helpers/thin-mcp-land.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { goodTicket, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
@@ -346,6 +346,13 @@ test('hud_tickets add/update/comment and land-written ticket comments normalize 
   // Direct helper edge cases.
   assert.equal(normalizeHomePaths(`read (${homePath}) and \`${f.env.HOME}\``, f.env.HOME), 'read (~/.hud/jobs/x/report.md) and `~`');
   assert.equal(normalizeHomePaths(`${siblingPath} ${outsidePath} ${nestedPath}`, f.env.HOME), `${siblingPath} ${outsidePath} ${nestedPath}`);
+  assert.equal(compactHomePath(`${f.env.HOME}/projects/target`, f.env.HOME), '~/projects/target');
+  assert.equal(compactHomePath('~/projects/target/', f.env.HOME), '~/projects/target');
+  assert.equal(compactHomePath(siblingPath, f.env.HOME), siblingPath);
+  assert.equal(compactHomePath(outsidePath, f.env.HOME), outsidePath);
+  assert.equal(expandHomePath('~/projects/target', f.env.HOME), `${f.env.HOME}/projects/target`);
+  assert.equal(expandHomePath('~other/projects/target', f.env.HOME), '~other/projects/target');
+  assert.equal(expandHomePath(outsidePath, f.env.HOME), outsidePath);
 
   const call = (op, args) => f.call('hud_tickets', { op, cwd: f.main, ...args });
 

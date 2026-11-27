@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
-import { join, parse, resolve, sep } from 'node:path';
+import { isAbsolute, join, parse, resolve, sep } from 'node:path';
 import { ticketFileEvidence, ticketHeading } from '../collectors/ticket-evidence.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readFileBounded, writeFileAtomic, writeJsonPrivate } from '../utils/atomic-fs.js';
@@ -111,6 +111,33 @@ export function normalizeHomePaths(value: string, homeDir?: string): string {
     result = result.replace(pattern, '~');
   }
   return result;
+}
+
+const isHomeRelativePath = (value: string) =>
+  value === '~' || value.startsWith('~/') || (sep === '\\' && value.startsWith('~\\'));
+
+/** Expand a leading `~` or `~/...` path against `$HOME` (or `homeDir`); leave other paths unchanged. */
+export function expandHomePath(value: string, homeDir?: string): string {
+  if (!isHomeRelativePath(value)) return value;
+  const raw = homeDir ?? (process.env.HOME || homedir());
+  if (!raw) return value;
+  const base = resolve(raw);
+  return value === '~' ? base : resolve(join(base, value.slice(2)));
+}
+
+/** Rewrite a single absolute or `~/...` path inside `$HOME` to `~/...` (or `~`); leave outside-home paths unchanged. */
+export function compactHomePath(value: string, homeDir?: string): string {
+  const expanded = expandHomePath(value, homeDir);
+  if (!isAbsolute(expanded)) return value;
+  const normalized = resolve(expanded);
+  for (const home of homePathCandidates(homeDir)) {
+    if (normalized === home) return '~';
+    if (normalized.startsWith(`${home}${sep}`)) {
+      const rel = normalized.slice(home.length + 1);
+      return sep === '\\' ? `~/${rel.replace(/\\/g, '/')}` : `~/${rel}`;
+    }
+  }
+  return normalized;
 }
 
 type Check = (value: unknown, field: string) => unknown;
