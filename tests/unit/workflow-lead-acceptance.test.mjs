@@ -4,8 +4,10 @@ import { once } from 'node:events';
 import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { JOB_RETENTION_MS } from '../../dist/runtime/work-retention.js';
-import { extractReportNotes } from '../../dist/mcp/workflow-lead.js';
+import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
+import { answerTicketQueueHandback } from '../../dist/mcp/ticket-queue.js';
+import { writeTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
+import { buildAcceptPacket, extractReportNotes } from '../../dist/mcp/workflow-lead.js';
 import { pinnedQueueJobs } from '../../dist/unattended/state.js';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { resultValue, rpcClient, until } from '../helpers/thin-mcp-harness.mjs';
@@ -117,7 +119,7 @@ test('Assumed: lines move to run todo; four assumptions pause a main hand-back a
   await until(() => Boolean(f.flow(flow).review_job), 15_000);
   const q = f.flow(flow);
   assert.deepEqual(q.tickets.filter(x => x.landed).map(x => x.ticket), ['sample/01', 'sample/02']);
-  assert.ok(q.decisions.some(d => d.kind === 'assumption' && d.decision === 'resume' && d.ticket === 'sample/02'));
+  assert.ok(q.decisions.some(d => d.kind === 'assumption' && d.decision === 'resume' && d.ticket === 'sample/02' && d.worker_job === second));
   await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
 });
 
@@ -219,7 +221,10 @@ test('a blocker escalation holds just its ticket and dependent; an independent t
   const [, , dependent] = await f.jobs(flow, 3);
   assert.equal(f.job(dependent).ticket, 'sample/02');
   assert.deepEqual(f.flow(flow).tickets.filter(x => x.landed).map(x => x.ticket), ['sample/01', 'sample/03']);
-  assert.deepEqual(f.flow(flow).decisions.map(d => [d.kind, d.decision]), [['blocker', 'escalate'], ['blocker', 'resume']]);
+  assert.deepEqual(f.flow(flow).decisions.map(d => [d.kind, d.decision, d.worker_job]), [
+    ['blocker', 'escalate', heldJob],
+    ['blocker', 'resume', heldJob],
+  ]);
 });
 
 test('extractReportNotes parses heading/empty Blockers, qualified none, try notes with detail, and mixed blockers', () => {
@@ -1118,6 +1123,7 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
   assert.equal(doneRun.decisions.length, 1);
   assert.equal(doneRun.decisions[0].job, 'main');
   assert.equal(doneRun.decisions[0].decision, 'finish');
+  assert.equal('worker_job' in doneRun.decisions[0], false);
 
   // Answering again after completion returns no_pending_handback.
   const afterDone = await f.call('hud_respond', { job: flow, answer: 'finish' });
@@ -1350,4 +1356,119 @@ test('repair rounds are bounded to at most 2, then escalate and wake main once',
   const escNotices = await collectDeliveredNotices(f, flow, readEsc, 1);
   assert.equal(escNotices.length, 1);
   assert.match(escNotices[0], /max repair rounds \(2\) reached/);
+});
+
+test('repair ticket repairs ref is admitted onto q.tickets[] and archived on ticket_queue event naming B, not A', { timeout: 60_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: {} });
+  // Use JSON ticket store with two sibling slices A (01) and B (02).
+  await f.call('hud_tickets', {
+    op: 'add', cwd: f.root, feature: 'jsonfeat',
+    tickets: [
+      { title: 'Slice A', blocked_by: [], what: 'Build A.', acceptance: ['A works'], live_try: 'none' },
+      { title: 'Slice B', blocked_by: [], what: 'Build B.', acceptance: ['B works'], live_try: 'none' },
+    ],
+  });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'jsonfeat', max_parallel: 2, cwd: f.root });
+  const [jobA, jobB] = await f.jobs(flow, 2);
+  await f.settle(jobA);
+  await f.settle(jobB);
+
+  await until(() => Boolean(f.flow(flow).review_job), 15_000);
+  const review1 = f.flow(flow).review_job;
+  await f.settleReview(review1);
+  await until(() => f.flow(flow).active_lead?.kind === 'accept', 15_000);
+  const lead1 = f.flow(flow).active_lead.job;
+
+  // Lead adds repair ticket targeting slice B only (not sibling A).
+  await f.call('hud_tickets', {
+    op: 'add', cwd: f.root, feature: 'jsonfeat',
+    tickets: [{ title: 'Repair B', blocked_by: [], repairs: ['jsonfeat/02'], what: 'Fix B.', acceptance: ['B fixed'], live_try: 'none' }],
+  });
+  await f.settleLead(lead1, 'Decision: repair\nReason: Fix slice B finding.\n');
+
+  const [, , jobRepair] = await f.jobs(flow, 3);
+  const mid = f.flow(flow);
+  const repairItem = mid.tickets.find(item => item.ticket === 'jsonfeat/03');
+  assert.equal(repairItem?.round, 1);
+  assert.deepEqual(repairItem?.repairs, ['jsonfeat/02']);
+  assert.equal(mid.tickets.find(item => item.ticket === 'jsonfeat/01')?.repairs, undefined);
+  assert.equal(mid.tickets.find(item => item.ticket === 'jsonfeat/02')?.repairs, undefined);
+
+  await f.settle(jobRepair);
+  await until(() => f.flow(flow).review_job && f.flow(flow).review_job !== review1, 15_000);
+  await f.settleReview(f.flow(flow).review_job);
+  await until(() => f.flow(flow).active_lead?.kind === 'accept' && f.flow(flow).active_lead.job !== lead1, 15_000);
+  const lead2 = f.flow(flow).active_lead.job;
+  await f.settleLead(lead2, 'Decision: finish\nReason: Slice B repair verified.\n');
+  const done = await f.end(flow);
+  assert.equal(done.state, 'completed');
+  assert.ok(done.decisions.every(d => d.kind === 'accept' && !('worker_job' in d)), JSON.stringify(done.decisions));
+
+  // Archive expired receipt and verify monthly ticket_queue event carries repairs naming B, not A.
+  const receiptPath = join(f.home, 'flows', `${flow}.json`);
+  const staleAt = new Date(Date.now() - JOB_RETENTION_MS - 60_000);
+  fs.utimesSync(receiptPath, staleAt, staleAt);
+  pruneLandFlows(f.home, Date.now());
+  const month = new Date(Date.parse(done.updated_at)).toISOString().slice(0, 7);
+  const events = fs.readFileSync(join(f.home, 'events', `${month}.jsonl`), 'utf8').trimEnd().split('\n').map(JSON.parse);
+  const ev = events.find(e => e.kind === 'ticket_queue' && e.flow === flow);
+  assert.ok(ev, JSON.stringify(events));
+  assert.deepEqual(ev.tickets.find(item => item.ticket === 'jsonfeat/03')?.repairs, ['jsonfeat/02']);
+  assert.equal('repairs' in ev.tickets.find(item => item.ticket === 'jsonfeat/01'), false);
+  assert.equal('repairs' in ev.tickets.find(item => item.ticket === 'jsonfeat/02'), false);
+});
+
+test('lead.md and buildAcceptPacket require repair tickets to set repairs on Decision: repair', () => {
+  const leadMd = fs.readFileSync(resolve('packages/hud-mcp/instructions/lead.md'), 'utf8');
+  assert.match(leadMd, /Decision: repair/);
+  assert.match(leadMd, /`repairs`[^.\n]*slice/);
+
+  const baseQueue = {
+    flow: 'q0000000000000009', root: '/tmp/synthetic', feature: 'sample', pane: '', task: false,
+    max_parallel: 1, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
+    state: 'working', tickets: [],
+  };
+  const step = { kind: 'handback', ask: 'Accept?', options: ['finish', 'repair', 'escalate'], needs: [], from: [], optional: false };
+  const ordinaryPacket = buildAcceptPacket(baseQueue, step);
+  assert.match(ordinaryPacket, /`repairs`[^.\n]*slice/);
+  assert.match(ordinaryPacket, /Decision: repair/);
+  const unattendedPacket = buildAcceptPacket({ ...baseQueue, unattended: { objective: 'obj-1' } }, step);
+  assert.match(unattendedPacket, /unattended repair[^.\n]*`repairs`[^.\n]*slice/i);
+});
+
+test('subject-bearing tickets handback records worker_job while run-wide accept handback omits it', async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const now = '2026-01-01T00:00:00.000Z';
+  const subjectWorker = 'j00000000000000aa';
+  const mkFlow = (flow, handback) => {
+    fs.mkdirSync(join(f.home, 'flows', flow), { recursive: true });
+    writeTicketQueue(f.home, {
+      flow, root: f.root, cwd: f.root, project_root: f.root, feature: 'sample', pane: f.env.HERDR_PANE_ID,
+      task: false, max_parallel: 1, created_at: now, updated_at: now, state: 'paused',
+      steps: { [handback.step]: { state: 'asking', changed_at: now } },
+      handback, tickets: [{ ticket: 'sample/01', path: join(f.root, '.scratch/sample/issues/01-synthetic.md'), role: 'imp', job: subjectWorker }],
+    }, true);
+  };
+
+  // Tickets-step handback with a subject worker records worker_job on non-resume/stop choices (e.g. finish / escalate).
+  const flowTicketsFinish = 'q00000000000000a1';
+  mkFlow(flowTicketsFinish, { step: 'tickets', choices: ['finish', 'escalate'], kind: 'assumption', ticket: 'sample/01', job: subjectWorker });
+  const resTicketsFinish = await answerTicketQueueHandback(f.home, flowTicketsFinish, 'finish: Approved subject.', { pane: f.env.HERDR_PANE_ID, cwd: f.root });
+  assert.equal(resTicketsFinish.ok, true);
+  assert.equal(resTicketsFinish.queue.decisions[0].worker_job, subjectWorker);
+  assert.equal(resTicketsFinish.queue.decisions[0].ticket, 'sample/01');
+
+  const flowTicketsEsc = 'q00000000000000a2';
+  mkFlow(flowTicketsEsc, { step: 'tickets', choices: ['finish', 'escalate'], kind: 'assumption', ticket: 'sample/01', job: subjectWorker });
+  const resTicketsEsc = await answerTicketQueueHandback(f.home, flowTicketsEsc, 'escalate: Needs owner.', { pane: f.env.HERDR_PANE_ID, cwd: f.root });
+  assert.equal(resTicketsEsc.ok, true);
+  assert.equal(resTicketsEsc.queue.decisions[0].worker_job, subjectWorker);
+  assert.equal(resTicketsEsc.queue.decisions[0].ticket, 'sample/01');
+
+  // Run-wide accept handback leaves worker_job absent.
+  const flowAccept = 'q00000000000000a3';
+  mkFlow(flowAccept, { step: 'accept', choices: ['finish', 'repair', 'escalate'] });
+  const resAccept = await answerTicketQueueHandback(f.home, flowAccept, 'finish: Run-wide accept.', { pane: f.env.HERDR_PANE_ID, cwd: f.root });
+  assert.equal(resAccept.ok, true);
+  assert.equal('worker_job' in resAccept.queue.decisions[0], false);
 });

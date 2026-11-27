@@ -21,13 +21,15 @@ const ticketStatus = { ...text, enum: TICKET_STATUSES };
 const ticketObjective = { ...text, pattern: OBJECTIVE_SLUG };
 const ticketNumber = { type: 'integer', minimum: 1 };
 const ticketRef = { ...text, pattern: '^[a-z0-9-]+/[0-9]+$' };
+const canonicalTicketRef = { ...text, pattern: '^[a-z0-9-]+/[0-9]{2,}$' };
 const blockers = { type: 'array', items: { anyOf: [ticketNumber, ticketRef] } };
+const repairs = { type: 'array', items: canonicalTicketRef };
 const ticketSpec = {
   title: text, what: text, live_try: text, approved_removals: { anyOf: [text, { type: 'array', items: text }] },
   kind: { ...text, enum: TICKET_KINDS }, role: { ...text, enum: TICKET_ROLES }, main_review: bool,
 };
 const ticketUpdate = {
-  ...ticketSpec, status: ticketStatus, owner_try: bool, objective: ticketObjective, blocked_by: blockers,
+  ...ticketSpec, status: ticketStatus, owner_try: bool, objective: ticketObjective, blocked_by: blockers, repairs,
   tick: { type: 'array', items: ticketNumber, description: 'Mark acceptance items done by stable ID.' },
   acceptance: { type: 'array', items: { type: 'object', properties: { id: ticketNumber, text }, required: ['id', 'text'], additionalProperties: false } },
   comment: { ...text, description: 'Append a comment.' },
@@ -252,6 +254,7 @@ export const ROLE_TOOLS = [
           properties: {
             ...ticketSpec,
             blocked_by: blockers,
+            repairs,
             acceptance: { type: 'array', items: text },
             status: { ...ticketStatus, default: 'ready-for-agent' },
             owner_try: { type: 'boolean', description: 'Owner try post-land (default no).' },

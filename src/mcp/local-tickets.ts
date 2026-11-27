@@ -11,8 +11,8 @@ import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
 import { localProjectRoots, projectRoot, sharedRoot } from '../roles/projects.js';
 import {
-  parseTicketRef, readJsonTicketFeature, renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath, ticketFeatureSlugs,
-  TICKET_STATUSES, type TicketFeatureDoc, type TicketRecord,
+  canonicalTicketRef, parseTicketRef, readJsonTicketFeature, renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath,
+  ticketFeatureSlugs, ticketRef, TICKET_STATUSES, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { readOpenHolds } from '../unattended/state.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
@@ -117,6 +117,7 @@ export function routingTicketText(root: string, ticket: unknown): string | undef
 
 // Shared metadata lines may use ·, but the ticket title and prose aren't fields.
 const objectiveField = /^([ \t]*(?:\*\*[^:\r\n]+:\*\*[^·\r\n]*·[ \t]*)*?\*\*Objective:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
+const repairsField = /^([ \t]*(?:\*\*[^:\r\n]+:\*\*[^·\r\n]*·[ \t]*)*?\*\*Repairs:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
 const ticketHeader = (text: string) => text.split(/^(?:[ \t]*\*\*What to build:\*\*|##(?:[ \t]|\r?$))/im, 1)[0];
 
 export function ticketObjectiveId(path: string) {
@@ -287,19 +288,19 @@ export function checkTicketPaths(cwd: string, items: readonly { ticket: string; 
   return results;
 }
 
-type LocalTicket = ProjectTicket & { what: string; objective?: string; role: 'imp' | 'frontend-imp'; runningList: boolean };
+type LocalTicket = ProjectTicket & { what: string; objective?: string; role: 'imp' | 'frontend-imp'; runningList: boolean; repairs?: string[] };
 const FRONTEND_ROLE_RE = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*frontend-(?:imp|implementer)(?=[ \t\r\n·(]|$)/im;
 const declaredReady = (t: LocalTicket) => /^ready-for-agent$/i.test(t.status);
 const readinessRef = (slug: string, t: LocalTicket) => `${slug}/${nn(Number(t.number))}`;
 const parsedTicketMemo = new Map<string, { stamp: string; ticket: LocalTicket | null }>();
 
-function parseTicketForReadiness(path: string, num: number): LocalTicket | null {
+function parseTicketForReadiness(path: string, num: number, slug: string): LocalTicket | null {
   const st = fs.lstatSync(path, { throwIfNoEntry: false });
   if (!st || !st.isFile()) { parsedTicketMemo.delete(path); return null; }
   const stamp = `${st.dev}:${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}:${num}`;
   const hit = parsedTicketMemo.get(path);
   if (hit?.stamp === stamp) {
-    return hit.ticket ? { ...hit.ticket, blockers: [...hit.ticket.blockers] } : null;
+    return hit.ticket ? { ...hit.ticket, blockers: [...hit.ticket.blockers], ...(hit.ticket.repairs && { repairs: [...hit.ticket.repairs] }) } : null;
   }
   const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
   let parsed: LocalTicket | null = null;
@@ -307,13 +308,20 @@ function parseTicketForReadiness(path: string, num: number): LocalTicket | null 
     const text = bytes.toString('utf8');
     const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
     const heading = ticketHeading(body, num);
-    const { status, blocked, items, checked, landed } = ticketFileEvidence(text);
+    const { status, blocked, repairs: rawRepairs, items, checked, landed } = ticketFileEvidence(text);
     if (heading && status && blocked !== undefined) {
       const what = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]
         ?.replace(/\s+/g, ' ').trim() ?? '';
       const objective = objectiveField.exec(ticketHeader(text))?.[2]?.trim() || undefined;
       const role = FRONTEND_ROLE_RE.test(body) ? 'frontend-imp' : 'imp';
-      parsed = { ...heading, path, what, role, runningList: isRunningListTicket(body), ...(objective && { objective }), status, at: 0, items, checked,
+      const repairs = (rawRepairs ?? '').split(/[,;]+/).flatMap(item => {
+        const clean = item.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+        if (!clean || /^none\b/.test(clean)) return [];
+        const ref = parseTicketRef(/^#?\d+$/.test(clean) ? `${slug}/${clean.replace(/^#/, '')}` : clean);
+        return ref ? [ticketRef(ref.feature, ref.number)] : [];
+      });
+      parsed = { ...heading, path, what, role, runningList: isRunningListTicket(body), ...(objective && { objective }),
+        ...(repairs.length && { repairs }), status, at: 0, items, checked,
         total: items.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],
         state: landed ?? (/^ready-for-human$/i.test(status) ? 'try' : 'ready') };
     }
@@ -321,7 +329,7 @@ function parseTicketForReadiness(path: string, num: number): LocalTicket | null 
   parsedTicketMemo.delete(path);
   if (parsedTicketMemo.size >= 512) parsedTicketMemo.delete(parsedTicketMemo.keys().next().value!);
   parsedTicketMemo.set(path, { stamp, ticket: parsed });
-  return parsed ? { ...parsed, blockers: [...parsed.blockers] } : null;
+  return parsed ? { ...parsed, blockers: [...parsed.blockers], ...(parsed.repairs && { repairs: [...parsed.repairs] }) } : null;
 }
 
 function jsonReadiness(root: string, doc: TicketFeatureDoc, record: TicketRecord): LocalTicket {
@@ -331,7 +339,7 @@ function jsonReadiness(root: string, doc: TicketFeatureDoc, record: TicketRecord
     : status === 'ready-for-human' ? 'try' : 'ready';
   return { number: nn(record.number), title, status, state, path: ticketFeaturePath(root, doc.feature), at: 0,
     what: record.what.trimStart().split(/\r?\n/, 1)[0].replace(/\s+/g, ' ').trim(), role: record.role ?? 'imp', runningList: record.kind === 'flake-list',
-    objective: record.objective ?? doc.objective, items, checked, total: items.length,
+    objective: record.objective ?? doc.objective, ...(record.repairs?.length && { repairs: [...record.repairs] }), items, checked, total: items.length,
     blockers: record.blocked_by.length ? [record.blocked_by.join(', ')] : [] };
 }
 
@@ -341,7 +349,7 @@ function readTicketFeatures(root: string, feature?: string) {
     const json = readJsonTicketFeature(root, slug);
     return { slug, at: 0, tickets: json ? json.tickets.map(record => jsonReadiness(root, json, record))
       : directoryExists(scratch) ? list(join(scratch, slug)).sort((a, b) => a.number - b.number).flatMap(({ number: num, path }) => {
-        const ticket = parseTicketForReadiness(path, num);
+        const ticket = parseTicketForReadiness(path, num, slug);
         return ticket ? [ticket] : [];
       }) : [] };
   });
@@ -407,7 +415,8 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
       if (flakeFeature && t.runningList && ticket.startsWith(`${flakeFeature}/`) &&
           !(flakes ??= runningListAdmission(home, root, flakeFeature, jobs)).eligible(ticket)) return [];
       const blockers = declaredBlockers.get(t) ?? [];
-      return [{ ticket, path: t.path, title: t.title, what: t.what, role: t.role, blockers, ...(t.objective && { objective: t.objective }) }];
+      return [{ ticket, path: t.path, title: t.title, what: t.what, role: t.role, blockers,
+        ...(t.repairs?.length && { repairs: [...t.repairs] }), ...(t.objective && { objective: t.objective }) }];
     }),
     queued: candidates.flatMap(({ t, ticket }) => {
       const blockers = crossBlockers.get(t);
@@ -447,6 +456,14 @@ function withOwnerTry(body: string, value: 'yes' | 'no', ticket: number): string
 function withObjective(body: string, id: string, ticket: number): string {
   const header = ticketHeader(body);
   return headerField(header, objectiveField, 'Objective', id, ticket) + body.slice(header.length);
+}
+function withRepairs(body: string, refs: string[], ticket: number): string {
+  const header = ticketHeader(body), rest = body.slice(header.length);
+  if (refs.length) return headerField(header, repairsField, 'Repairs', refs.join(', '), ticket) + rest;
+  const ownLine = /^[ \t]*\*\*Repairs:\*\*[^·\r\n]*\r?\n/im;
+  if (ownLine.test(header)) return header.replace(ownLine, '') + rest;
+  if (repairsField.test(header)) return header.replace(repairsField, (_, prefix, _old, suffix) => `${prefix}none${suffix}`) + rest;
+  return body;
 }
 
 /** Acceptance is the checklist before Comments; checkboxes in discussion aren't acceptance. */
@@ -530,6 +547,18 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
     });
     return refs.join(', ') || 'none';
   };
+  const resolveRepairs = (value: unknown, feat: string, known: Set<number>) => {
+    if (!Array.isArray(value)) return invalid('repairs');
+    return value.map(raw => {
+      if (!canonicalTicketRef(raw)) return invalid(`repairs (invalid ticket reference: ${String(raw)}; expected <feature>/<NN>)`);
+      const ref = parseTicketRef(raw)!;
+      const exists = ref.feature === feat
+        ? known.has(ref.number)
+        : (readJsonTicketFeature(mainRoot, ref.feature)?.tickets ?? list(join(scratch, ref.feature))).some(t => t.number === ref.number);
+      if (!exists) throw new Error(`unknown repairs ticket: ${raw}`);
+      return raw;
+    });
+  };
   if (op === 'add') {
     if (args.updates !== undefined) return invalid('updates');
     if (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature)) return invalid('feature');
@@ -551,6 +580,8 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
       const liveTryLine = liveTry === undefined ? [] : [`**Live try:** ${liveTry}`];
       const approvedRemovalsLine = ticket.approved_removals === undefined ? [] : [`**Approved removals:** ${line(ticket.approved_removals, 'approved_removals')}`];
       const blocked = resolveBlockers(ticket.blocked_by, feature, known);
+      const repairs = ticket.repairs === undefined ? [] : resolveRepairs(ticket.repairs, feature, known);
+      const repairsLine = repairs.length ? [`**Repairs:** ${repairs.join(', ')}`] : [];
       if (!Array.isArray(ticket.acceptance)) return invalid('acceptance');
       const items = ticket.acceptance.map((item) => `- [ ] ${line(item, 'acceptance')}`);
       const objective = ticket.objective === undefined ? shared : objectiveId(ticket.objective);
@@ -562,6 +593,7 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
         ...liveTryLine,
         ...approvedRemovalsLine,
         `**Blocked by:** ${blocked}`,
+        ...repairsLine,
         ...(objective === undefined ? [] : [`**Objective:** ${objective}`]),
         '',
         `**What to build:** ${line(what, 'what')}`,
@@ -586,8 +618,8 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
   const updateOne = async (feat: unknown, item: Record<string, unknown>) => {
     if (typeof feat !== 'string' || !/^[a-z0-9-]+$/.test(feat)) return invalid('feature');
     if (!number(item.ticket)) return invalid('ticket');
-    if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined && item.owner_try === undefined && item.objective === undefined)
-      return invalid('status, tick, blocked_by, owner_try or objective');
+    if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined && item.repairs === undefined && item.owner_try === undefined && item.objective === undefined)
+      return invalid('status, tick, blocked_by, repairs, owner_try or objective');
     const existing = list(join(scratch, feat));
     const known = new Set(existing.map(t => t.number));
     const matches = existing.filter(({ number }) => number === item.ticket);
@@ -617,6 +649,7 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
       const refs = resolveBlockers(item.blocked_by, feat, known);
       body = body.replace(field, (_, prefix, _old, suffix) => `${prefix}${refs}${suffix}`);
     }
+    if (item.repairs !== undefined) body = withRepairs(body, resolveRepairs(item.repairs, feat, known), item.ticket);
     if (item.objective !== undefined) body = withObjective(body, objectiveId(item.objective), item.ticket);
     const updated = body + (comments < 0 ? '' : original.slice(comments));
     await edits.stage({ path: ticket.path, ticket: `${feat}/${nn(ticket.number)}`, before: original, after: updated,
@@ -625,7 +658,7 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
   };
 
   if (args.updates !== undefined) {
-    if (args.ticket !== undefined || args.status !== undefined || args.tick !== undefined || args.blocked_by !== undefined || args.owner_try !== undefined || args.objective !== undefined)
+    if (args.ticket !== undefined || args.status !== undefined || args.tick !== undefined || args.blocked_by !== undefined || args.repairs !== undefined || args.owner_try !== undefined || args.objective !== undefined)
       return invalid('updates');
     if (!Array.isArray(args.updates) || !args.updates.length) return invalid('updates');
     if (feature !== undefined && (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature))) return invalid('feature');

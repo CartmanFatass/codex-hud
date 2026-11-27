@@ -4,7 +4,7 @@ import { scanScratch } from '../cli/tickets.js';
 import { OBJECTIVE_SLUG, readObjectives } from '../collectors/objectives.js';
 import { localProjectRoots } from '../roles/projects.js';
 import {
-  legacyTicketPaths, parseTicketRef, readJsonTicketFeature, readTicketFeature, serializeTicketFeature,
+  canonicalTicketRef, legacyTicketPaths, parseTicketRef, readJsonTicketFeature, readTicketFeature, serializeTicketFeature,
   splitRemovals, ticketFeaturePath, ticketNumber, ticketRef, TICKET_FEATURE, TICKET_KINDS, TICKET_ROLES,
   TICKET_STATUSES, withTicketStoreLock, writeTicketFeature, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
@@ -25,7 +25,7 @@ function choice<T extends string>(choices: readonly T[], value: unknown, field: 
   return choices.find(option => option === value) ?? invalid(field);
 }
 const specFields = ['title', 'what', 'live_try', 'approved_removals', 'kind', 'role', 'main_review', 'acceptance', 'comment'];
-const editFields = ['status', 'tick', 'blocked_by', 'owner_try', 'objective', ...specFields];
+const editFields = ['status', 'tick', 'blocked_by', 'repairs', 'owner_try', 'objective', ...specFields];
 const has = (args: Record<string, unknown>, fields: string[]) => fields.some(field => args[field] !== undefined);
 
 export function getTickets(cwd: string, args: Record<string, unknown>) {
@@ -76,6 +76,17 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       return ticketRef(ref.feature, ref.number);
     });
   };
+  const repairs = (value: unknown, doc: TicketFeatureDoc) => {
+    if (!Array.isArray(value)) return invalid('repairs');
+    return value.map(raw => {
+      if (!canonicalTicketRef(raw)) return invalid(`repairs (invalid ticket reference: ${String(raw)}; expected <feature>/<NN>)`);
+      const ref = parseTicketRef(raw)!;
+      const tickets = ref.feature === doc.feature ? doc.tickets
+        : readJsonTicketFeature(mainRoot, ref.feature)?.tickets ?? legacyTicketPaths(mainRoot, ref.feature);
+      if (!tickets.some(t => t.number === ref.number)) throw new Error(`unknown repairs ticket: ${raw}`);
+      return raw;
+    });
+  };
   const writable = (feat: string) => {
     const doc = readJsonTicketFeature(mainRoot, feat);
     if (doc?.mirror) throw new Error('refusing local ticket edits: GitHub mirror; edit issues with gh, then call hud_tickets with op: sync');
@@ -119,10 +130,12 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
       if (!ticketNumber(++next)) throw new Error('ticket numbering exhausted');
       if (!Array.isArray(draft.acceptance)) return invalid('acceptance');
       const extracted = draft.live_try === undefined ? extractWhatAndLiveTry(draft.what, undefined) : undefined;
+      const repairRefs = draft.repairs === undefined ? undefined : repairs(draft.repairs, doc!);
       const ticket: TicketRecord = {
         number: next, title: line(draft.title, 'title'), status: 'ready-for-agent', owner_try: false,
         live_try: extracted?.liveTry ?? 'none', what: text(draft.what, 'what'), approved_removals: [],
-        blocked_by: blockers(draft.blocked_by, doc!), ...(shared && { objective: shared }),
+        blocked_by: blockers(draft.blocked_by, doc!), ...(repairRefs?.length && { repairs: repairRefs }),
+        ...(shared && { objective: shared }),
         acceptance: draft.acceptance.map((item, i) => ({ id: i + 1, text: text(item, 'acceptance'), done: false })),
         comments: [], created_at: at, updated_at: at,
       };
@@ -150,6 +163,11 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     const base = JSON.stringify(ticket), at = new Date().toISOString();
     patch(ticket, item, at);
     if (item.blocked_by !== undefined) ticket.blocked_by = blockers(item.blocked_by, doc);
+    if (item.repairs !== undefined) {
+      const repairRefs = repairs(item.repairs, doc);
+      if (repairRefs.length) ticket.repairs = repairRefs;
+      else delete ticket.repairs;
+    }
     const acceptance = (id: unknown) => {
       if (typeof id !== 'number' || !Number.isSafeInteger(id)) return invalid('acceptance id');
       const match = ticket.acceptance.find(item => item.id === id);

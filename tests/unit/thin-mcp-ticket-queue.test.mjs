@@ -310,6 +310,10 @@ test('ticket queue hands back on a worker question without stopping its peer', {
   const resumed = f.flow(answered.queue_resumed);
   assert.equal(resumed.state, 'working');
   assert.deepEqual(resumed.tickets.map(x => x.job), [first, peer]);
+  const answerDecision = resumed.decisions.find(d => d.kind === 'question' && d.decision === 'answer' && d.question === 'q1');
+  assert.equal(answerDecision?.job, 'main');
+  assert.equal(answerDecision?.ticket, 'sample/01');
+  assert.equal(answerDecision?.worker_job, first);
   assert.equal(f.status(first).state, 'waiting_orchestrator', 'the worker has not yet picked up the answer');
   const run = readExecutionRuns(f.env.HUD_HOME, { root: f.root, pane: null }, new Map()).find(r => r.flow === resumed.flow);
   const station = run.metro.stations.find(s => s.jobId === first);

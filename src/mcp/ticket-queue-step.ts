@@ -1313,11 +1313,11 @@ function tickTicketQueue(
     next = freshCandidates.filter(t => !invalid.has(t.ticket));
   }
   if (next.length) {
-    const { ticket, path, role, blockers } = next[0];
+    const { ticket, path, role, blockers, repairs } = next[0];
     const round = q.repair_rounds ?? 0;
     if (next.some((entry, i) => i > 0 && entry.ticket === ticket)) {
       if (q.unattended) {
-        const dup: TicketQueueItem = { ticket, path, role: 'imp', round, blockers: blockers ? [...blockers] : [] };
+        const dup: TicketQueueItem = { ticket, path, role: 'imp', round, ...(repairs?.length && { repairs: [...repairs] }), blockers: blockers ? [...blockers] : [] };
         failItem(dup, `${ticket}: ambiguous ticket number`, 'queue');
         q.tickets.push(dup);
         q.future = future.filter(t => t.ticket !== ticket);
@@ -1326,7 +1326,7 @@ function tickTicketQueue(
       state.problem = { kind: 'queue', ticket, reason: `${ticket}: ambiguous ticket number` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
     }
-    item = { ticket, path, role, round, blockers: blockers ? [...blockers] : [] };
+    item = { ticket, path, role, round, ...(repairs?.length && { repairs: [...repairs] }), blockers: blockers ? [...blockers] : [] };
     q.tickets.push(item); // Intent committed by the driver before dispatch so the request key is recoverable.
     q.future = future.filter(t => t.ticket !== ticket);
     changed = true;

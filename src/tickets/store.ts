@@ -33,6 +33,7 @@ export interface TicketRecord {
   live_try: string;
   approved_removals: string[];
   blocked_by: string[];
+  repairs?: string[];
   objective?: string;
   what: string;
   cases?: FlakeCaseRecord[];
@@ -61,7 +62,7 @@ export function parseTicketRef(ref: unknown) {
   const number = match ? Number(match[2]) : 0;
   return match && ticketNumber(number) ? { feature: match[1], number } : undefined;
 }
-const canonicalRef = (ref: unknown) => {
+export const canonicalTicketRef = (ref: unknown): ref is string => {
   const parsed = parseTicketRef(ref);
   return !!parsed && ticketRef(parsed.feature, parsed.number) === ref;
 };
@@ -89,7 +90,8 @@ const text = check(string), timestamp = check(date), positive = check(ticketNumb
 const record = object({
   number: positive, title: text, kind: optional(choice(...TICKET_KINDS)), status: choice(...TICKET_STATUSES),
   claimed_at: optional(timestamp), role: optional(choice(...TICKET_ROLES)), main_review: optional(check(bool)),
-  owner_try: check(bool), live_try: text, approved_removals: array(text), blocked_by: array(check(canonicalRef)),
+  owner_try: check(bool), live_try: text, approved_removals: array(text), blocked_by: array(check(canonicalTicketRef)),
+  repairs: optional(array(check(canonicalTicketRef))),
   objective: optional(text), what: text,
   cases: optional(array(object({ step: text, test: optional(text), case_name: optional(text), flow: optional(text), log: optional(text), recorded_at: timestamp }))),
   acceptance: array(object({ id: positive, text, done: check(bool) })),
@@ -229,6 +231,12 @@ export function readLegacyTicket(path: string, number: number, feature: string) 
   const at = stat.mtime.toISOString();
   const label = TICKET_STATUSES.find(value => value === status)
     ?? (status && Object.hasOwn(legacyStatuses, status) ? legacyStatuses[status] : 'needs-triage');
+  const repairs = (evidence.repairs ?? '').split(/[,;]+/).flatMap(item => {
+    const clean = item.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+    if (!clean || /^none\b/.test(clean)) return [];
+    const ref = parseTicketRef(/^#?\d+$/.test(clean) ? `${feature}/${clean.replace(/^#/, '')}` : clean);
+    return ref ? [ticketRef(ref.feature, ref.number)] : [];
+  });
   const ticket: TicketRecord = {
     number, title: heading.title, status: label,
     ...(/^(?:frontend-imp|frontend-implementer)\b/i.test(field('(?:Role|Who)') ?? '') && { role: 'frontend-imp' }),
@@ -240,6 +248,7 @@ export function readLegacyTicket(path: string, number: number, feature: string) 
       const ref = parseTicketRef(/^#?\d+$/.test(clean) ? `${feature}/${clean.replace(/^#/, '')}` : clean);
       return ref ? [ticketRef(ref.feature, ref.number)] : [];
     }),
+    ...(repairs.length && { repairs }),
     ...(field('Objective') && { objective: field('Objective') }),
     what: marker ? body.slice(marker.index + marker[0].length).split(/^[ \t]*[-*] \[[ xX]\]/m, 1)[0].trim() : '',
     acceptance: evidence.items.map((item, i) => ({ id: i + 1, ...item })),
@@ -277,6 +286,7 @@ export function renderTicketBrief(ticket: TicketRecord, feature: Pick<TicketFeat
     `**Owner try:** ${ticket.owner_try ? 'yes' : 'no'}`, `**Live try:** ${ticket.live_try}`,
     ...(ticket.approved_removals.length ? [`**Approved removals:** ${ticket.approved_removals.join(', ')}`] : []),
     `**Blocked by:** ${ticket.blocked_by.join(', ') || 'none'}`,
+    ...(ticket.repairs?.length ? [`**Repairs:** ${ticket.repairs.join(', ')}`] : []),
     ...(objective ? [`**Objective:** ${objective}`] : []),
     ...(feature.spec_path ? [`**Spec:** ${feature.spec_path}`] : []),
     '', `**What to build:** ${ticket.what}`, '',

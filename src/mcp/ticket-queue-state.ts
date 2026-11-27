@@ -52,6 +52,8 @@ export interface TicketQueueItem {
   ticket: string; path: string; role: 'imp' | 'frontend-imp'; job?: string; land?: string; landed?: true; base_moves?: number;
   /** Repair round at admission (0 for the initial round; absent on legacy records). */
   round?: number;
+  /** Canonical <feature>/<NN> slice refs fixed by this repair ticket (recorded at admission). */
+  repairs?: string[];
   /** Declared dependency refs recorded at admission (empty array = root; absent on legacy records). */
   blockers?: string[];
   /** ISO timestamp when this ticket landed. */

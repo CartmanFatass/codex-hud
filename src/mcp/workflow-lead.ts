@@ -386,9 +386,9 @@ export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'h
     '',
     '## Required Report Format',
     `Respond via hud_report with \`Decision: <${choices.join('|')}>\`, \`Reason: <one line>\`, and optional \`Todo: <item>\` lines for non-blocking doubts/follow-ups.`,
-    'If choosing `repair`, add the repair ticket(s) via `hud_tickets` (with `live_try`) before reporting so this run admits and lands them before re-reviewing.',
+    'If choosing `repair`, you must add the repair ticket(s) via `hud_tickets` with `repairs` set to the `<feature>/<NN>` slice(s) they fix (and `live_try`) before declaring `Decision: repair` so this run admits and lands them before re-reviewing.',
     'Do not edit docs/spec.md or land outside this run.',
-    ...(q.unattended ? [`For unattended repair, add ready repair ticket(s) linked to Objective \`${q.unattended.objective}\` (with \`live_try\`) so this run admits them directly (bounded to ${MAX_REPAIR_ROUNDS} rounds). Never create an Objective or edit docs/spec.md.`, approvalFormat] : []),
+    ...(q.unattended ? [`For unattended repair, add ready repair ticket(s) linked to Objective \`${q.unattended.objective}\` with \`repairs\` set to the \`<feature>/<NN>\` slice(s) they fix (and \`live_try\`) so this run admits them directly (bounded to ${MAX_REPAIR_ROUNDS} rounds). Never create an Objective or edit docs/spec.md.`, approvalFormat] : []),
   );
   return lines.join('\n') + '\n';
 }

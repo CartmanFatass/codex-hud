@@ -160,7 +160,8 @@ function archiveTicketQueue(home: string, path: string, stat: fs.Stats, q: Ticke
     const line = Buffer.from(JSON.stringify({
       v: 1, kind: 'ticket_queue', flow: q.flow, project: q.project_root ?? q.root, feature: q.feature,
       state: q.state, created_at: q.created_at, updated_at: q.updated_at, repair_rounds: q.repair_rounds ?? 0,
-      tickets: q.tickets.map(({ ticket, role, job, land, landed, round }) => ({ ticket, role, job, land, landed, round })),
+      tickets: q.tickets.map(({ ticket, role, job, land, landed, round, repairs }) =>
+        ({ ticket, role, job, land, landed, round, ...(repairs?.length && { repairs }) })),
       decisions: (q.decisions ?? []).map(({ step, kind, job, decision, at, ticket, worker_job }) =>
         ({ step, kind, job, decision, at, ticket, worker_job })),
       reviews: (q.reviews ?? []).map(({ round, job, findings, reviewed }) => ({ round, job,

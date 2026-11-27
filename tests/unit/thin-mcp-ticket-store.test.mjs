@@ -131,3 +131,60 @@ test('a mixed update queues only the Markdown items while JSON updates finish', 
   assert.match(f.git(f.main, 'show', `HEAD:${rel}`), /Status:\*\* claimed[\s\S]*- \[x\]/);
   assert.deepEqual(f.git(f.main, 'show', '--format=%s', '--name-only', 'HEAD').split('\n').filter(Boolean), ['tickets: legacy/01 update', rel]);
 });
+
+test('hud_tickets add/update validates and stores repairs on JSON and Markdown features', { timeout: 20_000 }, async t => {
+  const f = await checkout(t, ['true']);
+  seedMarkdown(f);
+  const call = (op, args) => f.call('hud_tickets', { op, cwd: f.worktree, ...args });
+  const rpcErr = async (op, args) => {
+    const { result } = await f.rpc('tools/call', { name: 'hud_tickets', arguments: { op, cwd: f.worktree, ...args } });
+    assert.equal(result.isError, true, JSON.stringify(result));
+    return JSON.parse(result.content[0].text).error;
+  };
+
+  // JSON feature with sibling slices A (sample/01) and B (sample/02).
+  await call('add', { feature: 'sample', tickets: [draft('Slice A'), draft('Slice B')] });
+  const addRepair = await call('add', {
+    feature: 'sample',
+    tickets: [{ ...draft('Fix B'), repairs: ['sample/02'] }],
+  });
+  assert.equal(addRepair.ok, true);
+  assert.deepEqual((await call('get', { ticket: 'sample/03' })).ticket.repairs, ['sample/02']);
+  assert.equal((await call('get', { ticket: 'sample/01' })).ticket.repairs, undefined);
+
+  // Update repairs to another valid ref (including cross-feature Markdown) and clear with [].
+  await call('update', { feature: 'sample', ticket: 3, repairs: ['sample/02', 'legacy/01'] });
+  assert.deepEqual((await call('get', { ticket: 'sample/03' })).ticket.repairs, ['sample/02', 'legacy/01']);
+  await call('update', { feature: 'sample', ticket: 3, repairs: [] });
+  assert.equal((await call('get', { ticket: 'sample/03' })).ticket.repairs, undefined);
+
+  // Reject unknown and malformed repairs refs on JSON without writing.
+  assert.match(await rpcErr('add', { feature: 'sample', tickets: [{ ...draft('Unknown'), repairs: ['sample/99'] }] }), /unknown repairs ticket: sample\/99/);
+  assert.match(await rpcErr('add', { feature: 'sample', tickets: [{ ...draft('Missing feature'), repairs: ['missing/01'] }] }), /unknown repairs ticket: missing\/01/);
+  for (const bad of [['not-a-ref'], ['sample/1'], ['01'], [1], ['sample/00'], ['Sample/01'], 'sample/01']) {
+    assert.match(await rpcErr('add', { feature: 'sample', tickets: [{ ...draft('Bad'), repairs: bad }] }), /invalid_arguments: repairs/);
+  }
+  assert.equal((await call('get', { feature: 'sample' })).feature.tickets.length, 3);
+  assert.throws(() => validateTicketFeature({
+    version: 1, feature: 'sample',
+    tickets: [{ number: 1, title: 'Bad', status: 'done', owner_try: false, live_try: 'none', approved_removals: [],
+      blocked_by: [], repairs: ['sample/1'], what: 'x', acceptance: [], comments: [],
+      created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }],
+  }), /Invalid ticket store field: feature\.tickets\[0\]\.repairs\[0\]/);
+
+  // Markdown path: add, update, read back, and reject unknown/malformed repairs.
+  await call('add', { feature: 'legacy', tickets: [draft('Legacy B')] });
+  const mdRepair = await call('add', {
+    feature: 'legacy',
+    tickets: [{ ...draft('Fix Legacy B'), repairs: ['legacy/02'] }],
+  });
+  assert.equal(mdRepair.ok, true);
+  assert.match(fs.readFileSync(mdRepair.tickets[0].path, 'utf8'), /^\*\*Repairs:\*\* legacy\/02$/m);
+  assert.deepEqual((await call('get', { ticket: 'legacy/03' })).ticket.repairs, ['legacy/02']);
+  await call('update', { feature: 'legacy', ticket: 3, repairs: ['legacy/01', 'sample/02'] });
+  assert.deepEqual((await call('get', { ticket: 'legacy/03' })).ticket.repairs, ['legacy/01', 'sample/02']);
+  await call('update', { feature: 'legacy', ticket: 3, repairs: [] });
+  assert.equal((await call('get', { ticket: 'legacy/03' })).ticket.repairs, undefined);
+  assert.match(await rpcErr('add', { feature: 'legacy', tickets: [{ ...draft('Bad'), repairs: ['legacy/99'] }] }), /unknown repairs ticket: legacy\/99/);
+  assert.match(await rpcErr('add', { feature: 'legacy', tickets: [{ ...draft('Bad'), repairs: ['legacy/1'] }] }), /invalid_arguments: repairs/);
+});

@@ -349,6 +349,7 @@ export async function answerTicketQueueHandback(
       syncBlockerHandback(cur);
       recordDecision(cur, {
         step: 'tickets', kind: 'blocker', job: 'main', ticket: item.ticket, decision: 'resume',
+        ...(item.job && { worker_job: item.job }),
         ...(parsed.reason && { reason: parsed.reason }), at: new Date().toISOString(),
       });
       writeTicketQueue(home, cur);
@@ -448,9 +449,12 @@ export async function answerTicketQueueHandback(
           error: `No new ready repair tickets in feature ${cur.feature}; add repair ticket(s) via hud_tickets before answering repair`,
         };
       }
+      const handback = cur.handback;
       const at = new Date().toISOString();
       recordDecision(cur, {
         step, kind: 'accept', job: 'main', decision: 'repair',
+        ...(step === 'tickets' && handback.ticket && { ticket: handback.ticket }),
+        ...(step === 'tickets' && handback.job && { worker_job: handback.job }),
         ...(parsed.reason && { reason: parsed.reason }),
         at,
       });
@@ -477,10 +481,13 @@ export async function answerTicketQueueHandback(
       return { ok: true, queue: cur, resumed: true };
     }
     if (parsed.choice === 'escalate') {
+      const handback = cur.handback;
       const msg = parsed.reason ? `escalated: ${parsed.reason}` : 'escalated by main';
       const at = new Date().toISOString();
       recordDecision(cur, {
         step, kind: 'accept', job: 'main', decision: 'escalate',
+        ...(step === 'tickets' && handback.ticket && { ticket: handback.ticket }),
+        ...(step === 'tickets' && handback.job && { worker_job: handback.job }),
         ...(parsed.reason && { reason: parsed.reason }),
         at,
       });
@@ -504,10 +511,13 @@ export async function answerTicketQueueHandback(
         error: `Cannot finish ${id} while ${held.ticket} is held — manual resolution required: worker correction, hud_land, or stop`,
       };
     }
+    const handback = cur.handback;
     const verdict = parsed.reason ? `${parsed.choice}: ${parsed.reason}` : parsed.choice;
     const at = new Date().toISOString();
     recordDecision(cur, {
       step, kind: 'accept', job: 'main', decision: parsed.choice,
+      ...(step === 'tickets' && handback.ticket && { ticket: handback.ticket }),
+      ...(step === 'tickets' && handback.job && { worker_job: handback.job }),
       ...(parsed.reason && { reason: parsed.reason }),
       at,
     });
@@ -568,7 +578,7 @@ export async function resumeQueueAfterAnswer(home: string, jobId: string, reques
         d => d.kind === 'question' && d.decision === 'answer' && d.ticket === item.ticket && d.question === request,
       );
       if (!alreadyRecorded) {
-        recordDecision(cur, { step: 'tickets', kind: 'question', job: 'main', decision: 'answer', ticket: item.ticket, question: request, at });
+        recordDecision(cur, { step: 'tickets', kind: 'question', job: 'main', decision: 'answer', ticket: item.ticket, worker_job: jobId, question: request, at });
       }
       writeTicketQueue(home, cur);
     } else if (cur.review_job === jobId) {
@@ -578,7 +588,7 @@ export async function resumeQueueAfterAnswer(home: string, jobId: string, reques
         d => d.kind === 'question' && d.decision === 'answer' && d.step === 'review' && d.question === request,
       );
       if (!alreadyRecorded) {
-        recordDecision(cur, { step: 'review', kind: 'question', job: 'main', decision: 'answer', question: request, at });
+        recordDecision(cur, { step: 'review', kind: 'question', job: 'main', decision: 'answer', worker_job: jobId, question: request, at });
       }
       writeTicketQueue(home, cur);
     }
