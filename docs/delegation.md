@@ -123,7 +123,10 @@ job and the land read the same requirement.
 | Role | Runs on | Used for |
 | --- | --- | --- |
 | orchestrator | Claude Code (this session) | grilling, slicing, briefs, integration, every decision |
-| implementer | role `imp` (skill `hud-delegate`) | one slice each |
+| implementer | role `imp` (Sol high, fixed; skill `hud-delegate`) | one slice each |
+| frontier implementer | role `frontier-imp` (Astra xhigh) | every repair job: repair tickets and repairs after a job closed (D-2026-11-27-06) |
+| innovator | role `innovator` (Carbon, oracle instructions, read-only) | weakly constrained divergent work: idea generation, several design directions, alternatives to compare; its output is input to a decision, never a settled sample or spec |
+| prototyper | role `prototyper` (Neon) | throwaway spikes and competing prototypes in scratch or an unlanded worktree, to answer "does this approach work / how does it feel"; never lands |
 | reviewer | role `reviewer`, one per review | milestone reviews and the risky cases above only |
 | lead | role `lead` (`claude-opus-5-5` high, HUD MCP tools) | one-decision workflow acceptance and question hand-backs; closed through herdr after answering |
 | sonic | role `sonic` | small chores and `scout` dossiers (where/what/how-many lookups); never test authoring, bug hunting, design, review or why/which/is-it-wrong questions (those stay with the deciding model) |
