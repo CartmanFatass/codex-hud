@@ -233,6 +233,23 @@ test('jobRow derives raw state, display state, reason, blocked, open questions a
   assert.equal(quietRow.reason, 'quiet without a report; hud_send to continue or hud_close to stop');
 });
 
+test('jobRow leaves the question count unknown when QA cannot be read', (t) => {
+  const home = fs.mkdtempSync(join(tmpdir(), 'thin-row-qa-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const job = { job: 'j0000000000000001', role: 'imp', cli: { agent: 'grok' } };
+  const dir = join(home, 'jobs', job.job);
+  fs.mkdirSync(dir, { recursive: true });
+  const status = { state: 'waiting_orchestrator' };
+  const cache = getJobIndexCache(home);
+  assert.equal(jobRow(job, status, { dir, cache }).open_questions, 0, 'missing QA is empty');
+  fs.writeFileSync(join(dir, 'qa'), 'not a directory');
+  for (const source of [cache, undefined]) {
+    const row = jobRow(job, status, { dir, cache: source });
+    assert.equal(row.open_questions, null);
+    assert.equal(row.reason, null, 'do not infer quiet without a report from unreadable QA');
+  }
+});
+
 test("jobChanges emits a line for a new state, a question, or a new reason outside working", () => {
   const base = {
     job: 'j0000000000000001',

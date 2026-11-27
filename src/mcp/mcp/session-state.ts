@@ -83,7 +83,7 @@ export function sessionRows(markExhaustion: boolean, scan = scanForCall()): JobR
     .sort((a, b) => b.created_at.localeCompare(a.created_at) || a.job.localeCompare(b.job))
     .slice(0, 200)
     .map((job) => {
-      const { row } = readRow(job, markExhaustion, scan);
+      const { row } = readRow(job, markExhaustion, scan, 'best-effort');
       const reportMeta = jobRowReportMeta(row, directory(job.job));
       return reportMeta ? { ...row, report_meta: reportMeta } : row;
     });

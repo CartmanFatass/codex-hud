@@ -189,7 +189,7 @@ export type JobScan = ReturnType<typeof scanForCall>;
 export const writeScan = new AsyncLocalStorage<JobScan & { deferSummary?: () => void }>();
 
 // Pass null for wait samples, which need fresh status but no FIFO lookup yet.
-export function readRow(job: Job, markExhaustion = true, lookup?: number | JobScan | null) {
+export function readRow(job: Job, markExhaustion = true, lookup?: number | JobScan | null, qa: 'required' | 'best-effort' = 'required') {
   const dir = directory(job.job);
   const file = join(dir, jobFiles.status);
   const scan = typeof lookup === 'object' ? lookup : undefined;
@@ -198,7 +198,9 @@ export function readRow(job: Job, markExhaustion = true, lookup?: number | JobSc
     ? (typeof lookup === 'number' ? lookup : scan ? scan.position(job.job) : queuePositionsForJobs().get(job.job))
     : undefined;
   const report = jobCache.readReportStat(dir);
-  const facts = { dir, cache: jobCache, reportPresent: report.present, reportAt: report.mtimeMs, reportStamp: report.stamp };
+  // Execution callers must still fail closed when QA cannot be read; notice rows can carry unknown evidence.
+  const questionIds = qa === 'required' ? jobCache.readQa(dir).openIds : undefined;
+  const facts = { dir, cache: jobCache, questionIds, reportPresent: report.present, reportAt: report.mtimeMs, reportStamp: report.stamp };
   let row = jobRow(job, status, { ...facts, queuePosition: pos });
   let currentJob = job;
   if (markExhaustion && row.display_state === 'failed' && !job.exhaustion_marked && status && row.reason) {
@@ -218,7 +220,7 @@ export function readRow(job: Job, markExhaustion = true, lookup?: number | JobSc
         /* Ignore transient STATUS.json write error. */
       }
       (scan ?? writeScan.getStore())?.record(currentJob);
-      row = jobRow(currentJob, status, { ...facts, questionIds: row.question_ids });
+      row = jobRow(currentJob, status, { ...facts, questionIds: row.question_ids, openQuestions: row.open_questions });
     }
   }
   return { row, status, statusAt, job: currentJob, reportStamp: report.stamp };

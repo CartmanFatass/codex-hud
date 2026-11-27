@@ -108,7 +108,7 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
     const blockedUnread = Boolean(row.auto_land_blocked && (row.report_unread || !row.report_present));
     const pending = unread || attention || blockedUnread;
     const report = !row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime);
-    const escalation = row.state === 'waiting_orchestrator' && !row.open_questions && (old?.state !== row.state || old.reason !== row.reason);
+    const escalation = row.state === 'waiting_orchestrator' && row.open_questions === 0 && (old?.state !== row.state || old.reason !== row.reason);
     const failingChecks = row.checks && row.checks.passed < row.checks.total && checksJustFinished(row, old);
     const autoLandBlocked = Boolean(row.auto_land_blocked && row.auto_land_blocked !== old?.auto_land_blocked);
     const failureOrStop = row.display_state === 'failed' || row.display_state === 'stopped';

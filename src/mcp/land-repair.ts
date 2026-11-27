@@ -40,6 +40,7 @@ function repairProgress(root: string, receipt: Job, key: string, inPlace: boolea
   if (!waitForQuestions && asked.length) throw Error(`${id} needs the main session: ${asked[0].slice(0, -3)}`);
   if (oldStatus && !asked.length) return false;
   const row = jobRow(receipt, status, { dir: root });
+  if (row.open_questions === null) throw Error(`${id}: questions could not be read`);
   if (row.display_state === 'failed' || row.display_state === 'stopped') throw Error(`${id}: ${row.reason ?? row.state}`);
   if (waitForQuestions) {
     const qa = join(root, jobFiles.qa), now = Date.now();

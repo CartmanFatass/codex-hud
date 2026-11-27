@@ -229,10 +229,12 @@ export interface JobRow extends Partial<JobProgress> {
   reason: string | null;
   blocked: boolean;
   permission?: PermissionEntry;
-  open_questions: number;
+  /** Null means the question count could not be read. */
+  open_questions: number | null;
   report_present: boolean;
   report_unread: boolean;
   report_mtime: number | null;
+  /** Observed open question IDs (none observed on a read failure). */
   question_ids: string[];
   checks?: CheckSummary;
   report_meta?: ReportMetaFields;
@@ -241,7 +243,7 @@ export interface JobRowExtras {
   dir?: string;
   cache?: JobIndexCache;
   questionIds?: readonly string[];
-  openQuestions?: number;
+  openQuestions?: number | null;
   reportPresent?: boolean;
   reportAt?: number | null;
   reportStamp?: string | null;
@@ -325,15 +327,13 @@ export function jobRow(
   const cliJob = word(s.harness) === 'cli' || cliInfo !== null;
   const cliAgent = word(s.agent) ?? word(cliInfo?.agent) ?? 'CLI';
   const stderrFirstLine = word(j.stderr_tail)?.split(/\r?\n/)[0]?.trim() || null;
-  const questionIds =
-    extras?.questionIds !== undefined
-      ? [...extras.questionIds]
-      : extras?.dir
-        ? extras.cache
-          ? [...extras.cache.readQa(extras.dir).openIds]
-          : openQuestionIds(extras.dir)
-        : [];
-  const openQuestions = extras?.openQuestions ?? questionIds.length;
+  let questionIds: readonly string[] | null = extras?.questionIds ?? [];
+  if (extras?.questionIds === undefined && extras?.dir) {
+    try {
+      questionIds = extras.cache ? extras.cache.readQa(extras.dir).openIds : openQuestionIds(extras.dir);
+    } catch { questionIds = null; } // Keep receipt facts even when the question evidence is unavailable.
+  }
+  const openQuestions = extras?.openQuestions !== undefined ? extras.openQuestions : questionIds?.length ?? null;
   const reason =
     displayState === 'failed'
       ? (word(s.error) ?? word(s.exit_reason) ?? word(s.reason) ?? (!hasStatus ? stderrFirstLine : null))
@@ -376,7 +376,7 @@ export function jobRow(
     report_present: reportPresent,
     report_unread: reportPresent && reportMtime !== null && !reportWasRead(j, reportMtime, extras?.reportStamp ?? rep?.stamp),
     report_mtime: reportMtime,
-    question_ids: questionIds,
+    question_ids: questionIds ? [...questionIds] : [],
     ...extras?.progress,
   };
 }
@@ -428,7 +428,7 @@ function jobOwesCaller(dir: string, job: Record<string, unknown>, superseded: (j
   if (row.ticket_queue || (failedAttempt(row) && superseded(job))) return false;
   const autoLanding = Boolean(row.auto_land && !row.auto_land_blocked);
   const reportOwed = !row.parent_job && !row.land_turn && !autoLanding && row.report_unread;
-  return row.display_state === 'working' || row.display_state === 'queued' || (!autoLanding && row.state === 'idle_grace') || reportOwed || row.open_questions > 0 ||
+  return row.display_state === 'working' || row.display_state === 'queued' || (!autoLanding && row.state === 'idle_grace') || reportOwed || (row.open_questions !== null && row.open_questions > 0) ||
     (!row.land_turn && failedAttempt(row) && failureUnobserved(dir, job.observed_at, statusAt));
 }
 
@@ -505,7 +505,7 @@ export function formatJobChange(row: JobRow): string {
     ...(reason ? [reason] : []),
     ...(row.auto_land_blocked ? [`auto-land blocked: ${row.auto_land_blocked.replace(/\s+/g, ' ').trim()}`] : []),
     ...(unread ? ['report'] : []),
-    ...(row.open_questions > 0 ? [row.open_questions === 1 ? 'QUESTION' : `QUESTION (${row.open_questions})`] : []),
+    ...(row.open_questions !== null && row.open_questions > 0 ? [row.open_questions === 1 ? 'QUESTION' : `QUESTION (${row.open_questions})`] : []),
     ...(readyChecks(row) ? [`checks ${row.checks!.passed}/${row.checks!.total}`] : []),
     ...(summary ? [[...summary].slice(0, 140).join('')] : []),
     ...(unread ? [previewNotice(row.report_meta?.preview), reportReadHint(row.job)].filter(Boolean) : []),
@@ -963,7 +963,7 @@ export function readThinJobs(
     const report = readArt(join(directory, 'report.md'));
     const row = jobRow(job, status?.v ?? null, {
       dir: directory, cache: idx, questionIds: [],
-      openQuestions: openCount, reportPresent: report !== null, reportAt: report?.at ?? null, reportStamp: report?.stamp,
+      openQuestions: qaSnap ? openCount : null, reportPresent: report !== null, reportAt: report?.at ?? null, reportStamp: report?.stamp,
       progress: readJobProgress(directory, true, artifacts, seenArtifacts),
     });
     const cliJob = word(s.harness) === 'cli' || (job.cli !== null && typeof job.cli === 'object');

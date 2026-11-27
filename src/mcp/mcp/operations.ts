@@ -223,7 +223,7 @@ async function waitJobs({ jobs: ids, mode = 'any', wait_ms = 60000 }: Args, scan
   function result(rows: JobRow[], timedOut = false) {
     const allSettled = mode === 'all' && rows.length === targets.size && rows.every((row) => settled(row.state));
     const triggered = rows.filter((row) => allSettled || (mode === 'any' && settled(row.state)) ||
-      row.blocked || row.state === 'waiting_orchestrator' || row.display_state === 'failed' || row.open_questions > 0 || !!row.permission
+      row.blocked || row.state === 'waiting_orchestrator' || row.display_state === 'failed' || (row.open_questions !== null && row.open_questions > 0) || !!row.permission
     ).map((row) => row.job);
     const ready = targets.size === 0 || triggered.length > 0;
     const timed_out = !ready && (timedOut || performance.now() >= deadline);
@@ -797,7 +797,7 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
       settled(row.state) ||
       row.state === 'waiting_orchestrator' ||
       row.blocked ||
-      row.open_questions > 0 || !!row.permission ||
+      (row.open_questions !== null && row.open_questions > 0) || !!row.permission ||
       (initial !== undefined && jobChanges([initial], [row]).length > 0);
     let summary: GitSummary | undefined;
     let firstCheck = true;

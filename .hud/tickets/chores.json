@@ -944,6 +944,88 @@
       "comments": [],
       "created_at": "2026-11-27T10:35:37.569Z",
       "updated_at": "2026-11-27T11:07:26.193Z"
+    },
+    {
+      "number": 49,
+      "title": "An unreadable flake qa/ hand-back reaches main instead of dropping the job from watch",
+      "kind": "impl",
+      "status": "done",
+      "role": "imp",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/45"
+      ],
+      "what": "Milestone review ja71e1243913dbba2 finding 1 (major). chores/45 made flake auto-land refuse to publish when `qa/` cannot be read and persist `auto_land_blocked` ('questions could not be read') in `src/mcp/land-flakes.ts:807-814`. But that hand-back never reaches main. `watchRows` (`src/collectors/thin-jobs.ts:570-591`) calls `jobRow`, which calls `extras.cache.readQa(extras.dir)` (~line 330). On a read error that call throws, and the per-receipt catch drops the whole job. So `hud watch` / notices cannot show the job or its block reason, and the receipt stays blocked on the same report signature. Fix: a `qa/` read error in `jobRow` must give unknown question evidence (not zero open questions and not a throw that drops the row). The job's row and its persisted `auto_land_blocked` refusal must still be surfaced to main as a single handback notice. Never treat unreadable QA as empty and never publish. Keep the change in the collector/row path. Do not redesign the land-flakes block.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: with an ordinary file in place of `qa/` on a settled flake job, auto-land makes zero `startLand` calls AND `watchRows`/the watch notice path yields exactly one main-visible handback row carrying the block reason",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a `qa/` read error in `jobRow` does not report the job as having zero open questions (unknown stays unknown)",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T11:33:45.819Z",
+        "job": "j8a7fd7e2c40d9cd6",
+        "flow": "f8a7fd7e2c40d9cd6",
+        "replay_base": "e9ede9e90a45cdd669fc51fd830b6a4ae18a7b1e",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T11:17:04.189Z",
+      "updated_at": "2026-11-27T11:33:45.819Z"
+    },
+    {
+      "number": 50,
+      "title": "Folded sonic helpers of a queue-run worker stay counted and reachable; fold only on known-closed questions",
+      "kind": "impl",
+      "status": "ready-for-agent",
+      "role": "frontend-imp",
+      "owner_try": false,
+      "live_try": "With a ticket-queue run whose ticket worker started three hud_sonic helpers and settled (queue ended), open the panel's Execution tab: no Recent rows titled \"Read-only\"; from the queue's Recent row → Run Detail, the worker's ticket row shows `+3 sonic` and Enter on it opens the worker's Inspector listing each helper with its ask after the leading label.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/48"
+      ],
+      "what": "Milestone review ja71e1243913dbba2 findings 2 (major) and 3 (minor) against chores/48. (2) `src/collectors/execution.ts:351-386` (`belongsToRun` / `foldTarget`) returns `suppress` for helpers whose parent belongs to a workflow/queue run. This is the exact case that motivated chores/48 (a queue ticket worker's sonic helpers). But no surviving row gets their count, and Run Detail ticket rows are plain text with no target (`src/render/execution-run-detail.ts:125-145`). So after the queue ends, the helpers have neither `+N sonic` nor any route from Recent to their asks. Keep one row per run. Carry the folded child count onto the parent's ticket row in Run Detail and make that row an actionable target that opens the parent worker's Inspector (which already lists children). If no reachable parent exists, keep the child rows rather than suppress them. Apply the parent-outside-window check before suppressing by run membership: a recent run receipt does not prove that its member settled within the Recent window. (3) `hasOpenQuestion` (execution.ts:344-350) reads an unreadable `qa/` as no open question, which hides a child exactly when its attention state is unknown. It also counts an unanswered `q1.md` that has a recorded timeout (`timed_out_questions`, persisted by chores/45) as open. Use one known-open / known-closed / unknown decision and fold only on known-closed. Skip the QA lookup for jobs without a parent. Update docs/reference.md where Run Detail / Recent folding is described.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test (queue-backed, via a ticket-queue receipt, not just a job with a `ticket` field): a ended queue whose ticket worker has three settled sonic children shows no child rows in Recent, and Run Detail's ticket row shows `+3 sonic` and targets the worker's Inspector, which lists the three children",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a child whose run-member parent settled outside the Recent window keeps its own row",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: a child with unreadable `qa/` keeps its own row; a child whose only unanswered question has a recorded timeout is folded",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T11:17:04.189Z",
+      "updated_at": "2026-11-27T11:17:04.189Z"
     }
   ]
 }

@@ -59,8 +59,8 @@ export function collectDoctor(dir: string) {
   const cli = !browser && (s?.harness === 'cli' || !!j.cli || j.place?.harness === 'cli');
   const shared = observe(() => {
     const cache = new JobIndexCache(dirname(dirname(dir)));
-    const { display_state, state, reason, blocked, report_unread, question_ids } = jobRow(j, s, { dir, cache });
-    return { display_state, state, reason, blocked, report_unread, question_ids };
+    const { display_state, state, reason, blocked, report_unread, open_questions, question_ids } = jobRow(j, s, { dir, cache });
+    return { display_state, state, reason, blocked, report_unread, question_ids: open_questions === null ? 'unknown' as const : question_ids };
   });
   const report = observe(() => {
     // Same signature as reportSignature, from one opened inode and with a hard byte cap.

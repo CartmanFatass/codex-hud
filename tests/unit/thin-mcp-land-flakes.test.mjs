@@ -9,6 +9,7 @@ import {
 import { runningListAdmission } from '../../dist/mcp/flake-admission.js';
 import { procStat } from '../../dist/utils/proc.js';
 import { startSessionWatch } from '../../dist/cli/watch.js';
+import { jobChanges, readThinJobRows } from '../../dist/collectors/thin-jobs.js';
 import { installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.js';
 import { landNotice } from '../../dist/mcp/land-state.js';
 import { ensureJobWatcher } from '../../dist/mcp/watch-pid.js';
@@ -20,7 +21,7 @@ import { controlPath } from '../../dist/unattended/state.js';
 import { publishQuestion } from '../../dist/worker/qa.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
-import { checkout, seedJsonTickets } from '../helpers/thin-mcp-land.mjs';
+import { checkout, job as sourceJob, seedJsonTickets } from '../helpers/thin-mcp-land.mjs';
 
 const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 
@@ -1711,7 +1712,7 @@ test('a promoted flake that asks, reports, then times out lands without a main c
     `expected no completion notice on clean auto-land, got: ${JSON.stringify(mainNotices)}`);
 });
 
-test('auto-land hands back without calling startLand when QA cannot be read', async t => {
+test('unreadable QA yields one auto-land handback to main without calling startLand', { timeout: 10_000 }, async t => {
   const f = await checkout(t, ['true'], { after: [] });
   setFlakesConfig(f, { feature: 'test-flakes' });
   const seeded = seedAutoFlakeJob(f, { id: 'j0000000000000a20', ticket: 'test-flakes/01' });
@@ -1719,15 +1720,39 @@ test('auto-land hands back without calling startLand when QA cannot be read', as
   fs.writeFileSync(join(seeded.dir, 'qa'), 'not a directory\n');
   settleDispatchedFlakeJob(f, seeded.id, 'Fixed flake.\nBlockers: none\n');
 
+  const pane = f.env.HERDR_PANE_ID;
+  const rows = () => readThinJobRows(f.home, { pane }).filter(row => row.job === seeded.id);
+  const before = rows();
+  const peek = () => f.call('hud_peek', { job: sourceJob });
+  await peek(); // Establish the MCP changes cursor before the block is persisted.
   const startLandFn = t.mock.fn();
   const result = await settleAutoLandFlakeJob(f.home, seeded.id, { startLandFn });
   assert.equal(result.action, 'blocked');
   assert.equal(result.reason, 'questions could not be read');
   assert.ok(result.sig);
   assert.equal(readJson(seeded.jobFile).auto_land_blocked?.sig, result.sig);
+
+  const after = rows();
+  assert.deepEqual(after.map(row => row.job), [seeded.id]);
+  assert.equal(after[0].auto_land_blocked, result.reason);
+  assert.equal(after[0].open_questions, null);
+  const handback = jobChanges(before, after);
+  assert.equal(handback.length, 1);
+  assert.match(handback[0], /auto-land blocked: questions could not be read/);
+
   assert.deepEqual(await settleAutoLandFlakeJob(f.home, seeded.id, { startLandFn }), { action: 'noop' });
+  assert.deepEqual(jobChanges(after, rows()), [], 'same block does not produce another notice');
   assert.equal(startLandFn.mock.callCount(), 0);
   assert.equal(f.git(f.main, 'rev-parse', 'origin/base'), base);
+
+  const mainNotices = [];
+  const forFlake = lines => lines.filter(line => line.includes(seeded.id));
+  t.after(startSessionWatch(f.home, pane, f.main, lines => mainNotices.push(...forFlake(lines)), 50));
+  await until(() => mainNotices.length > 0, t.signal);
+  assert.deepEqual(mainNotices, handback);
+
+  assert.deepEqual(forFlake((await peek()).changes ?? []), handback);
+  assert.deepEqual(forFlake((await peek()).changes ?? []), []);
 });
 
 test('promoted flake auto-land notifies main on land failure', { timeout: 35_000 }, async t => {
