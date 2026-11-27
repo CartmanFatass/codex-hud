@@ -6,6 +6,7 @@ import { scanScratch, slugify } from '../cli/tickets.js';
 import { targetKey, ticketFileEvidence } from '../collectors/ticket-evidence.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { sharedRoot } from '../roles/projects.js';
+import { CASES_HEADING, CHECKBOX_LINE, COMMENTS_HEADING, parseFlakeCases, type FlakeCase } from '../tickets/flake-cases.js';
 import {
   legacyTicketPaths, readJsonTicketFeature, ticketFeaturePath, withTicketStoreLock, writeLegacyTicket,
   writeTicketFeature, type FlakeCaseRecord, type TicketFeatureDoc, type TicketRecord,
@@ -23,6 +24,7 @@ import { ticketBlockersByKey } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { ensureJobWatcher } from './watch-pid.js';
 
+export { parseFlakeCases, type FlakeCase } from '../tickets/flake-cases.js';
 export { flakeDispatchKey } from './flake-admission.js';
 
 export interface GateFlake {
@@ -32,14 +34,6 @@ export interface GateFlake {
   log?: string;
   unidentified?: boolean;
   step?: string;
-}
-
-export interface FlakeCase {
-  name: string;
-  file?: string;
-  flow?: string;
-  log?: string;
-  unidentified?: boolean;
 }
 
 export interface CollectFlakesOptions {
@@ -80,9 +74,6 @@ export interface CollectFlakesResult {
 }
 
 const STATUS_FIELD = /((?:^|·)[ \t]*\*\*Status:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
-const COMMENTS_HEADING = /^## Comments[ \t]*\r?$/m;
-const CASES_HEADING = /^###[ \t]+Cases[ \t]*\r?$/m;
-const CHECKBOX_LINE = /^[ \t]*[-*] \[[ xX]\]/m;
 const MAX_TICKET_BYTES = 256 * 1024;
 const MAX_FLOW_BYTES = 128 * 1024;
 const DISPATCH_CASE_THRESHOLD = 4;
@@ -119,58 +110,6 @@ export function formatFlakeLine(flake: GateFlake): string {
   return log
     ? `- ${subject} — flow \`${flow}\`, log \`${log}\``
     : `- ${subject} — flow \`${flow}\``;
-}
-
-export function parseFlakeCaseLine(line: string): FlakeCase | null {
-  const bullet = /^[ \t]*[-*][ \t]+(.+)$/.exec(line);
-  if (!bullet) return null;
-  const text = bullet[1].trim();
-  const match = / — (?:flow `([^`]+)`(?:,[ \t]+log `([^`]+)`)?|log `([^`]+)`)$/.exec(text);
-  const subject = match ? text.slice(0, match.index) : text;
-  let name: string | undefined;
-  let file: string | undefined;
-  let unidentified = false;
-  const unidMatch = /^unidentified(?: gate)? failure \(`([^`\r\n]+)`(?:,[ \t]+([^)\r\n]+))?\)$/i.exec(subject);
-  if (unidMatch) {
-    name = unidMatch[1].trim();
-    file = unidMatch[2]?.trim() || undefined;
-    unidentified = true;
-  } else {
-    const named = /^`(.+)`(?: \((.+)\))?$/.exec(subject);
-    name = named?.[1].trim();
-    file = named?.[2]?.trim();
-  }
-  if (!name) return null;
-  const flow = match?.[1]?.trim(), log = (match?.[2] ?? match?.[3])?.trim();
-  return {
-    name,
-    ...(file ? { file } : {}),
-    ...(flow ? { flow } : {}),
-    ...(log ? { log } : {}),
-    ...(unidentified ? { unidentified: true } : {}),
-  };
-}
-
-export function parseFlakeCases(text: string): FlakeCase[] {
-  const body = text.split(COMMENTS_HEADING, 1)[0];
-  const cases: FlakeCase[] = [];
-  for (const line of body.split(/\r?\n/)) {
-    const parsed = parseFlakeCaseLine(line);
-    if (parsed?.flow) cases.push(parsed);
-  }
-  // Also recognize legacy hand-written running-list prose (`Cases: ...`) before `### Cases` or acceptance items.
-  const prosePart = body.split(CASES_HEADING, 1)[0].split(CHECKBOX_LINE, 1)[0];
-  const inlineIdx = prosePart.search(/\bCases:/i);
-  if (inlineIdx >= 0) {
-    const inline = prosePart.slice(inlineIdx + 'Cases:'.length);
-    const re = /`([^`\r\n]+)`(?:[ \t]*\(([^()\r\n]+\.(?:[cm]?js|[cm]?ts))\b[^()\r\n]*\))?/g;
-    for (const match of inline.matchAll(re)) {
-      const name = match[1].trim();
-      if (!name) continue;
-      cases.push({ name, ...(match[2] ? { file: match[2].trim() } : {}) });
-    }
-  }
-  return cases;
 }
 
 function sameTest(a: Pick<FlakeCase, 'name' | 'file' | 'unidentified'>, b: Pick<FlakeCase, 'name' | 'file' | 'unidentified'>): boolean {

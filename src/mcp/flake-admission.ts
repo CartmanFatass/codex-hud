@@ -19,10 +19,7 @@ export function readFlakesConfig(mainRoot: string): { feature: string } | null {
   }
 }
 
-export function isRunningListTicket(text: string): boolean {
-  const body = text.split(/^## Comments[ \t]*\r?$/m, 1)[0];
-  return /\brunning list\b/i.test(body) || /^(?:###[ \t]+Cases|\*\*Kind:\*\*[ \t]*flake-list)[ \t]*\r?$/m.test(body);
-}
+export { isRunningListTicket } from '../tickets/flake-cases.js';
 
 const localMainRoot = (cwd: string) => localProjectRoots(cwd).mainRoot;
 function flakeProjectId(mainRoot: string): string {

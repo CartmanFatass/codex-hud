@@ -5,10 +5,9 @@ import { isDeepStrictEqual } from 'node:util';
 import { readObjectives } from '../collectors/objectives.js';
 import { ticketHeading } from '../collectors/ticket-evidence.js';
 import { getHudHome } from '../hud-home.js';
-import { isRunningListTicket } from '../mcp/flake-admission.js';
-import { parseFlakeCaseLine, parseFlakeCases } from '../mcp/land-flakes.js';
 import { localProjectRoots } from '../roles/projects.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
+import { isRunningListTicket, parseFlakeCaseLine, parseFlakeCases } from './flake-cases.js';
 import {
   MAX_TICKET_BYTES, TICKET_FEATURE, TICKET_KINDS, TICKET_STATUSES, readJsonTicketFeature,
   renderTicketBrief, serializeTicketFeature, splitRemovals, ticketNumber, ticketRef, validateTicketFeature,
