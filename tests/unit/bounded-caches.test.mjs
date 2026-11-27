@@ -22,13 +22,13 @@ import {
 } from '../../dist/collectors/token-rate.js';
 import {
   MAX_CREATED_JOBS,
-  MAX_LAND_TASKS,
+  MAX_FLOW_TASKS,
   MAX_MCP_TASKS,
   pruneCreatedJobs,
-  pruneLandTasks,
+  pruneFlowTasks,
   pruneTasks,
   rememberCreatedJob,
-  rememberLandTask,
+  rememberFlowTask,
 } from '../../dist/mcp/task-bounds.js';
 import {
   recordWarning,
@@ -136,7 +136,7 @@ test('TokenRateTracker bounds open tool call IDs within a turn', () => {
   assert.equal(cloned.openToolCount, TOKEN_RATE_MAX_OPEN_TOOLS - 1);
 });
 
-test('hud-mcp task-bounds caps createdJobs, landTasks and tasks while dropping settled/archived first', () => {
+test('hud-mcp task-bounds caps createdJobs, flowTasks and tasks while dropping settled/archived first', () => {
   // 1. createdJobs drops archived/missing jobs first and caps at MAX_CREATED_JOBS.
   const created = new Set();
   const live = new Set();
@@ -154,18 +154,21 @@ test('hud-mcp task-bounds caps createdJobs, landTasks and tasks while dropping s
   pruneCreatedJobs(created, (candidate) => live.has(candidate));
   assert.equal(created.size, 0);
 
-  // 2. landTasks drops settled/missing flows before active ones and caps at MAX_LAND_TASKS.
-  const lands = new Set();
+  // 2. flowTasks drops expired then settled/missing flows before active ones and caps at MAX_FLOW_TASKS.
+  const flows = new Map();
+  const flowNow = 1_700_000_000_000;
   const activeFlows = new Set(['f0000000000000001']);
-  rememberLandTask(lands, 'f0000000000000001', (id) => activeFlows.has(id));
-  for (let i = 2; i <= MAX_LAND_TASKS + 40; i++) {
+  rememberFlowTask(flows, { id: 'f0000000000000000', expiresAt: flowNow - 1 }, (id) => activeFlows.has(id), flowNow);
+  rememberFlowTask(flows, { id: 'f0000000000000001', expiresAt: flowNow + 60_000 }, (id) => activeFlows.has(id), flowNow);
+  for (let i = 2; i <= MAX_FLOW_TASKS + 40; i++) {
     const flow = `f${String(i).padStart(16, '0')}`;
-    rememberLandTask(lands, flow, (id) => activeFlows.has(id));
+    rememberFlowTask(flows, { id: flow, expiresAt: flowNow + 60_000 }, (id) => activeFlows.has(id), flowNow);
   }
-  assert.equal(lands.size, MAX_LAND_TASKS);
-  assert.equal(lands.has('f0000000000000001'), true, 'active land flow survives eviction of settled flows');
-  pruneLandTasks(lands, () => false, 10);
-  assert.equal(lands.size, 10);
+  assert.equal(flows.size, MAX_FLOW_TASKS);
+  assert.equal(flows.has('f0000000000000000'), false, 'expired flow task is evicted');
+  assert.equal(flows.has('f0000000000000001'), true, 'active flow survives eviction of settled flows');
+  pruneFlowTasks(flows, () => false, flowNow, 10);
+  assert.equal(flows.size, 10);
 
   // 3. tasks evicts expired first, then settled before working, and caps at MAX_MCP_TASKS.
   const tasks = new Map();

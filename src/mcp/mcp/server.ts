@@ -8,17 +8,16 @@ import { statuslineTool, statuslineResource, readCodexStatusline } from '../code
 import { inlinePending, retireInline } from '../../workflows/inline.js';
 import { isWorker, hudHome, publishWorkSummary, scanForCall, writeScan, findJob } from '../store/job-store.js';
 import { locks, keyLock } from '../store/key-lock.js';
-import { pruneCreatedJobs, pruneLandTasks, pruneTasks } from '../task-bounds.js';
+import { pruneCreatedJobs, pruneFlowTasks, pruneTasks } from '../task-bounds.js';
 import { MAIN_SESSION_INSTRUCTIONS } from './instructions.js';
 import { checkModTakeover, syncPanelDelivery, call, mutationKey, withChanges, ownerDelivery, closeJob } from './operations.js';
 import { compactResult } from './result-text.js';
 import { ownStatuslineStrip } from '../../statusline-parity/strip.js';
 import { reportMainPaneGroup } from '../../runtime/pane-group.js';
 import { session, callerPane, checkResume, adoptSessionJobs, tries, answers, sessionRows, refreshModWatch } from './session-state.js';
-import { readQueueTask } from '../ticket-queue-state.js';
 import {
-  resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, landTasks, landActive, flowReceipt, tasks,
-  evictTask, activeTasks, loadTaskReceipt, TASK_TTL, saveTaskReceipt, stopBatchDelivery, beginHandoff,
+  resumeTaskReceipts, taskRequest, taskContent, isTaskReply, handedOff, flowTasks, landActive, tasks,
+  evictTask, activeTasks, stopBatchDelivery, beginHandoff,
   restoreTaskMaps, clearTaskSweep, clearTaskMaps, batchTasks, batchPending,
 } from './tasks.js';
 
@@ -288,15 +287,19 @@ async function snapshot() {
   const toolsList = JSON.stringify(await toolsListResult());
   beginHandoff();
   pruneCreatedJobs(session.createdJobs, (id) => !!findJob(id));
-  pruneLandTasks(landTasks, landActive);
+  pruneFlowTasks(flowTasks, landActive);
   pruneTasks(tasks, Date.now(), evictTask);
-  return { version: 1, scoutedCreatePending: inlinePending(), toolsList, tasks, activeTasks, batchTasks, batchPending, landTasks, discovered: session.discovered, taskClient: session.taskClient, taskCapable: session.taskCapable, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
+  return { version: 1, scoutedCreatePending: inlinePending(), toolsList, tasks, activeTasks, batchTasks, batchPending, flowTasks, discovered: session.discovered, taskClient: session.taskClient, taskCapable: session.taskCapable, agyClient: session.agyClient, resumeChecked: session.resumeChecked, resumeRefusal: session.resumeRefusal,
     callerHarness: session.callerHarness, sentConventionVersion: session.sentConventionVersion, sentCreateHint: session.sentCreateHint, createdJobs: session.createdJobs, cursor: session.cursor, modLive: session.modLive, triesAt: tries.delivered, answersAt: answers.offset };
 }
+type HandoffState = Omit<Awaited<ReturnType<typeof snapshot>>, 'flowTasks'> & {
+  flowTasks?: typeof flowTasks;
+  landTasks?: Set<string>;
+};
 export function openRuntime() {
   return {
     snapshot,
-    async start(state?: Awaited<ReturnType<typeof snapshot>>) {
+    async start(state?: HandoffState) {
       if (!state) {
         checkResume('claude', process.env.CLAUDE_CODE_SESSION_ID);
         if (!worker && !session.resumeRefusal) {
@@ -316,20 +319,7 @@ export function openRuntime() {
       answers.offset = state.answersAt;
       restoreTaskMaps(state);
       await checkModTakeover();
-      if (session.taskClient) {
-        for (const id of landTasks) {
-          if (loadTaskReceipt(id)) continue;
-          try {
-            const flow = flowReceipt(id);
-            if (!flow) continue;
-            const queueTask = 'wt' in flow ? null : readQueueTask(hudHome, id);
-            const ownQueueTask = queueTask?.pid === process.pid ? queueTask : null;
-            const expiresAt = ownQueueTask?.expires ?? (Date.parse(flow.created_at) + TASK_TTL);
-            if (expiresAt > Date.now()) saveTaskReceipt({ id, expiresAt, ...(!('wt' in flow) && { epoch: ownQueueTask?.epoch ?? (flow.epoch ?? 0) }) });
-          } catch { /* A broken flow receipt must not prevent reload. */ }
-        }
-        resumeTaskReceipts();
-      }
+      if (session.taskClient) resumeTaskReceipts();
       await syncPanelDelivery();
       return { toolsList: JSON.stringify(await toolsListResult()) };
     },

@@ -62,14 +62,14 @@ import {
   type JobScan,
 } from '../store/job-store.js';
 import { keyLock } from '../store/key-lock.js';
-import { rememberLandTask } from '../task-bounds.js';
+import { rememberFlowTask } from '../task-bounds.js';
 import { ensureJobWatcher } from '../watch-pid.js';
 import {
   ownsJob, sessionJobs, adoptSessionJobs, callerPane, session, rememberCallerHarness, deliveryHint,
   sessionRows, tries, answers, refreshModWatch,
 } from './session-state.js';
 import {
-  landTasks, landActive, saveTaskReceipt, TASK_TTL, isTaskReply, activeTasks, taskFence, sampleTask,
+  flowTasks, landActive, saveTaskReceipt, TASK_TTL, isTaskReply, activeTasks, taskFence, sampleTask,
   beginTask, needsAttention, extendTask, registerBatchTask, finishTask, releaseTask, batchTasks, taskLabel,
   updateTask, ensureBatchTimer, stopBatchDelivery, drainBatchChanges,
 } from './tasks.js';
@@ -569,8 +569,9 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
     const flow = await startLand(hudHome, id, job, job ? readRow(job).row.state : null, callerPane, task, undefined, undefined, undefined, !isWorker);
     ensureWatcher();
     if (task) {
-      rememberLandTask(landTasks, flow.flow, landActive);
-      saveTaskReceipt({ id: flow.flow, expiresAt: Date.parse(flow.created_at) + TASK_TTL });
+      const receipt = { id: flow.flow, expiresAt: Date.parse(flow.created_at) + TASK_TTL };
+      rememberFlowTask(flowTasks, receipt, landActive);
+      saveTaskReceipt(receipt);
       return { resultType: 'task', ...landTask(hudHome, flow) };
     }
     if (callerPane) void ensureQueueWatcher(callerPane, hudHome);
@@ -590,8 +591,9 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
       if (q.task && session.taskCapable && args.cancel !== true) {
         const marker = liveQueueTask(hudHome, q) ?? claimQueueTask(hudHome, q, Date.now() + TASK_TTL);
         const expiresAt = marker?.expires ?? (Date.parse(q.created_at) + TASK_TTL);
-        rememberLandTask(landTasks, q.flow, landActive);
-        saveTaskReceipt({ id: q.flow, expiresAt, epoch: q.epoch ?? 0 });
+        const receipt = { id: q.flow, expiresAt, epoch: q.epoch ?? 0 };
+        rememberFlowTask(flowTasks, receipt, landActive);
+        saveTaskReceipt(receipt);
         return { resultType: 'task', ...ticketQueueTask(hudHome, q) };
       }
       if (!q.task && callerPane) void ensureQueueWatcher(callerPane, hudHome);
@@ -903,14 +905,15 @@ async function respondTicketQueue(args: Args, batch: boolean) {
     if (claimTask && res.queue.task) {
       const marker = liveQueueTask(hudHome, res.queue) ?? claimQueueTask(hudHome, res.queue, Date.now() + TASK_TTL);
       const expiresAt = marker?.expires ?? (Date.now() + TASK_TTL);
-      rememberLandTask(landTasks, res.queue.flow, landActive);
-      saveTaskReceipt({ id: res.queue.flow, expiresAt, epoch: res.queue.epoch ?? 0 });
+      const receipt = { id: res.queue.flow, expiresAt, epoch: res.queue.epoch ?? 0 };
+      rememberFlowTask(flowTasks, receipt, landActive);
+      saveTaskReceipt(receipt);
       return { resultType: 'task', ...ticketQueueTask(hudHome, res.queue) };
     }
-    landTasks.delete(res.queue.flow);
+    flowTasks.delete(res.queue.flow);
     if (callerPane) void ensureQueueWatcher(callerPane, hudHome);
   } else if (res.queue.state !== 'working') {
-    landTasks.delete(res.queue.flow);
+    flowTasks.delete(res.queue.flow);
   }
   return { ok: true, ...ticketQueueView(res.queue) };
 }

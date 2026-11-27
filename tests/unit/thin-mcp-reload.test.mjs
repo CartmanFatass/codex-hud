@@ -408,3 +408,199 @@ test('hud-watch survives a broken build and keeps PSS within 10 MB across 15 exe
   assert.deepEqual(await exit, [0, null]);
   assert.equal(fs.existsSync(pidFile), false);
 });
+
+test('MCP flow-task reload preserves owned receipts and rejects missing receipts with foreign or absent queue markers', { timeout: 15000 }, async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'hud-flow-task-reload-'));
+  const hudHome = join(root, 'hud');
+  fs.mkdirSync(join(hudHome, 'flows'), { recursive: true, mode: 0o700 });
+  const untrack = trackFixture({ root, hudHome });
+  t.after(async () => {
+    const survivors = await reapFixtureProcesses({ root, hudHome });
+    untrack();
+    fs.rmSync(root, { recursive: true, force: true });
+    assert.equal(survivors.length, 0);
+  });
+
+  const script = `
+    import assert from 'node:assert/strict';
+    import { createHash } from 'node:crypto';
+    import * as fs from 'node:fs';
+    import { join, resolve } from 'node:path';
+    import { pathToFileURL } from 'node:url';
+    import { openGeneration } from ${JSON.stringify(pathToFileURL(resolve('packages/hud-mcp/bin/generation.mjs')).href)};
+    import { procStat } from ${JSON.stringify(pathToFileURL(resolve('dist/utils/proc.js')).href)};
+
+    const home = process.env.HUD_HOME;
+    const pane = process.env.HERDR_PANE_ID;
+    const ownStart = procStat(process.pid)?.start;
+    assert.ok(ownStart, 'current process start time should be readable');
+    const now = Date.now();
+    const iso = new Date(now).toISOString();
+    const callerHash = createHash('sha256').update(JSON.stringify([pane, null, null])).digest('hex').slice(0, 32);
+    const receiptPath = (id) => join(home, 'mcp-tasks', id + '.' + callerHash + '.json');
+    const stopPath = (id) => join(home, 'flows', id + '.json.cancel');
+    const writeFlow = (id, data) => {
+      fs.mkdirSync(join(home, 'flows', id), { recursive: true, mode: 0o700 });
+      fs.writeFileSync(join(home, 'flows', id + '.json'), JSON.stringify(data));
+    };
+    const writeMarker = (id, marker) => {
+      fs.writeFileSync(join(home, 'flows', id, 'task.json'), JSON.stringify(marker));
+    };
+
+    const qForeign = 'q0000000000000001';
+    const qAbsent = 'q0000000000000002';
+    const qWrongStart = 'q0000000000000003';
+    const qOwnedNew = 'q0000000000000004';
+    const qOwnedLegacy = 'q0000000000000005';
+    const qDiskOnly = 'q0000000000000006';
+    const fOwned = 'f0000000000000001';
+    const fLegacyMissing = 'f0000000000000002';
+    const fDiskOnly = 'f0000000000000003';
+    const baseQueue = (flow, epoch, extra = {}) => ({
+      flow, root: ${JSON.stringify(root)}, cwd: ${JSON.stringify(root)}, project_root: ${JSON.stringify(root)},
+      feature: 'sample', pane, task: true, max_parallel: 1, created_at: iso, updated_at: iso,
+      epoch, state: 'working', tickets: [], notices: {}, ...extra,
+    });
+    const baseLand = (flow) => ({
+      flow, job: 'j0000000000000001', pane, task: true,
+      wt: { main_root: ${JSON.stringify(root)}, root: ${JSON.stringify(root)}, branch: 'b' },
+      config: { base: 'main', gate: [], after: [], push: false },
+      state: 'running', step: 'gate[1]', pid: process.pid, start: ownStart,
+      source_sha: '0000000000000000000000000000000000000000', created_at: iso, updated_at: iso,
+    });
+
+    const ownedExpiry = now + 90_000;
+    const legacyExpiry = now + 120_000;
+    const landExpiry = now + 150_000;
+
+    writeFlow(qForeign, baseQueue(qForeign, 1));
+    writeMarker(qForeign, { flow: qForeign, epoch: 1, pane: 'w4E:p2', pid: process.pid + 100000, start: 'foreign', expires: now + 60_000 });
+    writeFlow(qAbsent, baseQueue(qAbsent, 1));
+    writeFlow(qWrongStart, baseQueue(qWrongStart, 0));
+    writeMarker(qWrongStart, { flow: qWrongStart, epoch: 0, pane, pid: process.pid, start: ownStart + '-mismatch', expires: now + 60_000 });
+    writeFlow(qOwnedNew, baseQueue(qOwnedNew, 2, { state: 'paused', notices: { 'pause-2': 'synthetic owned pause' } }));
+    writeFlow(qOwnedLegacy, baseQueue(qOwnedLegacy, 1, { state: 'paused', notices: { 'pause-1': 'synthetic legacy pause' } }));
+    writeMarker(qOwnedLegacy, { flow: qOwnedLegacy, epoch: 1, pane, pid: process.pid, start: ownStart, expires: legacyExpiry });
+    writeFlow(qDiskOnly, baseQueue(qDiskOnly, 0, { state: 'paused', notices: { 'pause-0': 'synthetic disk-only pause' } }));
+    fs.mkdirSync(join(home, 'mcp-tasks'), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(receiptPath(qDiskOnly), JSON.stringify({ id: qDiskOnly, epoch: 0, expiresAt: now + 60_000 }));
+    writeFlow(fOwned, baseLand(fOwned));
+    writeFlow(fLegacyMissing, baseLand(fLegacyMissing));
+    writeFlow(fDiskOnly, baseLand(fDiskOnly));
+    fs.writeFileSync(receiptPath(fDiskOnly), JSON.stringify({ id: fDiskOnly, expiresAt: now + 60_000 }));
+
+    const entryUrl = pathToFileURL(resolve('dist/mcp/thin-main.js'));
+    let rpcId = 0;
+    const req = async (gen, method, params) => {
+      const reply = await gen.call('request', JSON.stringify({ jsonrpc: '2.0', id: ++rpcId, method, params }));
+      assert.equal(reply.error, undefined, method + ' error: ' + JSON.stringify(reply.error));
+      return reply.result;
+    };
+    const discover = (gen) => req(gen, 'server/discover', {
+      _meta: {
+        'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+        'io.modelcontextprotocol/clientCapabilities': { extensions: { 'io.modelcontextprotocol/tasks': {} } },
+      },
+    });
+
+    // 1. New snapshot() carries flowTasks Map (not landTasks Set); stale epochs stay unknown, owned tasks survive.
+    const gen1 = await openGeneration(entryUrl);
+    await gen1.call('start');
+    await discover(gen1);
+    const snap1 = await gen1.call('snapshot');
+    await gen1.call('stop');
+    await gen1.retire();
+    assert.ok(snap1.flowTasks instanceof Map);
+    assert.equal('landTasks' in snap1, false);
+
+    const newState = {
+      ...snap1,
+      flowTasks: new Map([
+        [qForeign, { id: qForeign, epoch: 0, expiresAt: now + 60_000 }],
+        [qAbsent, { id: qAbsent, epoch: 0, expiresAt: now + 60_000 }],
+        [qOwnedNew, { id: qOwnedNew, epoch: 2, expiresAt: ownedExpiry }],
+        [fOwned, { id: fOwned, expiresAt: landExpiry }],
+      ]),
+    };
+    const gen2 = await openGeneration(entryUrl);
+    await gen2.call('start', newState);
+    for (const id of [qForeign, qAbsent]) {
+      const got = await req(gen2, 'tasks/get', { taskId: id });
+      assert.equal(got.status, 'failed');
+      assert.match(got.statusMessage, /Unknown or expired task.*hud_read/);
+      const cancelled = await req(gen2, 'tasks/cancel', { taskId: id });
+      assert.equal(cancelled.status, 'failed');
+      assert.match(cancelled.statusMessage, /Unknown or expired task.*hud_read/);
+      assert.equal(fs.existsSync(receiptPath(id)), false, id + ' must not fabricate caller receipt');
+      assert.equal(fs.existsSync(stopPath(id)), false, id + ' must not be cancelled');
+    }
+    const ownedGet = await req(gen2, 'tasks/get', { taskId: qOwnedNew });
+    assert.equal(ownedGet.status, 'completed');
+    assert.match(ownedGet.result.content[0].text, /synthetic owned pause/);
+    const landGet = await req(gen2, 'tasks/get', { taskId: fOwned });
+    assert.equal(landGet.status, 'working');
+
+    // Disk-only receipt allows polling (tasks/get) but not tasks/cancel (needs in-memory authority).
+    const diskGet = await req(gen2, 'tasks/get', { taskId: qDiskOnly });
+    assert.equal(diskGet.status, 'completed');
+    const diskCancel = await req(gen2, 'tasks/cancel', { taskId: qDiskOnly });
+    assert.equal(diskCancel.status, 'failed');
+    assert.match(diskCancel.statusMessage, /Unknown or expired task.*hud_read/);
+    assert.equal(fs.existsSync(stopPath(qDiskOnly)), false);
+    const landDiskGet = await req(gen2, 'tasks/get', { taskId: fDiskOnly });
+    assert.equal(landDiskGet.status, 'working');
+    const landDiskCancel = await req(gen2, 'tasks/cancel', { taskId: fDiskOnly });
+    assert.equal(landDiskCancel.status, 'failed');
+    assert.match(landDiskCancel.statusMessage, /Unknown or expired task.*hud_read/);
+    assert.equal(fs.existsSync(stopPath(fDiskOnly)), false);
+
+    // Owned tasks retain exact epoch & expiry across another snapshot -> reload, and keep cancel authority.
+    const snap2 = await gen2.call('snapshot');
+    await gen2.call('stop');
+    await gen2.retire();
+    assert.deepEqual(snap2.flowTasks.get(qOwnedNew), { id: qOwnedNew, epoch: 2, expiresAt: ownedExpiry });
+    assert.deepEqual(snap2.flowTasks.get(fOwned), { id: fOwned, expiresAt: landExpiry });
+    const gen2b = await openGeneration(entryUrl);
+    await gen2b.call('start', snap2);
+    const landCancel = await req(gen2b, 'tasks/cancel', { taskId: fOwned });
+    assert.equal(landCancel.status, 'working');
+    assert.equal(fs.existsSync(stopPath(fOwned)), true, 'owned flow keeps in-memory cancel authority after reload');
+    await gen2b.call('stop');
+    await gen2b.retire();
+
+    // 2. Legacy landTasks Set (upgrade reload) backfills only from an unexpired own-process queue marker matching pid, start & epoch.
+    const legacyState = { ...snap1, landTasks: new Set([qForeign, qAbsent, qWrongStart, qOwnedLegacy, fLegacyMissing]) };
+    delete legacyState.flowTasks;
+    const gen3 = await openGeneration(entryUrl);
+    await gen3.call('start', legacyState);
+    for (const id of [qForeign, qAbsent, qWrongStart, fLegacyMissing]) {
+      const got = await req(gen3, 'tasks/get', { taskId: id });
+      assert.equal(got.status, 'failed', id + ' should be unknown on get');
+      assert.match(got.statusMessage, /Unknown or expired task.*hud_read/);
+      const cancelled = await req(gen3, 'tasks/cancel', { taskId: id });
+      assert.equal(cancelled.status, 'failed', id + ' should be unknown on cancel');
+      assert.match(cancelled.statusMessage, /Unknown or expired task.*hud_read/);
+      assert.equal(fs.existsSync(receiptPath(id)), false, id + ' must not fabricate caller receipt');
+      assert.equal(fs.existsSync(stopPath(id)), false, id + ' must not be cancelled');
+    }
+    const legacyOwnedGet = await req(gen3, 'tasks/get', { taskId: qOwnedLegacy });
+    assert.equal(legacyOwnedGet.status, 'completed');
+    assert.match(legacyOwnedGet.result.content[0].text, /synthetic legacy pause/);
+    const snap3 = await gen3.call('snapshot');
+    await gen3.call('stop');
+    await gen3.retire();
+    assert.deepEqual(snap3.flowTasks.get(qOwnedLegacy), { id: qOwnedLegacy, epoch: 1, expiresAt: legacyExpiry });
+  `;
+
+  const scriptPath = join(root, 'reload-flow-tasks.mjs');
+  fs.writeFileSync(scriptPath, script);
+  const child = spawn(process.execPath, [scriptPath], {
+    cwd: resolve('.'),
+    env: { ...process.env, HUD_HOME: hudHome, HERDR_PANE_ID: 'w4E:p1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const [code, signal] = await once(child, 'exit');
+  assert.deepEqual([code, signal], [0, null], stderr);
+});

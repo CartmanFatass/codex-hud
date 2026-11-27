@@ -48,7 +48,8 @@ export type HudTask = {
 };
 export let tasks = new Map<string, HudTask>(), activeTasks = new Map<string, HudTask>();
 
-type TaskReceipt = { id: string; expiresAt: number; epoch?: number };
+export type FlowTaskReceipt = { id: string; expiresAt: number; epoch?: number };
+type TaskReceipt = FlowTaskReceipt;
 type JobTaskReceipt = TaskReceipt & Omit<HudTask, 'seenQuestions'> & { seenQuestions: string[] };
 const taskRoot = join(hudHome, 'mcp-tasks');
 const jobTaskId = /^j[0-9a-f]{16}:[0-9a-f]{16}$/;
@@ -129,7 +130,7 @@ export let batchPending = new Map<string, PendingBatchNotice>();
 let batchTimer: NodeJS.Timeout | undefined;
 let batchSending: Promise<void> | undefined;
 export let handedOff = false;
-export let landTasks = new Set<string>();
+export let flowTasks = new Map<string, FlowTaskReceipt>();
 const expiry = new Map<string, NodeJS.Timeout>();
 function disarmExpiry(id: string) {
   const timer = expiry.get(id);
@@ -446,43 +447,31 @@ export async function taskRequest(taskId: string, cancel: boolean,
   closeJob: (job: Job, stop: boolean) => Promise<{ exit_code: number; last_line: string }>) {
   if (flowId(taskId)) {
     const now = Date.now();
-    const live = landTasks.has(taskId);
+    const live = flowTasks.get(taskId);
     const receipt = readRawTaskReceipt(taskId);
     if (!live && (cancel || !receipt || receipt.expiresAt <= now)) return unknownTask(taskId);
     const flow = flowReceipt(taskId);
     if (!flow) {
-      landTasks.delete(taskId);
+      flowTasks.delete(taskId);
       return unknownTask(taskId);
     }
     if ('wt' in flow) {
-      const expiresAt = receipt?.expiresAt ?? (Date.parse(flow.created_at) + TASK_TTL);
-      if (expiresAt <= now) {
-        landTasks.delete(taskId);
+      const auth = live ?? receipt;
+      if (!auth || auth.expiresAt <= now) {
+        flowTasks.delete(taskId);
         return unknownTask(taskId);
       }
-      if (live) { landTasks.delete(taskId); landTasks.add(taskId); }
+      if (live) { flowTasks.delete(taskId); flowTasks.set(taskId, live); }
       return landTask(hudHome, flow, cancel);
     }
     const flowEpoch = flow.epoch ?? 0;
-    const marker = readQueueTask(hudHome, taskId);
-    let expiresAt: number;
-    if (receipt) {
-      if (receipt.expiresAt <= now || (receipt.epoch ?? 0) !== flowEpoch) {
-        landTasks.delete(taskId);
-        return unknownTask(taskId);
-      }
-      expiresAt = receipt.expiresAt;
-    } else {
-      const ownStart = procStat(process.pid)?.start;
-      if (!live || !marker || marker.expires <= now || marker.epoch !== flowEpoch ||
-          marker.pid !== process.pid || !ownStart || marker.start !== ownStart) {
-        landTasks.delete(taskId);
-        return unknownTask(taskId);
-      }
-      expiresAt = marker.expires;
+    const auth = live ?? receipt;
+    if (!auth || auth.expiresAt <= now || (auth.epoch ?? 0) !== flowEpoch) {
+      flowTasks.delete(taskId);
+      return unknownTask(taskId);
     }
-    if (flow.state === 'working' && !cancel && !live && receipt) claimQueueTask(hudHome, flow, expiresAt);
-    if (live) { landTasks.delete(taskId); landTasks.add(taskId); }
+    if (flow.state === 'working' && !cancel && !live && receipt) claimQueueTask(hudHome, flow, auth.expiresAt);
+    if (live) { flowTasks.delete(taskId); flowTasks.set(taskId, live); }
     return ticketQueueTask(hudHome, flow, cancel);
   }
   let task = tasks.get(taskId);
@@ -509,10 +498,44 @@ export function beginHandoff() {
 }
 
 export function restoreTaskMaps(state: {
-  tasks: typeof tasks; activeTasks: typeof activeTasks; landTasks: typeof landTasks;
-  batchTasks?: typeof batchTasks; batchPending?: typeof batchPending;
+  tasks: typeof tasks;
+  activeTasks: typeof activeTasks;
+  flowTasks?: typeof flowTasks;
+  landTasks?: Set<string>;
+  batchTasks?: typeof batchTasks;
+  batchPending?: typeof batchPending;
 }) {
-  ({ tasks, activeTasks, landTasks } = state);
+  ({ tasks, activeTasks } = state);
+  const now = Date.now();
+  flowTasks = new Map();
+  if (state.flowTasks) {
+    for (const [id, entry] of state.flowTasks) {
+      if (entry && entry.id === id && Number.isFinite(entry.expiresAt) && entry.expiresAt > now) {
+        flowTasks.set(id, { id, expiresAt: entry.expiresAt, ...(entry.epoch !== undefined && { epoch: entry.epoch }) });
+      }
+    }
+  } else if (state.landTasks) {
+    const ownStart = procStat(process.pid)?.start;
+    for (const id of state.landTasks) {
+      const receipt = loadTaskReceipt(id);
+      if (receipt && !('job' in receipt)) {
+        flowTasks.set(id, { id, expiresAt: receipt.expiresAt, ...(receipt.epoch !== undefined && { epoch: receipt.epoch }) });
+        continue;
+      }
+      try {
+        const flow = flowReceipt(id);
+        if (!flow || 'wt' in flow) continue;
+        const flowEpoch = flow.epoch ?? 0;
+        const queueTask = readQueueTask(hudHome, id);
+        if (queueTask && queueTask.expires > now && queueTask.pid === process.pid &&
+            !!ownStart && queueTask.start === ownStart && queueTask.epoch === flowEpoch) {
+          const backfilled: FlowTaskReceipt = { id, epoch: flowEpoch, expiresAt: queueTask.expires };
+          flowTasks.set(id, backfilled);
+          saveTaskReceipt(backfilled);
+        }
+      } catch { /* A broken flow receipt must not prevent reload. */ }
+    }
+  }
   batchTasks = state.batchTasks ?? new Map();
   batchPending = state.batchPending ?? new Map();
   for (const task of tasks.values()) {
@@ -528,5 +551,5 @@ export function clearTaskSweep() {
 
 export function clearTaskMaps() {
   for (const timer of expiry.values()) clearTimeout(timer);
-  expiry.clear(); tasks.clear(); activeTasks.clear(); landTasks.clear();
+  expiry.clear(); tasks.clear(); activeTasks.clear(); flowTasks.clear();
 }

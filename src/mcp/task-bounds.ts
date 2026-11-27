@@ -1,7 +1,7 @@
 /** Bounded retention helpers for hud-mcp process-lifetime state carried across hot reloads. */
 
 export const MAX_CREATED_JOBS = 512;
-export const MAX_LAND_TASKS = 128;
+export const MAX_FLOW_TASKS = 128;
 export const MAX_MCP_TASKS = 128;
 
 /** Record a created job ID, pruning archived/missing jobs first and capping size (LRU). */
@@ -33,34 +33,45 @@ export function pruneCreatedJobs(
   }
 }
 
-/** Record a land task flow ID (LRU), evicting settled/missing flows before active ones when over `limit`. */
-export function rememberLandTask(
-  landTasks: Set<string>,
-  flowId: string,
-  isActive: (flowId: string) => boolean,
-  limit = MAX_LAND_TASKS
-): void {
-  landTasks.delete(flowId);
-  landTasks.add(flowId);
-  if (landTasks.size > limit) pruneLandTasks(landTasks, isActive, limit, flowId);
+export interface BoundedFlowTask {
+  id: string;
+  expiresAt: number;
+  epoch?: number;
 }
 
-/** Trim `landTasks` to `limit`, preferring to drop settled or missing flows first. */
-export function pruneLandTasks(
-  landTasks: Set<string>,
+/** Record a flow task receipt (LRU), evicting expired then settled/missing flows before active ones when over `limit`. */
+export function rememberFlowTask<T extends BoundedFlowTask>(
+  flowTasks: Map<string, T>,
+  task: T,
   isActive: (flowId: string) => boolean,
-  limit = MAX_LAND_TASKS,
+  now = Date.now(),
+  limit = MAX_FLOW_TASKS
+): void {
+  flowTasks.delete(task.id);
+  flowTasks.set(task.id, task);
+  if (flowTasks.size > limit) pruneFlowTasks(flowTasks, isActive, now, limit, task.id);
+}
+
+/** Evict expired entries and trim `flowTasks` to `limit`, preferring to drop settled or missing flows first. */
+export function pruneFlowTasks<T extends BoundedFlowTask>(
+  flowTasks: Map<string, T>,
+  isActive: (flowId: string) => boolean,
+  now = Date.now(),
+  limit = MAX_FLOW_TASKS,
   keep?: string
 ): void {
-  if (landTasks.size <= limit) return;
-  for (const id of [...landTasks]) {
-    if (landTasks.size <= limit) break;
-    if (id !== keep && !isActive(id)) landTasks.delete(id);
+  for (const [id, task] of [...flowTasks]) {
+    if (id !== keep && task.expiresAt <= now) flowTasks.delete(id);
   }
-  while (landTasks.size > limit) {
-    const oldest = landTasks.values().next().value;
+  if (flowTasks.size <= limit) return;
+  for (const id of [...flowTasks.keys()]) {
+    if (flowTasks.size <= limit) break;
+    if (id !== keep && !isActive(id)) flowTasks.delete(id);
+  }
+  while (flowTasks.size > limit) {
+    const oldest = flowTasks.keys().next().value;
     if (oldest === undefined) break;
-    landTasks.delete(oldest);
+    flowTasks.delete(oldest);
   }
 }
 
