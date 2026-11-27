@@ -239,10 +239,12 @@ test('hud_tickets add/update validates and stores repairs on JSON features and r
   await call('add', { feature: 'sample', tickets: [draft('Slice A'), draft('Slice B')] });
   const addRepair = await call('add', {
     feature: 'sample',
-    tickets: [{ ...draft('Fix B'), repairs: ['sample/02'] }],
+    tickets: [{ ...draft('Fix B'), repairs: ['sample/02'], role: 'frontier-imp' }],
   });
   assert.equal(addRepair.ok, true);
-  assert.deepEqual((await call('get', { ticket: 'sample/03' })).ticket.repairs, ['sample/02']);
+  const explicit = (await call('get', { ticket: 'sample/03' })).ticket;
+  assert.deepEqual(explicit.repairs, ['sample/02']);
+  assert.equal(explicit.role, 'frontier-imp');
   assert.equal((await call('get', { ticket: 'sample/01' })).ticket.repairs, undefined);
 
   // Update repairs to another valid ref (including cross-feature legacy Markdown reader fallback) and clear with [].

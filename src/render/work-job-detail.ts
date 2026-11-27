@@ -155,10 +155,10 @@ export function jobDetailRows(card: WorkJob, width: number, includeDescription =
   if (route) {
     const label = route.placement === 'even'
       ? t('Placement: even · {preset}', { preset: route.preset ? monitorText(route.preset) : t('active preset') })
-      : t('Route: {tier} · {mode}', { tier: t(route.tier), mode: t(route.mode) });
+      : t('Route: {tier} · {mode}', { tier: t(route.source === 'repair-route' ? 'repair' : route.tier), mode: t(route.mode) });
     const why = route.fallback ?? route.mode_reason ?? route.reason;
     const detail = route.placement === 'even' ? why.split('; ').map(part => part.startsWith('Skipped unavailable presets: ')
-      ? t('Skipped unavailable presets: {presets}', { presets: part.slice('Skipped unavailable presets: '.length) }) : t(part)).join('; ') : why;
+      ? t('Skipped unavailable presets: {presets}', { presets: part.slice('Skipped unavailable presets: '.length) }) : t(part)).join('; ') : t(why);
     rows.push(fit(`${ink(mark('┃', '|'))} ${label} — ${monitorText(detail).replace(/\s+/g, ' ').trim()}`, width));
   }
   if (card.worker.flow) rows.push(flowLine(card.worker.flow, width, ink));

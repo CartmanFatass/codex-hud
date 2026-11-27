@@ -3,6 +3,7 @@
   "roles": [
     "flow",
     "frontend-imp",
+    "frontier-imp",
     "general",
     "imp",
     "oracle",
@@ -35,6 +36,10 @@
       "npm run build:test"
     ],
     "frontend-imp": [
+      "npm run build",
+      "npm run build:test"
+    ],
+    "frontier-imp": [
       "npm run build",
       "npm run build:test"
     ]

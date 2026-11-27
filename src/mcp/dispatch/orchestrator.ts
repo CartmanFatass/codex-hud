@@ -48,7 +48,8 @@ import type {
 } from '../job-contracts.js';
 import { adaptDecisionThinking, launchThinking, nearestThinking } from '../launch-thinking.js';
 import { isRunningListTicket, readFlakesConfig, runningListAdmission } from '../flake-admission.js';
-import { registeredTicketRepo, routingTicketText, ticketBrief, ticketObjective, unregisteredRepoReason } from '../local-tickets.js';
+import { registeredTicketRepo, routingTicketText, ticketBrief, ticketIsImpRepair, ticketObjective, unregisteredRepoReason } from '../local-tickets.js';
+import type { TicketRole } from '../../tickets/store.js';
 import { reusableWorktree, planWorktree, addWorktree, populateWorktree } from '../managed-worktree.js';
 import { callerPane, session, trackCreatedJob } from '../mcp/session-state.js';
 import {
@@ -205,7 +206,7 @@ type WorkflowDispatch = { id: string; cheap: boolean; grant?: OwnerGrant; canAdm
 type SlotGate = { wait: Promise<void>; release: () => void };
 
 export interface TicketDispatchInput {
-  role: 'imp' | 'frontend-imp';
+  role: TicketRole;
   cwd: string;
   ticket: string;
   brief_file?: string;
@@ -333,12 +334,27 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
       ...(role === 'council' ? [args.members, args.synthesizer, args.context_files, args.from_jobs] : []))
     : required(args, 'request_key');
   const windowedKey = args.request_key === undefined || repair?.derived === true;
-  return keyLock(`request:${requestKey}`, () =>
-    dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, {
-      worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source,
-      ticketQueue: queue?.id, ticketAdmission: Boolean(ticketAdmission || queue?.id), ticketRoot, autoLand,
-      canAdmit: workflow?.canAdmit ?? member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace, workflow, advisor,
-    }));
+  const options = {
+    worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source,
+    ticketQueue: queue?.id, ticketAdmission: Boolean(ticketAdmission || queue?.id), ticketRoot: ticketRoot ?? repair?.source.ticket_root, autoLand,
+    canAdmit: workflow?.canAdmit ?? member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace, workflow, advisor,
+  };
+  return keyLock(`request:${requestKey}`, async () => {
+    const create = (target: Args, repairRoute?: { fallback?: string }) =>
+      dispatchWithKey(target, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, { ...options, repairRoute });
+    if (retryOf || parent || member || advisor || (role !== 'imp' && repair?.source.overflow_from !== 'imp') ||
+        (!repair && !ticketIsImpRepair(ticketRoot ?? cwd, args.ticket, ticketRoot ?? sharedRoot(cwd)))) return create(args);
+
+    const target = { ...args, role: 'frontier-imp' };
+    if (repair) {
+      // Placement from a closed imp worker is not a caller override for the new role.
+      for (const key of [...placementOverrides, 'idle_grace_s', 'kind']) delete (target as Args)[key];
+    }
+    const escalated = await create(target, {});
+    const fallback = 'repair_refusal' in escalated ? escalated.repair_refusal
+      : 'code' in escalated && escalated.code === 'role_unavailable' && 'reason' in escalated ? escalated.reason : undefined;
+    return fallback ? create({ ...args, role: 'imp' }, { fallback: `Skipped frontier-imp: ${fallback}` }) : escalated;
+  });
 }
 
 async function runOneScout(target: Job, spec: ScoutSpec, contextCwd: string, contextFiles: unknown,
@@ -494,12 +510,15 @@ export async function dispatchCouncilSeat(parent: Job, seat: CouncilSeat, part: 
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<SonicParent, 'job' | 'objective' | 'headless'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, ticketRoot, autoLand, member, canAdmit, dispatcher, seat, council, memberStarted, workspace, workflow, advisor }: {
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, ticketRoot, autoLand, member, canAdmit, dispatcher, seat, council, memberStarted, workspace, workflow, advisor, repairRoute }: {
     seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void; workflow?: WorkflowDispatch; advisor?: AdvisorInput;
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
     ticketQueue?: string; ticketAdmission?: boolean; ticketRoot?: string; autoLand?: boolean; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher']; workspace?: string;
+    repairRoute?: { fallback?: string };
   } = {}) {
   const isTicketAdmission = Boolean(ticketAdmission || ticketQueue);
+  const frontier = repairRoute !== undefined && repairRoute.fallback === undefined;
+  const repairRefusal = (reason: string) => ({ ok: false as const, code: 'no_available_place' as const, reason, repair_refusal: reason });
   const { experiment, arm, preview } = args;
   if (preview !== undefined && !validPreviewPath(preview)) {
     return { ok: false, code: 'invalid_arguments', error: 'preview must be a relative HTML path inside cwd' };
@@ -605,7 +624,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     return { ok: false, code: 'invalid_arguments', error: 'mode must be tab or headless' };
   if (mode === 'tab' && role === 'sonic') return { ok: false, code: 'invalid_arguments', error: 'sonic runs headless only' };
   if (mode === 'headless' && !chain.can_continue)
-    return { ok: false, code: 'invalid_arguments', error: 'explicit headless mode requires a continuable role' };
+    return frontier ? repairRefusal('role does not support headless mode')
+      : { ok: false, code: 'invalid_arguments', error: 'explicit headless mode requires a continuable role' };
   const isolation = args.isolation === undefined ? 'none' : args.isolation;
   if (isolation !== 'none' && isolation !== 'worktree') return { ok: false, code: 'invalid_arguments', error: 'invalid isolation' };
   const task = required(args, 'task');
@@ -700,7 +720,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }
   }
   if ((workflow?.cheap || (ticketQueue && ticketRoot)) && roleHasBrowser(chain))
-    return { ok: false, code: 'workflow_cost_changed', reason: `Role ${role} now has a browser place; re-plan` };
+    return frontier ? repairRefusal('role has a browser place')
+      : { ok: false, code: 'workflow_cost_changed', reason: `Role ${role} now has a browser place; re-plan` };
   const imp = !advisor && (requestedRole === 'imp' || fromImp);
   const sonic = requestedRole === 'sonic';
   const settings = !member && (imp || sonic) && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
@@ -710,6 +731,10 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   let localContext: Awaited<ReturnType<typeof contextFor>> | undefined;
   if (member) {
     route = member.route;
+  } else if (role === 'frontier-imp') {
+    route = retryInput && sourceJob?.role === role && sourceJob.route ? sourceJob.route
+      : { ...defaultImpRoute(frontier ? 'Escalated imp repair' : 'Frontier implementer placement', mode),
+          ...(frontier && { source: 'repair-route' as const }), preset: currentPreset(chain) };
   } else if (imp && (retryInput || fromImp)) {
     route = landCwd ? repairImpRoute(chain, sourceJob?.route) : sourceJob?.route;
   } else if (sonic && retryInput) {
@@ -725,6 +750,24 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     }));
   }
   const plan = await even?.() ?? launchPlan(found, chain, now, args, routing, onEntry, retryInput, route, !!landCwd);
+  if (frontier) {
+    if (!plan.candidates.length) return repairRefusal(plan.effective.reason ?? 'no compatible place');
+    // Match launchPlace's CLI trust check before reserving the frontier slot or creating a worktree.
+    const trustRoot = isolation === 'worktree' ? projectRoot : cwd;
+    plan.candidates = plan.candidates.filter(({ candidate: { place } }) =>
+      place.harness !== 'cli' || isCliDirTrusted(place.agent!, trustRoot));
+    if (!plan.candidates.length) return repairRefusal('no CLI place has trusted the working directory');
+  }
+  if (repairRoute?.fallback) {
+    const annotate = (selected?: JobRoute): JobRoute => {
+      const base = selected ?? defaultImpRoute('Imp placement', mode);
+      return { ...base, fallback: [repairRoute.fallback, base.fallback].filter(Boolean).join('; ') };
+    };
+    plan.route = annotate(plan.route);
+    if (plan.fallback) plan.fallback = annotate(plan.fallback);
+    for (const candidate of plan.candidates) candidate.route = annotate(candidate.route);
+    if (route) route = annotate(route);
+  }
   if (advisor) plan.candidates = plan.candidates.filter(({ candidate: { place } }) =>
     place.harness === 'pi' || (place.harness === 'cli' && place.agent === 'claude'));
   let worktree: ManagedWorktree | undefined;
@@ -787,6 +830,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       // same cross-process lock as normal admission, including other batches of this role.
       if (member && !batchHasRoom(role, all, cap)) return { ok: false as const, code: 'batch_wait' };
       if (cap > 0 && (workingByRole.get(role) ?? 0) >= cap) {
+        if (frontier) return repairRefusal('role is at capacity');
         const generalCap = capForRole(concurrency, 'general');
         const generalHasRoom = generalCap === 0 || (workingByRole.get('general') ?? 0) < generalCap;
         if (!advisor && !isTicketAdmission && role === 'imp' && concurrency.impOverflow && generalHasRoom && found.roles().has('general')) {
@@ -955,6 +999,11 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   // Reads can reveal the persisted ID before launch ends; serialize its mutations with launch too.
   const launch = () => keyLock(`job:${id}`, async () => {
     let taskEntry: HudTask | undefined;
+    const register = (job: Job) => {
+      if (advisor) return;
+      if (session.taskClient && !parentJob) taskEntry = beginTask(job);
+      else if (!job.scout_only && !job.council) void ensureQueueWatcher(pane, hudHome);
+    };
     const { job, result, reason } = await launchAttempts(base, { cwd: landCwd ?? cwd, args, retryInput, chain, plan, worktree }, {
       even, modelSource: modelOverride !== undefined ? 'hud_create' : onEntry?.model !== undefined ? harnessesSourceFor(onName) : undefined,
       beforeInput: workflow?.beforeInput,
@@ -978,14 +1027,24 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
           const children = join(directory(parentJob), jobFiles.sonic);
           fs.mkdirSync(children, { recursive: true, mode: 0o700 });
           fs.writeFileSync(join(children, id), '', { mode: 0o600, flag: 'wx' });
-        } else if (!parentJob && !advisor) trackCreatedJob(id);
+        } else if (!parentJob && !advisor && !frontier) trackCreatedJob(id);
         ensureWatcher();
-        if (advisor) return;
-        if (session.taskClient && !parentJob) taskEntry = beginTask(job);
-        else if (!job.scout_only && !job.council) void ensureQueueWatcher(pane, hudHome);
+        if (!frontier) register(job);
       },
       onUsedPlace: memberStarted, // Pre-input failures also have job IDs; only a used place spends the grant.
     });
+    if (frontier && canTryNext(job, result) && (result.code === 'untrusted_cwd' || result.status?.exit_reason === 'untrusted_cwd' ||
+        isQuotaFailure(reason) || (!job.attempts?.length && reason.includes('exhausted places:')))) {
+      // Preserve the refused attempt, but leave the public key for the job that takes the brief.
+      job.request_key = derivedKey('repair-refused', request_key, id);
+      job.observed_at = new Date().toISOString();
+      finishLaunch(job, dir, result, reason, false);
+      return repairRefusal(reason);
+    }
+    if (frontier) {
+      trackCreatedJob(id);
+      register(job);
+    }
     const launchRow = finishLaunch(job, dir, result, reason);
     if (result.code === 'workflow_input_changed') return { ok: false as const, code: result.code, reason };
     if (batch) {

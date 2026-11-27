@@ -232,10 +232,11 @@ export function parseMarkdownTicket(
   const review = field('main review');
   if (review && !/^(yes|no)$/i.test(review)) return { error: `unknown Main review value: ${review}` };
   const rawRole = field('role', 'who');
-  const role = /^(?:frontend-imp|frontend-implementer)\b/i.test(rawRole ?? '') ? 'frontend-imp' : undefined;
+  const role = /^frontier-imp\b/i.test(rawRole ?? '') ? 'frontier-imp'
+    : /^(?:frontend-imp|frontend-implementer)\b/i.test(rawRole ?? '') ? 'frontend-imp' : undefined;
   const repo = legacyTicketRepo(body);
   const notes = [
-    ...(rawRole && !/^(?:frontend-imp|frontend-implementer|imp)$/i.test(rawRole) ? [`Legacy role: ${rawRole}`] : []),
+    ...(rawRole && !/^(?:frontend-imp|frontend-implementer|frontier-imp|imp)$/i.test(rawRole) ? [`Legacy role: ${rawRole}`] : []),
     ...(blockedBy.annotation ? [`Legacy Blocked by: ${blockers}`] : []),
     ...(repairs.annotation ? [`Legacy Repairs: ${rawRepairs}`] : []),
   ];

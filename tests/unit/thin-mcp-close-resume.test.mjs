@@ -17,15 +17,16 @@ const starts = (f) => f.commands().filter(({ args }) => args[0] === 'agent' && a
 const dead = (pid) => !procStat(pid) || procStat(pid).state === 'Z';
 const reaped = (job) => !!readCloseReaped(job) && cliState(job.task_dir)?.exit_reason === REPORT_SETTLED_EXIT;
 
-async function cliFixture(t, agent = 'claude', resume_s) {
+async function cliFixture(t, agent = 'claude', resume_s, role = 'resumable') {
   const f = await fixture(t);
   write(join(f.env.HOME, 'manual-socket'), '');
   write(join(f.env.HOME, 'tab-seq'), '1');
-  writeCliRole(f, 'resumable', 20, true, agent);
-  const roster = join(f.env.HUD_HOME, 'roles');
-  if (resume_s !== undefined) write(join(roster, 'resumable.json'), JSON.stringify({ ...json(roster, 'resumable.json'), resume_s }));
+  writeCliRole(f, role, 20, true, agent);
+  const roster = join(f.env.HUD_HOME, 'roles'), file = `${role}.json`;
+  if (resume_s !== undefined || role === 'imp') write(join(roster, file), JSON.stringify({ ...json(roster, file), resume_s,
+    ...(role === 'imp' && { instructions: 'implementer' }) }));
   const worker = fakeCliWithChild(t, f);
-  const job = await f.call('hud_create', { role: 'resumable', task: 'Synthetic original brief.' });
+  const job = await f.call('hud_create', { role, task: 'Synthetic original brief.', prewalk: false });
   const dir = job.task_dir;
   await until(() => cliState(dir)?.pid === worker.pid && cliState(dir)?.agent_session_id, t.signal);
   write(join(dir, 'reap-worker'), '');
@@ -33,8 +34,8 @@ async function cliFixture(t, agent = 'claude', resume_s) {
   return { f, job, worker, report: (text) => report('hud_report', { text, turn: cliToken(dir), summary: text }) };
 }
 
-test('Claude closes without a read, resumes the exact session in a new pane, and repairs after expiry', async (t) => {
-  const { f, job, worker, report } = await cliFixture(t);
+test('Imp closes without a read, resumes the exact Claude session, and escalates a repair after expiry', async (t) => {
+  const { f, job, worker, report } = await cliFixture(t, 'claude', undefined, 'imp');
   const dir = job.task_dir;
   const objective = { id: 'delivery', title: 'Synthetic delivery' };
   write(join(dir, 'job.json'), JSON.stringify({ ...json(dir, 'job.json'), objective }));
@@ -51,6 +52,7 @@ test('Claude closes without a read, resumes the exact session in a new pane, and
   const sent = await f.call('hud_send', { job: job.job, text: 'Synthetic continuation.', message_key: 'next-turn' });
   assert.equal(sent.continuation, 'resumed');
   assert.equal(sent.job, job.job);
+  assert.equal(json(dir, 'job.json').role, 'imp');
   const resumed = starts(f).at(-1).args;
   assert.equal(resumed[resumed.indexOf('--resume') + 1], id);
   assert.notEqual(resumed[resumed.indexOf('--pane') + 1], originalPane);
@@ -69,7 +71,12 @@ test('Claude closes without a read, resumes the exact session in a new pane, and
   assert.equal(repair.continuation, 'repair');
   assert.notEqual(repair.continued_as, job.job);
   assert.equal(repair.job, repair.continued_as);
-  assert.deepEqual(json(repair.task_dir, 'job.json').objective, objective);
+  const replacement = json(repair.task_dir, 'job.json');
+  assert.equal(replacement.role, 'frontier-imp');
+  assert.equal(replacement.route.source, 'repair-route');
+  assert.equal(replacement.model, 'openai/gpt-6.2-astra');
+  assert.equal(replacement.thinking, 'xhigh');
+  assert.deepEqual(replacement.objective, objective);
   assert.match(fs.readFileSync(join(repair.task_dir, 'brief.md'), 'utf8'), /Synthetic expired continuation/);
   assert.equal(starts(f).at(-1).args.includes('--resume'), false);
 });

@@ -142,7 +142,7 @@ export function launchPlan(found: Registry, chain: Role, now: number, args: Args
   const modeFallback = chain.role !== 'sonic' && route?.tier === 'standard' && !explicit && preferred.some(entry => entry.route?.mode === 'headless');
   const fallback: JobRoute | undefined = route && (route.tier !== 'standard' || modeFallback) ? {
     ...route, tier: 'standard', mode: args.mode === 'headless' ? 'headless' : 'tab', mode_reason: undefined,
-    fallback: [route.placement === 'even' && route.fallback, modeFallback ? 'Cannot launch headless; using standard in a tab'
+    fallback: [route.fallback, modeFallback ? 'Cannot launch headless; using standard in a tab'
       : `${route.tier} tier has no usable place; using standard`].filter(Boolean).join('; '),
   } : undefined;
   // On the same chain, tab-only candidates already had their tab attempt.

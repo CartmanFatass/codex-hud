@@ -1,0 +1,14 @@
+{
+  "role": "frontier-imp",
+  "instructions": "implementer",
+  "can_continue": true,
+  "run": [
+    {
+      "harness": "pi",
+      "pi_role": "implementer",
+      "split": false,
+      "model": "openai/gpt-6.2-astra",
+      "thinking": "xhigh"
+    }
+  ]
+}

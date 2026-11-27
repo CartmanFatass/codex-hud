@@ -13,7 +13,7 @@ import { localProjectRoots, projectList, projectRoot } from '../roles/projects.j
 import {
   compactHomePath, expandHomePath, legacyTicketRepo, LEGACY_TICKET_HEADER_END, normalizeHomePaths, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature,
   renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath, ticketFeatureSlugs,
-  TicketFeatureFull, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
+  TicketFeatureFull, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord, type TicketRole,
 } from '../tickets/store.js';
 import { runTicketEdit } from '../tickets/archive.js';
 import { commitTicketWrites } from '../tickets/commit.js';
@@ -120,6 +120,20 @@ export function ticketBrief(cwd: string, ticket: unknown, legacy: boolean, targe
   if (truncated) throw Error('Ticket brief exceeds 64 KiB');
   const brief = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   return matches(target ? legacyTicketRepo(brief) : undefined) ? brief : undefined;
+}
+
+/** Only the ticket's declared repair links count, not mentions in its brief or comments. */
+export function ticketIsImpRepair(cwd: string, ticket: unknown, root: string): boolean {
+  const ref = parseTicketRef(ticket);
+  if (!ref) return false;
+  try {
+    const stored = storedTicket(root, ticket);
+    if (stored) return !!stored.record?.repairs?.length && (stored.record.role ?? 'imp') === 'imp';
+    const checkout = projectRoot(cwd);
+    const path = namedTicketPath(checkout, ticket) ?? (checkout !== root ? namedTicketPath(root, ticket) : undefined);
+    const record = path ? parseTicketForReadiness(path, ref.number, ref.feature) : undefined;
+    return record?.role === 'imp' && !!record.repairs?.length;
+  } catch { return false; }
 }
 
 /** Outbound routing input: only the named local ticket, never the rest of the board. */
@@ -325,9 +339,9 @@ function supersession(body: string, comments: string) {
 }
 
 type LocalTicket = ProjectTicket & ReturnType<typeof supersession> & {
-  what: string; objective?: string; role: 'imp' | 'frontend-imp'; runningList: boolean; repairs?: string[]; repo?: string;
+  what: string; objective?: string; role: TicketRole; runningList: boolean; repairs?: string[]; repo?: string;
 };
-const FRONTEND_ROLE_RE = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*frontend-(?:imp|implementer)(?=[ \t\r\n·(]|$)/im;
+const IMPLEMENTER_ROLE_RE = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*(frontend-(?:imp|implementer)|frontier-imp)(?=[ \t\r\n·(]|$)/im;
 const declaredReady = (t: LocalTicket) => /^ready-for-agent$/i.test(t.status);
 const readinessRef = (slug: string, t: LocalTicket) => `${slug}/${nn(Number(t.number))}`;
 const parsedTicketMemo = new Map<string, { stamp: string; ticket: LocalTicket | null }>();
@@ -352,7 +366,8 @@ function parseTicketForReadiness(path: string, num: number, slug: string): Local
         ?.replace(/\s+/g, ' ').trim() ?? '';
       const objective = objectiveField.exec(ticketHeader(text))?.[2]?.trim() || undefined;
       const repo = legacyTicketRepo(text);
-      const role = FRONTEND_ROLE_RE.test(body) ? 'frontend-imp' : 'imp';
+      const match = IMPLEMENTER_ROLE_RE.exec(body)?.[1]?.toLowerCase();
+      const role = match === 'frontier-imp' ? match : match ? 'frontend-imp' : 'imp';
       const repairs = parseMarkdownRepairRefs(rawRepairs, slug);
       parsed = { ...heading, path, what, role, repo, runningList: isRunningListTicket(body), ...(objective && { objective }),
         ...(repairs.length && { repairs }), status, at: 0, items, checked,

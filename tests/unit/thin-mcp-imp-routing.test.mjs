@@ -5,10 +5,12 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { markExhausted } from '../../dist/roles/roster.js';
+import { projectJobFacts } from '../../dist/roles/job-archive.js';
 import { defaultSettings, loadSettings } from '../../dist/settings.js';
 import { SETTING_ROWS, resetSettingsGroup } from '../../dist/render/settings-page.js';
-import { cardText, configureFakeDecision, fakeDecisionServer, fixture, until, waitFixtureJob, workerFor } from '../helpers/thin-mcp-harness.mjs';
+import { cardText, configureFakeDecision, fakeDecisionServer, fallbackRole, fixture, until, waitFixtureJob, workerFor } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
+import { goodTicket, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
 const pi = model => ({ harness: 'pi', pi_role: 'implementer', model: `synthetic/${model}`, thinking: 'high' });
 const light = { use: 'Small edits on an existing pattern', preset: 'small' };
@@ -108,6 +110,94 @@ test('Even rotates in pool order, skips unavailable presets, wraps around and pi
     assert.equal(receipt(fallback).model, 'synthetic/daily');
   }
   assert.equal(api.requests.length, 0);
+});
+
+const astra = 'openai/gpt-6.2-astra';
+const repairTickets = {
+  '01-original.md': goodTicket(1, { status: 'done' }),
+  '02-repair.md': goodTicket(2).replace('**Blocked by:** none', '**Blocked by:** none\n**Repairs:** sample/01'),
+  '03-frontend.md': goodTicket(3).replace('**Blocked by:** none', '**Blocked by:** none\n**Repairs:** sample/01\n**Role:** frontend-imp'),
+};
+const evenPool = { impPlacement: 'even', impEvenPool: ['small'] };
+
+test('Frontier Imp is in the roster and can start an explicit worktree job', async t => {
+  const f = await setupWorkflowProject(t);
+  const roster = await f.call('hud_roster', { detail: true });
+  const frontier = roster.roles.find(({ role }) => role === 'frontier-imp');
+  assert.equal(frontier.model, astra);
+  assert.equal(frontier.thinking, 'xhigh');
+  const started = await f.call('hud_create', { role: 'frontier-imp', task: 'Synthetic repair.', isolation: 'worktree' });
+  const job = receipt(started);
+  assert.equal(job.role, 'frontier-imp');
+  assert.equal(job.place.harness, 'pi');
+  assert.equal(job.model, astra);
+  assert.equal(job.thinking, 'xhigh');
+  assert.ok(job.worktree?.root);
+});
+
+test('Main Imp repair tickets escalate ahead of even placement, but retry and land repair keep the source', async t => {
+  const f = await setupWorkflowProject(t, { tickets: repairTickets });
+  role(f, undefined);
+  settings(f, evenPool);
+  const main = await f.call('hud_create', { role: 'imp', ticket: 'sample/02' });
+  assert.equal(main.role, 'frontier-imp');
+  assert.equal(main.route.source, 'repair-route');
+  const first = receipt(main);
+  assert.equal(first.thinking, 'xhigh');
+  assert.match(cardText(workerFor(f, main.job)), /Route: repair/);
+  assert.equal(projectJobFacts(f.home, main.task_dir, first.job, first, {}).route.source, 'repair-route');
+  assert.equal(fs.existsSync(join(f.home, 'even-imp.json')), false);
+  write(join(main.task_dir, 'STATUS.json'), JSON.stringify({ state: 'failed', exit_reason: 'Synthetic exit' }));
+  const retry = await f.call('hud_create', { retry_of: main.job });
+  assert.equal(retry.role, 'frontier-imp');
+  assert.equal(receipt(retry).model, astra);
+  write(join(retry.task_dir, 'STATUS.json'), JSON.stringify({ state: 'closed' }));
+  const gateRepair = await landRepair(f, retry);
+  assert.equal(gateRepair.role, 'frontier-imp');
+  assert.equal(gateRepair.model, astra);
+});
+
+test('Ticket queue escalates Imp repairs, but not Frontend Imp repairs', { timeout: 15_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: repairTickets });
+  role(f, undefined);
+  fallbackRole(f, 'frontend-imp', [pi('frontend')]);
+  settings(f, evenPool);
+  const launched = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 2, cwd: f.root });
+  assert.ok(launched.flow, JSON.stringify(launched));
+  const run = () => f.flow(launched.flow);
+  await until(() => run().tickets.filter(item => item.job).length >= 2, 5_000)
+    .catch(error => assert.fail(`${error}: ${JSON.stringify(run())}`));
+  const jobs = run().tickets.map(item => f.job(item.job));
+  assert.equal(jobs.find(job => job.ticket === 'sample/02').role, 'frontier-imp');
+  assert.equal(jobs.find(job => job.ticket === 'sample/02').route.source, 'repair-route');
+  assert.equal(jobs.find(job => job.ticket === 'sample/03').role, 'frontend-imp');
+  assert.equal(jobs.find(job => job.ticket === 'sample/03').model, 'synthetic/frontend');
+});
+
+test('Frontier quota, trust and cap refusals fall back to Imp even placement with a reason', async t => {
+  const f = await setupWorkflowProject(t, { tickets: repairTickets });
+  role(f, undefined);
+  settings(f, { ...evenPool, roleCaps: { imp: 0, 'frontier-imp': 1 } });
+  const blocker = waitFixtureJob(f, 1);
+  write(join(blocker.dir, 'job.json'), JSON.stringify({ ...blocker.receipt, role: 'frontier-imp' }));
+  const dispatch = async (label, reason) => {
+    const input = { role: 'imp', ticket: 'sample/02', request_key: label };
+    const job = await f.call('hud_create', input);
+    assert.equal(job.role, 'imp', JSON.stringify(job));
+    assert.equal(job.route.placement, 'even');
+    assert.match(job.route.fallback, reason);
+    assert.equal(receipt(job).model, 'synthetic/small');
+    assert.equal((await f.call('hud_create', input)).job, job.job);
+  };
+  await dispatch('cap', /Skipped frontier-imp: role is at capacity/);
+  settings(f, evenPool);
+  write(join(f.env.HOME, 'quota-pi-model'), astra);
+  await dispatch('startup quota', /Skipped frontier-imp:.*HTTP 429/);
+  markExhausted(f.home, `pi:${astra}`, 'HTTP 429 synthetic quota');
+  await dispatch('quota', /Skipped frontier-imp:.*exhausted/);
+  fallbackRole(f, 'frontier-imp', [{ harness: 'cli', agent: 'claude', model: 'synthetic/untrusted' }]);
+  write(join(f.env.CLAUDE_CONFIG_DIR, '.claude.json'), '{}');
+  await dispatch('trust', /Skipped frontier-imp:.*trusted/);
 });
 
 test('Queued Imp even launch rotates from its pinned preset on quota refusal', async t => {

@@ -1104,7 +1104,7 @@ export function readThinJobs(
       state,
       ...(queuePosition !== undefined ? { queuePosition } : {}),
       ...(route && (route.tier === 'light' || route.tier === 'standard' || route.tier === 'hard') &&
-        (route.mode === 'headless' || route.mode === 'tab') && (route.source === 'decision' || route.source === 'default') &&
+        (route.mode === 'headless' || route.mode === 'tab') && (route.source === 'decision' || route.source === 'default' || route.source === 'repair-route') &&
         typeof route.reason === 'string' ? { route: {
           tier: route.tier, mode: route.mode, source: route.source, reason: route.reason,
           ...(route.placement === 'even' && { placement: 'even' as const, preset: word(route.preset) }),

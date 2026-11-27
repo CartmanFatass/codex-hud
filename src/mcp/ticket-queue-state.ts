@@ -6,6 +6,7 @@ import type { Cursor } from '../workflows/engine.js';
 import type { RunScope } from '../workflows/scope.js';
 import { requestStop, stopRequested } from '../workflows/store.js';
 import type { Job } from './job-contracts.js';
+import type { TicketRole } from '../tickets/store.js';
 import type { OwnerApproval, UnattendedRun } from '../unattended/state.js';
 
 export const isTicketQueueId = (id: unknown): id is string => typeof id === 'string' && /^q[0-9a-f]{16}$/.test(id);
@@ -134,7 +135,7 @@ export interface ReviewRecord {
   round: number; job: string; summary?: string; findings?: Job['findings']; reviewed?: Job['reviewed'];
 }
 export interface TicketQueueItem {
-  ticket: string; path: string; role: 'imp' | 'frontend-imp'; job?: string; land?: string; landed?: true; base_moves?: number;
+  ticket: string; path: string; role: TicketRole; job?: string; land?: string; landed?: true; base_moves?: number;
   repo?: string; // Registered target main checkout; root remains the tracker.
   /** Repair round at admission (0 for the initial round; absent on legacy records). */
   round?: number;

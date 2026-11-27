@@ -31,7 +31,7 @@ export function publicJobLine(value: string): string {
 
 export type JobFacts = {
   job: string; project?: string; role?: string; harness?: string; model?: string; used_place?: string;
-  ticket?: string; objective?: Job['objective']; package?: string; route?: { tier?: string; mode?: string; placement?: 'even'; preset?: string }; mode?: string;
+  ticket?: string; objective?: Job['objective']; package?: string; route?: { tier?: string; mode?: string; placement?: 'even'; preset?: string; source?: 'repair-route'; fallback?: string }; mode?: string;
   question_count?: number; parent_job?: string; summary?: string; usage?: JobUsage; land?: JobLand;
   state?: string; created_at?: string; started_at?: string; settled_at?: string; ended_at?: string;
   archived_at?: string; reaped_at?: string; dispatch_exit_code?: number;
@@ -39,7 +39,7 @@ export type JobFacts = {
 
 /** The same facts back a still-retained job and its later archive line. */
 export function projectJobFacts(home: string, dir: string, id: string, job: Partial<Job>, status: Partial<JobStatus>, hasJob = true): JobFacts {
-  const { tier, mode, placement, preset } = job.route ?? {};
+  const { tier, mode, placement, preset, source, fallback } = job.route ?? {};
   let question_count: number | undefined;
   try { question_count = getJobIndexCache(home).readQa(dir).allQuestionFiles.length; } catch { /* Unknown. */ }
   const terminal = ['idle_grace', 'done', 'closed', 'failed', 'stopped'].includes(status.state ?? '');
@@ -49,7 +49,10 @@ export function projectJobFacts(home: string, dir: string, id: string, job: Part
     job: id, project: text(job.project_root) ?? text(job.worktree?.main_root) ?? text(job.cwd), role: text(job.role) ?? text(status.role),
     harness, model: text(job.model) ?? text(status.model), used_place: text(job.used_place),
     ticket: text(job.ticket), objective: objectiveLink(job.objective), package: text(job.package), parent_job: text(job.parent_job),
-    route: tier || mode ? { tier: text(tier), mode: text(mode), ...(placement === 'even' ? { placement, preset: text(preset) } : {}) } : undefined,
+    route: tier || mode ? { tier: text(tier), mode: text(mode), ...(placement === 'even' ? { placement, preset: text(preset) } : {}),
+      ...(source === 'repair-route' && { source }),
+      ...(fallback?.startsWith('Skipped frontier-imp:') && { fallback: publicJobLine(fallback) }),
+    } : undefined,
     mode: job.headless || ['headless', 'sonic'].includes(status.slot ?? '') ? 'headless'
       : job.headless === false || status.slot === 'primary' ? 'tab' : undefined,
     question_count, summary: summary ? publicJobLine(summary) || undefined : undefined,

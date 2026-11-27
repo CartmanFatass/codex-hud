@@ -15,7 +15,7 @@ const MAX_WRITE_RECORD_BYTES = 128 * 1024;
 export const TICKET_FEATURE = /^[a-z0-9-]+$/;
 export const TICKET_STATUSES = ['needs-triage', 'needs-info', 'ready-for-agent', 'ready-for-human', 'claimed', 'done', 'wontfix'] as const;
 export const TICKET_KINDS = ['impl', 'flake-list', 'research', 'prototype', 'grilling', 'task'] as const;
-export const TICKET_ROLES = ['imp', 'frontend-imp'] as const;
+export const TICKET_ROLES = ['imp', 'frontend-imp', 'frontier-imp'] as const;
 export type TicketStatus = typeof TICKET_STATUSES[number];
 export type TicketKind = typeof TICKET_KINDS[number];
 export type TicketRole = typeof TICKET_ROLES[number];
@@ -455,9 +455,12 @@ export function readLegacyTicket(path: string, number: number, feature: string) 
     ?? (status && Object.hasOwn(legacyStatuses, status) ? legacyStatuses[status] : 'needs-triage');
   const repairs = parseMarkdownRepairRefs(evidence.repairs, feature);
   const repo = legacyTicketRepo(brief);
+  const rawRole = field('(?:Role|Who)') ?? '';
+  const role = /^frontier-imp\b/i.test(rawRole) ? 'frontier-imp'
+    : /^(?:frontend-imp|frontend-implementer)\b/i.test(rawRole) ? 'frontend-imp' : undefined;
   const ticket: TicketRecord = {
     number, title: heading.title, status: label, ...(repo !== undefined && { repo }),
-    ...(/^(?:frontend-imp|frontend-implementer)\b/i.test(field('(?:Role|Who)') ?? '') && { role: 'frontend-imp' }),
+    ...(role && { role }),
     ...(/^yes$/i.test(field('Main review') ?? '') && { main_review: true }),
     owner_try: evidence.ownerTry, live_try: field('(?:Live try|How to try|Try)') || 'none',
     approved_removals: splitRemovals(evidence.approvedRemovals),

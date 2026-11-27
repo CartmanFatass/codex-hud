@@ -42,6 +42,7 @@ import type { EndedExecutionJob } from './execution.js';
 import { targetKey } from './ticket-evidence.js';
 import { displayTicketQueues } from './ticket-queue-display.js';
 import { scanTicketStore } from './ticket-store.js';
+import { TICKET_ROLES, type TicketRole } from '../tickets/store.js';
 import { workState } from './work-job.js';
 import type { OwnerWorker, WorkBatch, WorkTarget } from './workboard-types.js';
 
@@ -113,7 +114,7 @@ export interface ExecutionRunMember {
 
 export interface ExecutionRunTicket {
   readonly ticket: string;
-  readonly role?: 'imp' | 'frontend-imp';
+  readonly role?: TicketRole;
   readonly stage: TicketRunStage;
   readonly jobId?: string;
   readonly landFlow?: string;
@@ -506,7 +507,7 @@ function projectTicketItem(
       return read.status === 'ok' && read.value.job === item.job ? read.value.role : undefined;
     })() : undefined))
     : undefined;
-  const ticketRole = item.role ?? (jobRole === 'imp' || jobRole === 'frontend-imp' ? jobRole : undefined);
+  const ticketRole = item.role ?? TICKET_ROLES.find(role => role === jobRole);
   const heading = worker?.ticketTitle ?? worker?.briefTitle;
   const first = heading?.match(/^[^\s:]+/)?.[0];
   const title = first && (first === worker?.displayId || first === item.ticket) ? heading!.slice(first.length).replace(/^[:–—\s]+/, '') : heading;

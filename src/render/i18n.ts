@@ -281,6 +281,8 @@ const ZH: Record<string, string> = {
   'using active preset': '使用当前预设',
   'Skipped unavailable presets: {presets}': '已跳过不可用预设：{presets}',
   'Route: {tier} · {mode}': '分流：{tier} · {mode}',
+  'Escalated imp repair': '升级处理 imp 修复',
+  'Frontier implementer placement': '前沿实现角色的运行位置',
   'light': '轻量',
   'standard': '标准',
   'hard': '复杂',

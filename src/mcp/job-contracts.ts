@@ -16,7 +16,7 @@ export type { SonicReads, SonicToolReads } from '../roles/sonic-reads.js';
 import type { SonicReads } from '../roles/sonic-reads.js';
 
 export type PiOptions = Partial<Record<(typeof piSwitches)[number], boolean>> & { pi_args?: string[] };
-export type JobRoute = { tier: RouteTier; mode: RouteMode; reason: string; source: 'decision' | 'default'; fallback?: string; mode_reason?: string;
+export type JobRoute = { tier: RouteTier; mode: RouteMode; reason: string; source: 'decision' | 'default' | 'repair-route'; fallback?: string; mode_reason?: string;
   placement?: 'even'; preset?: string | null };
 export type PrewalkScoutKind = 'code' | 'docs' | 'web';
 export type PrewalkKind = PrewalkScoutKind | 'pool';

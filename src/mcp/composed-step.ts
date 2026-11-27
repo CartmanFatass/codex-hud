@@ -290,7 +290,7 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
     let result: Awaited<ReturnType<typeof create>>;
     try {
       result = await create(run, request(next), step.role, brief,
-        { member: true, isolation: ['imp', 'frontend-imp'].includes(step.role) ? 'worktree' : 'none' }, admission?.beforeInput);
+        { member: true, isolation: ['imp', 'frontend-imp', 'frontier-imp'].includes(step.role) ? 'worktree' : 'none' }, admission?.beforeInput);
     } catch (error) { result = { job: undefined, code: undefined, error: reason(error), noLaunch: false }; }
     if (result.code !== 'workflow_input_changed') await update(run, key, (c, latest) => {
       const item = c.items![next];

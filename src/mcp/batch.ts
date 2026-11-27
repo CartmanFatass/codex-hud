@@ -145,7 +145,7 @@ export async function startBatch(home: string, pane: string | null, args: Args, 
     const dir = batchDir(home, flow);
     fs.mkdirSync(dir, { mode: 0o700, recursive: true });
     freezeGraph(home, flow, graph);
-    if ((role === 'imp' || role === 'frontend-imp') && shared.isolation === undefined) shared.isolation = 'worktree';
+    if (['imp', 'frontend-imp', 'frontier-imp'].includes(role) && shared.isolation === undefined) shared.isolation = 'worktree';
     writeJsonPrivate(join(dir, 'manifest.json'), { shared, items: inputs } satisfies Manifest);
     await batchLock(home, flow, () => saveBatch(home, b, inputs.map((i, k) => ({ item: k+1, state: 'waiting', preset: i.route.preset ?? null, pilot: i.pilot, brief_file: i.brief_file }))));
     return b;

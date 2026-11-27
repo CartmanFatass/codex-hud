@@ -963,6 +963,8 @@ test('unattended repair admits a third repair in the same run, holds on lead esc
     const repairTicket = `sample/0${round + 4}`;
     const rw = await u.ticketJob(flow, repairTicket);
     assert.equal(f.flow(flow).tickets.find(x => x.job === rw).round, round + 1);
+    assert.equal(f.job(rw).role, 'frontier-imp');
+    assert.equal(f.job(rw).route.source, 'repair-route');
     await f.settle(rw);
   }
   await f.settleLead(prevLead, 'Decision: escalate\nReason: A finding already addressed by the first repair has recurred.\n');
