@@ -248,14 +248,16 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
           client.supervisor = !!client.pane;
           subscribers.add(client); reply({ type: 'subscribed' });
         }
-        else if (req.method === 'agent.get') {
+        else if (req.method === 'agent.get' || (req.method === 'agent.wait' && has('claude-initial-enter'))) {
           const target = launches.get(req.params.target) ?? [...launches.values()].reverse().find(a => a.pane_id === req.params.target);
           if (!target) { error('agent_not_found'); return; }
           const { kind, name, pane_id, tab_id, launch_id, terminal_id } = target;
           const id = name.replace(/-primary$/, '');
           const sub = [...subscribers].reverse().find(item => item.id === id || (!item.id && item.pane === pane_id));
           if (sub) sub.id = id;
-          const state = sub?.state ?? (kind === 'pi' && target.ready ? piStatus() : 'idle');
+          const submitted = kind === 'claude' && fs.existsSync(join(env.HUD_HOME, 'jobs', id, 'fake-claude-submitted'));
+          const state = sub?.state ?? (submitted ? 'working' : kind === 'pi' && target.ready ? piStatus() : 'idle');
+          if (req.method === 'agent.wait' && !req.params.until.includes(state)) { error('timeout'); return; }
           if (state === 'agent_not_found' || (sub && has('herdr-errors'))) { error('agent_not_found'); return; }
           const agent_session = has('late-session') && !has('exit-after-done') && !has('socket-got-session') ? null : {
             kind: 'id', value: target.resuming && has('wrong-native-session') ? 'unexpected-session' : 'synthetic-grok-session',
@@ -274,6 +276,22 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
             reply(req.method === 'pane.get' ? { pane: { pane_id: req.params.pane_id,
               ...(state && { launch_id: target.launch_id, terminal_id: target.terminal_id, agent: target.kind, agent_status: state }) } }
               : { tab: { tab_id: id, launch_id: target?.launch_id } });
+          }
+        } else if (has('claude-initial-enter') && ['pane.read', 'pane.send_keys'].includes(req.method)) {
+          const target = [...launches.values()].reverse().find(a => a.pane_id === req.params.pane_id);
+          if (target?.kind !== 'claude') { error('pane_not_found'); return; }
+          const mode = fs.readFileSync(join(env.HOME, 'claude-initial-enter'), 'utf8');
+          const dir = join(env.HUD_HOME, 'jobs', target.name.replace(/-primary$/, ''));
+          const file = join(dir, 'fake-claude-draft');
+          if (req.method === 'pane.send_keys') {
+            if (mode === 'once' && req.params.keys.join() === 'Enter' && fs.existsSync(file))
+              fs.renameSync(file, join(dir, 'fake-claude-submitted'));
+            reply({ type: 'ok' });
+          } else {
+            const draft = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+            const input = mode === 'once' && draft ? `[Pasted text #1 +${draft.split('\n').length - 1} lines]` : draft.trimEnd();
+            const rule = '─'.repeat(72);
+            reply({ read: { text: `Claude Code\n${rule}\n❯ ${input}\n${rule}\nOpus · ctx 0%\n` } });
           }
         } else if (req.method === 'pane.send_keys' && onPermissionKeys) {
           onPermissionKeys(req.params);

@@ -645,6 +645,7 @@ Tabbed pi history stays in `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-di
 `job.json` records known native sessions as `sessions: [{harness, id, path?}]`, including repair continuations; reopening the same session does not duplicate it.
 A CLI supervisor matches root exit events by launch and terminal identity. If it misses the event, it checks the recorded PID and start time; confirmed death without an exit event is an unknown exit, not a successful close. Losing a tab address alone does not end the job.
 Each CLI dispatch and `hud_send` starts a turn (`turn.json`). If Herdr refuses the send before input, HUD keeps the worker's previous turn.
+If Herdr sees no activity from a new Claude Code tab's first prompt after five seconds, HUD checks the tab's current input box. If the launch prompt is still there (including at 0% context), HUD presses Enter once without pasting again. If the same draft is still in the idle input box after the retry, HUD records a launch failure instead of a quiet worker. Unattended lead launches use the same check; ambiguous input does not receive a key.
 `hud_report` (or the fallback `hud-progress --done`) binds the CLI report's signature to the turn in the worker's prompt.
 An undeclared report follows the quiet rule using herdr's turn status. Antigravity's status includes its in-turn background work; HUD does not separately scan CLI workers for background children.
 A continuation invalidates an old receipt; rewriting a declared report requires a fresh receipt for that turn.

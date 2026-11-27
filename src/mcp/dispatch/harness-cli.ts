@@ -22,8 +22,9 @@ import {
 } from './direct-exec.js';
 import {
   run, binScript, launchError, dispatchBase, tabLabel, workspaceArgs,
-  startupFailure, paneText, refusedBeforeInput, directExecEnv, type DispatchResult,
+  startupFailure, paneText, refusedBeforeInput, promptStalled, directExecEnv, type DispatchResult,
 } from './proc.js';
+import { claudePromptResendFailed } from './prompt-stall.js';
 
 function agentStatus(stdout: string): string | null {
   try {
@@ -240,10 +241,13 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
     const failReadiness = async (result: DispatchResult) => rollback(await startupFailure(result, left));
     const notReady = started.exit_code !== 0 && `${started.stdout}\n${started.stderr}`.includes('agent_not_ready');
     if (started.exit_code !== 0 && !notReady) return failReadiness(started);
+    const firstClaudePrompt = place.agent === 'claude' && !resume;
+    let startupScreen = '';
     if (kind.trust?.text) {
       const read = await run('herdr', ['pane', 'read', left, '--source', 'recent']);
       if (read.exit_code !== 0) return failReadiness(notReady ? started : read);
-      if (paneText(read.stdout).includes(kind.trust.text)) {
+      startupScreen = paneText(read.stdout);
+      if (startupScreen.includes(kind.trust.text)) {
         const declined = await run('herdr', ['pane', 'send-keys', left, ...kind.trust.decline]);
         if (declined.exit_code !== 0) return rollback(declined);
         await run('herdr', ['agent', 'wait', name, '--until', 'idle', '--until', 'unknown', '--timeout', '15000']);
@@ -275,11 +279,16 @@ export async function dispatchCli(job: Job, place: RolePlace, instructions: stri
       '--wait',
       '--until',
       'working',
+      ...(firstClaudePrompt ? ['--until', 'blocked'] : []),
       '--timeout',
       '30000',
     ]);
-    if (refusedBeforeInput(submitted) && reportSignature(dir) === turn.report_sig) {
-      return rollback(submitted);
+    const reported = () => reportSignature(dir) !== turn.report_sig;
+    if (refusedBeforeInput(submitted) && !reported()) return rollback(submitted);
+    if (firstClaudePrompt && promptStalled(submitted) && !reported() &&
+        await claudePromptResendFailed(name, directIdentity, prompt, startupScreen, reported)) {
+      return retainDirectFailure(dir, job, 'cli', place.agent, directIdentity,
+        launchError("agent_prompt_stalled: Claude's first prompt did not submit after one Enter resend"));
     }
     // An ambiguous submission still needs supervision; it is not worker death.
     if (!spawnCliSupervisor(dir)) return { exit_code: 1, stdout: '', stderr: 'hud-cli did not start' };

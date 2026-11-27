@@ -2,6 +2,9 @@
 import * as fs from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { runHerdr } from '../../roles/herdr-run.js';
+import { request, type HerdrReply } from '../../runtime/herdr-socket.js';
+import { isProcAlive } from '../../utils/proc.js';
+import type { DirectStartIdentity } from './direct-exec.js';
 
 function canonical(file: string): string {
   try { return fs.realpathSync(file); }
@@ -86,4 +89,58 @@ export async function recoverStalledPrompt(task: string, name: string, pane: str
     const waited = await herdr(['agent', 'wait', name, '--until', 'working', '--until', 'blocked', '--until', 'done', '--timeout', '120000']);
     if (!delivered(boundary, prompt)) throw Error(waited.ok ? 'no matching new user message after one Enter' : 'stalled prompt did not start after one Enter');
   } catch (error) { throw Error(`${(error as Error).message}; ${hint}`); }
+}
+
+/** Read only Claude's bottom composer, not a matching line in the conversation. */
+function claudeComposer(screen: string) {
+  const rows = screen.trimEnd().split(/\r?\n/);
+  let top = -1, bottom = -1;
+  for (const [i, row] of rows.entries()) {
+    if (/^─{3,}$/.test(row.trim())) { top = bottom; bottom = i; }
+  }
+  if (top < 0 || top + 1 >= bottom || rows[top].trim() !== rows[bottom].trim()) return;
+  const footer = rows.slice(bottom + 1).filter(row => row.trim());
+  if (footer.length > 3 || /\b(?:enter to|esc to|arrow keys|select model)\b/i.test(footer.join('\n'))) return;
+  const input = rows.slice(top + 1, bottom).join('\n');
+  if (!/^\s*❯(?:\s|$)/.test(input)) return;
+  const context = /\b(?:ctx|context)\s*:?\s*(\d+(?:\.\d+)?)%/i.exec(footer.join('\n'));
+  return { input: input.replace(/^\s*❯/, '').replace(/\s+/g, ''), usedContext: !!context && Number(context[1]) > 0 };
+}
+
+/** Herdr already waited five seconds for prompt activity. Resend only with positive
+ * evidence of our draft still in the new, idle Claude pane. Fail the launch only
+ * if the same evidence shows the prompt still there after the one resend. */
+export async function claudePromptResendFailed(name: string, identity: DirectStartIdentity, prompt: string, startupScreen: string,
+  reported: () => boolean): Promise<boolean> {
+  const { paneId, launchId, terminalId, pid, pidStart } = identity;
+  const current = (reply: HerdrReply | null) => {
+    const agent = !reply?.error && reply?.result?.agent;
+    if (agent && agent.name === name && agent.agent === 'claude' && agent.pane_id === paneId &&
+        agent.launch_id === launchId && agent.terminal_id === terminalId) return agent.agent_status;
+  };
+  const active = (state: string | undefined) => state === 'working' || state === 'blocked';
+  const get = async () => current(await request('agent.get', { target: name }, { timeoutMs: 800 }));
+  const composer = async () => {
+    const reply = await request('pane.read', { pane_id: paneId, source: 'visible', format: 'text' }, { timeoutMs: 800 });
+    const text = !reply?.error && reply?.result?.read?.text;
+    return typeof text === 'string' ? claudeComposer(text) : undefined;
+  };
+  const startup = claudeComposer(startupScreen);
+  const expected = prompt.replace(/\s+/g, '');
+  const newlines = prompt.match(/\r\n|\r|\n/g)?.length ?? 0;
+  const holdsPrompt = (draft: ReturnType<typeof claudeComposer>) => {
+    if (!draft?.input || draft.usedContext || draft.input === startup?.input) return false;
+    // Claude can abbreviate bracketed pastes. Only accept a new paste chip with the
+    // launch prompt's line count, not an arbitrary nonempty composer at zero context.
+    const pasted = /^\[Pastedtext#\d+\+(\d+)lines\]$/.exec(draft.input);
+    return draft.input === expected || (!!startup && !!pasted && Number(pasted[1]) === newlines);
+  };
+  const idle = (state: string | undefined) => state === 'idle' || state === 'done';
+  if (!holdsPrompt(await composer()) || !idle(await get()) || reported() || !isProcAlive(pid, pidStart)) return false;
+
+  // A lost send reply does not justify another Enter. Check the client instead.
+  await request('pane.send_keys', { pane_id: paneId, keys: ['Enter'] }, { timeoutMs: 800 });
+  const waited = await request('agent.wait', { target: name, until: ['working', 'blocked'], timeout_ms: 3000 }, { timeoutMs: 3500 });
+  if (active(current(waited)) || reported()) return false;
+  return holdsPrompt(await composer()) && idle(await get()) && !reported();
 }

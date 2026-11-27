@@ -128,7 +128,9 @@ if (command === 'direct-start') {
     ? fs.readFileSync(paneFile, 'utf8')
     : fs.existsSync(dialog)
       ? (fs.readFileSync(dialog, 'utf8').trim() || 'Do you trust the contents of this directory?') + '\n'
-      : 'synthetic grok ready\n';
+      : fs.existsSync(join(process.env.HOME, 'claude-initial-enter'))
+        ? '────────────────────\n❯\n────────────────────\nOpus · ctx 0%\n'
+        : 'synthetic grok ready\n';
   console.log(
     JSON.stringify({
       result: {
@@ -532,6 +534,13 @@ if (command === 'direct-start') {
   writeFixtureFile(join(process.env.HUD_HOME, 'jobs', id, 'report.md'), 'Synthetic fast report after input.\n');
   waitToReply();
   console.error('agent_prompt_stalled after submit');
+  process.exit(1);
+} else if (command === 'herdr' && args[0] === 'agent' && args[1] === 'prompt' && args[4] === '--wait' &&
+    fs.existsSync(join(process.env.HOME, 'claude-initial-enter'))) {
+  const id = args[2].replace(/-primary$/, '');
+  const dir = join(process.env.HUD_HOME, 'jobs', id);
+  writeFixtureFile(join(dir, 'fake-claude-draft'), args[3]);
+  console.error('agent_prompt_stalled: no observed working or blocked state within 5000 ms');
   process.exit(1);
 } else if (
   command === 'herdr' &&

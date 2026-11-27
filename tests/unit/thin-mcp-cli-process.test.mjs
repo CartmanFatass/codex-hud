@@ -84,6 +84,37 @@ test('supervisor edges: stalled submission stays supervised; pre-input rejection
   assert.equal(f.commands().some((c) => c.args[0] === 'tab' && c.args[1] === 'close'), false);
 });
 
+for (const mode of ['once', 'twice']) {
+  test(`Claude launch with Enter dropped ${mode}`, { timeout: 30000 }, async t => {
+    const f = await fixture(t, { failedRetentionMs: 120_000 });
+    writeFixtureFile(join(f.env.HOME, 'manual-socket'), '');
+    writeFixtureFile(join(f.env.HOME, 'claude-initial-enter'), mode);
+    const job = await f.call('hud_create', { role: 'lead', task: 'Synthetic lead brief.' });
+    assert.equal(job.role, 'lead');
+    assert.equal(cliState(job.task_dir).agent, 'claude');
+    const pane = f.socketRequests.find(r => r.method === 'pane.read' && r.params.source === 'visible')?.params.pane_id;
+    assert.ok(pane);
+    assert.deepEqual(f.socketRequests.filter(r => r.method === 'pane.send_keys').map(r => r.params), [
+      { pane_id: pane, keys: ['Enter'] },
+    ]);
+    assert.equal(f.commands().filter(c => c.args[0] === 'agent' && c.args[1] === 'prompt').length, 1, 'the brief is never pasted twice');
+    if (mode === 'once') {
+      assert.notEqual(job.ok, false);
+      assert.equal(cliState(job.task_dir).state, 'working');
+      assert.ok(fs.existsSync(join(job.task_dir, 'supervisor.pid')));
+      assert.ok(fs.existsSync(join(job.task_dir, 'fake-claude-submitted')));
+    } else {
+      assert.equal(job.ok, false);
+      assert.equal(job.code, 'dispatch_failed');
+      assert.match(job.reason, /first prompt did not submit after one Enter resend/);
+      const status = cliState(job.task_dir);
+      assert.equal(status.state, 'failed');
+      assert.equal(status.exit_reason, 'agent_prompt_stalled');
+      assert.equal(fs.existsSync(join(job.task_dir, 'supervisor.pid')), false);
+    }
+  });
+}
+
 test('supervisor edges: outage with a report settles at 60s, and missed root exit fails without quota scans', { timeout: 20000 }, async (t) => {
   const f = await fixture(t);
   fs.writeFileSync(join(f.env.HOME, 'manual-socket'), '');
