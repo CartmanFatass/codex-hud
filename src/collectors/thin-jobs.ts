@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import { readFileBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { Job, JobRoute, JobStatus } from '../mcp/job-contracts.js';
+import { isAutoLandFlakeJob } from '../mcp/flake-admission.js';
 import { jobFiles } from '../mcp/paths.js';
 import { permissionBlockAt, permissionNotice, permissionPredatesBlock, permissionStatus, type PermissionEntry } from '../mcp/worker-permissions.js';
 import { jobCallerPane } from '../roles/job-pane.js';
@@ -72,7 +73,7 @@ function sameStamps(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, strin
   return true;
 }
 // Persist only receipt/STATUS facts, never reports, questions or transcript text.
-const factKeys = new Set(['job', 'role', 'herdr_pane', 'caller_pane', 'created_at', 'queued_at', 'overflow_from', 'route', 'headless', 'title', 'package', 'ticket', 'objective', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code',
+const factKeys = new Set(['job', 'role', 'request_key', 'herdr_pane', 'caller_pane', 'created_at', 'queued_at', 'overflow_from', 'route', 'headless', 'title', 'package', 'ticket', 'objective', 'slice', 'target_hint', 'observed_at', 'retry_of', 'repair_of', 'from_jobs', 'project_root', 'cwd', 'task_length', 'parent_job', 'scout_only', 'scout_state', 'scout_error', 'dispatch_exit_code', 'auto_land', 'auto_land_blocked',
   'state', 'started_at', 'settled_at', 'ended_at', 'read_at', 'read_report_stamp', 'output_written', 'harness', 'model', 'provider', 'thinking', 'exit_reason', 'error', 'reason', 'blocked', 'blocked_at', 'updated_at', 'agent', 'quiet_decision']);
 function restore(home: string, idx: JobIndexCache): void {
   if (hydrated.has(idx)) return;
@@ -92,7 +93,7 @@ function restore(home: string, idx: JobIndexCache): void {
       if (typeof rel !== 'string' || !/^j[0-9a-f]{16}\/(job|STATUS)\.json$/.test(rel) || typeof stamp !== 'string' ||
         !snap || typeof snap.at !== 'number' || typeof snap.whole !== 'boolean' ||
         !(snap.json === null || (snap.json && typeof snap.json === 'object' && !Array.isArray(snap.json)))) throw Error('cache');
-      if (rel.endsWith('/job.json') && snap.factsVersion !== 9) { allCurrent = false; continue; } // Older projections lack report read identity.
+      if (rel.endsWith('/job.json') && snap.factsVersion !== 10) { allCurrent = false; continue; } // Older projections lack auto_land fields.
       facts.push({ rel, stamp, at: snap.at, whole: snap.whole, json: snap.json });
       const kind = !snap.whole ? 'truncated' : snap.json === null ? 'invalid' : 'ok';
       stamps.set(join(home, 'jobs', rel), `${kind}:${stamp}`);
@@ -109,7 +110,7 @@ function persist(home: string, idx: JobIndexCache, seenStamps: Map<string, strin
     if (liveStamp !== null && liveStamp === prev.fileStamp) return;
   }
   // Entry order in JobIndexCache reflects recent lookups, not a change in facts.
-  const text = JSON.stringify(idx.exportFacts(seenStamps.keys(), factKeys, { factsVersion: 9 }).sort(([a], [b]) => a.localeCompare(b)));
+  const text = JSON.stringify(idx.exportFacts(seenStamps.keys(), factKeys, { factsVersion: 10 }).sort(([a], [b]) => a.localeCompare(b)));
   if (text.length > 1048576) return;
   try {
     const { bytes, truncated } = readFileBounded(file, 1048576);
@@ -202,6 +203,8 @@ export interface JobRow extends Partial<JobProgress> {
   job: string;
   land_turn?: true;
   ticket_queue?: true;
+  auto_land?: true;
+  auto_land_blocked?: string;
   workflow?: string;
   batch_flow?: string;
   parent_job?: string;
@@ -336,11 +339,16 @@ export function jobRow(
   const reportMtime = extras?.reportAt ?? rep?.mtimeMs ?? null;
   const parent = word(j.parent_job);
   const overflowFrom = word(j.overflow_from);
+  const autoLand = isAutoLandFlakeJob(j);
+  const autoLandBlocked = typeof j.auto_land_blocked?.reason === 'string' && j.auto_land_blocked.reason.trim()
+    ? j.auto_land_blocked.reason.trim() : undefined;
   return {
     job: word(j.job) ?? '',
     ...(parent ? { parent_job: parent } : {}),
     ...(j.land_turn ? { land_turn: true } : {}),
     ...(j.ticket_queue ? { ticket_queue: true } : {}),
+    ...(autoLand ? { auto_land: true as const } : {}),
+    ...(autoLandBlocked ? { auto_land_blocked: autoLandBlocked } : {}),
     ...(j.workflow && { workflow: j.workflow }),
     ...(j.batch_flow && { batch_flow: j.batch_flow }),
     role: word(j.role),
@@ -406,8 +414,9 @@ function jobOwesCaller(dir: string, job: Record<string, unknown>, superseded: (j
   }
   const row = jobRow(job, status, { dir, cache: jobCache });
   if (row.ticket_queue || (failedAttempt(row) && superseded(job))) return false;
-  const reportOwed = !row.parent_job && !row.land_turn && row.report_unread;
-  return row.display_state === 'working' || row.display_state === 'queued' || row.state === 'idle_grace' || reportOwed || row.open_questions > 0 ||
+  const autoLanding = Boolean(row.auto_land && !row.auto_land_blocked);
+  const reportOwed = !row.parent_job && !row.land_turn && !autoLanding && row.report_unread;
+  return row.display_state === 'working' || row.display_state === 'queued' || (!autoLanding && row.state === 'idle_grace') || reportOwed || row.open_questions > 0 ||
     (!row.land_turn && failedAttempt(row) && failureUnobserved(dir, job.observed_at, statusAt));
 }
 
@@ -482,6 +491,7 @@ export function formatJobChange(row: JobRow): string {
   const parts = [
     stateLabel,
     ...(reason ? [reason] : []),
+    ...(row.auto_land_blocked ? [`auto-land blocked: ${row.auto_land_blocked.replace(/\s+/g, ' ').trim()}`] : []),
     ...(unread ? ['report'] : []),
     ...(row.open_questions > 0 ? [row.open_questions === 1 ? 'QUESTION' : `QUESTION (${row.open_questions})`] : []),
     ...(readyChecks(row) ? [`checks ${row.checks!.passed}/${row.checks!.total}`] : []),
@@ -506,6 +516,11 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
     }
     if ((row.workflow || row.batch_flow) && !row.question_ids.some(id => !old?.question_ids.includes(id)) && !(row.blocked && !old?.blocked)) continue;
     if (row.ticket_queue || (row.land_turn && !row.question_ids.some(id => !old?.question_ids.includes(id)))) continue;
+    if (row.auto_land && !row.auto_land_blocked &&
+        !row.question_ids.some(id => !old?.question_ids.includes(id)) &&
+        !(row.blocked && !old?.blocked) &&
+        row.display_state !== 'failed' && row.display_state !== 'stopped' &&
+        row.state !== 'waiting_orchestrator') continue;
     if (row.parent_job && row.display_state !== 'working' && row.display_state !== 'failed' &&
         !row.question_ids.some((id) => !old?.question_ids.includes(id))) continue;
     // A working job's reason and report flip with every tool step of the worker; only what the session acts on is
@@ -513,6 +528,7 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
     const working = (r: JobRow) => rowState(r) === 'working';
     if (
       old && !checksJustFinished(row, old) &&
+      old.auto_land_blocked === row.auto_land_blocked &&
       (working(old) && working(row)
         ? old.open_questions === row.open_questions
         : rowState(old) === rowState(row) &&
@@ -555,7 +571,8 @@ function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnTy
         ? fs.lstatSync(join(dir, jobFiles.checks), { throwIfNoEntry: false })?.mtimeMs : undefined;
       // Directory mtime and receipt rewrites (maintenance, adoption) are not new settlement evidence.
       const statusAt = statusRes.status === 'ok' ? statusRes.at : (adopted?.has(id) ? (when(job.created_at) ?? 0) : receiptAt);
-      const notice_mtime = Math.max(statusAt, row.report_unread ? row.report_mtime ?? 0 : 0, checksAt ?? 0);
+      const blockedAt = typeof job.auto_land_blocked?.at === 'string' ? when(job.auto_land_blocked.at) ?? 0 : 0;
+      const notice_mtime = Math.max(statusAt, row.report_unread ? row.report_mtime ?? 0 : 0, checksAt ?? 0, blockedAt);
       rows.push({ ...row, notice_mtime, ...(checks ? { checks } : {}), ...(reportMeta ? { report_meta: reportMeta } : {}) });
     } catch {
       /* Job directory disappeared or became unreadable during the scan; skip it. */

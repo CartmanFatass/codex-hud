@@ -15,6 +15,7 @@ import { recordJobUsage } from '../roles/job-usage.js';
 import { checkSonicReportCitations, shouldCheckSonicCitations } from '../roles/sonic-citations.js';
 import { collectSonicReadFacts, shouldRecordSonicReads } from '../roles/sonic-reads.js';
 import { landAttempt, activeLand, isFlowId, readLand } from '../mcp/land-state.js';
+import { settleAutoLandFlakeJob, shouldEvaluateAutoLandFlakeJob } from '../mcp/land-flakes.js';
 import type { CouncilRun } from '../mcp/council-state.js';
 import { settleMainCouncil } from '../mcp/council-settle.js';
 import { wakeWorkflow } from '../workflows/wake.js';
@@ -225,6 +226,7 @@ let worktreeRetries = new Map<string, number>();
 type Handoff = { version: 1; reapRetries: typeof reapRetries; preflightHold: typeof preflightHold; worktreeRetries: typeof worktreeRetries; summaryGeneration?: number };
 const inFlightReaps = new Map<string, ActiveReap>();
 const inFlightWorktrees = new Map<string, Promise<void>>();
+const inFlightAutoLands = new Map<string, Promise<void>>();
 const inFlightStarts = new Map<string, { role: string; promise: Promise<void> }>();
 const permissionChecks = new Map<string, { controller: AbortController; promise: Promise<void> }>();
 const permissionsSeen = new Map<string, { pane: string; key: string; next: number }>();
@@ -295,7 +297,7 @@ let nextPiExitCheck = 0;
 const orphanRetries = new Map<string, { pid: number; at: number; delay: number }>();
 let pauseReady: ((state: Handoff | null) => void) | undefined;
 function drained() {
-  if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightStarts.size || checking.size || permissionChecks.size || flowNoticeChecks.size) return;
+  if (!pauseReady || inFlightReaps.size || inFlightWorktrees.size || inFlightAutoLands.size || inFlightStarts.size || checking.size || permissionChecks.size || flowNoticeChecks.size) return;
   stopScheduling();
   pauseReady({ version: 1, reapRetries, preflightHold, worktreeRetries, summaryGeneration: workSummary.generation });
   pauseReady = undefined;
@@ -539,6 +541,22 @@ function startWorktree(id: string, file: string, job: Job, sweep = false) {
     schedule();
   });
   inFlightWorktrees.set(id, promise);
+}
+function startAutoLand(id: string) {
+  if (inFlightAutoLands.has(id) || stopped || pauseReady) return;
+  const promise = settleAutoLandFlakeJob(home, id, {
+    writeJob: (file, value) => writeJsonAtomic(file, value, 2),
+  }).then(res => {
+    if (res.action === 'landed') log(`auto-land ${id} -> ${res.flow}`);
+    else if (res.action === 'blocked') log(`auto-land blocked ${id}: ${res.reason}`);
+  }).catch((error) => {
+    warn(`auto-land ${id}`, `auto-land ${id}: ${(error as Error).message}`);
+  }).finally(() => {
+    inFlightAutoLands.delete(id);
+    drained();
+    schedule();
+  });
+  inFlightAutoLands.set(id, promise);
 }
 function snapshotIssueForLog(id: string, dir: string, issue?: string) {
   if (!issue?.startsWith('worker-tree snapshot unresolved:')) return issue;
@@ -1144,12 +1162,17 @@ function scan(retryWatch = false) {
         try { writeJsonAtomic(jobFile, job, 2); }
         catch (error) { warn(`reads ${id}`, `record reads ${id}: ${(error as NodeJS.ErrnoException).code ?? 'unknown'}`); }
       }
+      if (!inFlightAutoLands.has(id) && !land && !checkingReport && shouldEvaluateAutoLandFlakeJob(job, status, land, dir)) {
+        startAutoLand(id);
+      }
+      const pendingAutoLand = inFlightAutoLands.has(id);
+      if (pendingAutoLand) { open = true; markBusy(job); }
       let readInGrace = null;
       if (!resumeReadReap && status.state === 'idle_grace') {
         open = true;
         markBusy(job);
         // New Pi jobs close on native settlement. Pre-upgrade jobs still honor their grace.
-        if (!tab || !(readInGrace = readCloseTurn(dir, job, status))) continue;
+        if (pendingAutoLand || !tab || !(readInGrace = readCloseTurn(dir, job, status))) continue;
       }
       if (!resumeReadReap && (status.state === 'working' || status.state?.startsWith('waiting'))) {
         open = true;
@@ -1198,7 +1221,7 @@ function scan(retryWatch = false) {
       const worktreeSafe = Boolean(!launchUnknown && (job?.reaped_at || (!session && (job?.dispatch_exit_code ?? 0) > 0)));
       if (!worktreeSafe || resumable) markBusy(job);
       // With a tab, wait for successful reap; keep the checkout available for native resume or open owner holds.
-      if (worktreeSafe && !resumable && !checkingReport && !landing && !held && job?.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
+      if (worktreeSafe && !resumable && !checkingReport && !landing && !pendingAutoLand && !held && job?.worktree && !job.worktree_removed_at && fs.lstatSync(jobFile).isFile()) {
         const root = job.worktree.main_root;
         let pending = !job.worktree_kept_reason;
         // Only a clean, unpicked result has a checked HEAD. Don't spawn Git for an unchanged base.
@@ -1216,7 +1239,7 @@ function scan(retryWatch = false) {
       if (!session && job?.worktree && job.dispatch_exit_code === null) open = true;
       const closedAt = Number.isFinite(ended) ? ended : (statusAt ?? fs.statSync(statusFile).mtimeMs);
       const now = Date.now();
-      if (!landing && !checkingReport && !resumable && !launchUnknown && !retained && closedAt + JOB_RETENTION_MS < now && (!tab || job?.reaped_at)) {
+      if (!landing && !pendingAutoLand && !checkingReport && !resumable && !launchUnknown && !retained && closedAt + JOB_RETENTION_MS < now && (!tab || job?.reaped_at)) {
         if (!tryRetention || (job && now <= closedAt + 7 * JOB_RETENTION_MS && hasLocalPiSession(dir, job, status, piLocalFiles))) continue;
         let cold: { wroteRaw: boolean };
         try { cold = archiveJobCold(home, dir, id, job, status, now); }
@@ -1399,7 +1422,7 @@ function scan(retryWatch = false) {
   for (const id of orphanRetries.keys()) if (!orphans.has(id)) orphanRetries.delete(id);
   for (const id of permissionsSeen.keys()) if (!liveIds.has(id)) permissionsSeen.delete(id);
   for (const marker of [...flowNoticeRetries.keys()]) if (!seenFlowNoticeMarkers.has(marker)) flowNoticeRetries.delete(marker);
-  const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightStarts.size > 0 || permissionChecks.size > 0 || flowNoticeChecks.size > 0;
+  const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightAutoLands.size > 0 || inFlightStarts.size > 0 || permissionChecks.size > 0 || flowNoticeChecks.size > 0;
   if ((open || hasInFlight || nearest !== Infinity) && !watching) nearest = Math.min(nearest, Date.now() + degradedMs);
   if (nearest !== Infinity) timer = setTimeout(() => schedule(true), Math.max(1, Math.min(0x7fffffff, Math.ceil(nearest - Date.now()))));
   if (!queued && !open && !hasInFlight && nearest === Infinity) {

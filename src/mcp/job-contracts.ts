@@ -106,6 +106,8 @@ export interface Job extends PiOptions {
   workflow_cheap?: boolean;
   batch_flow?: string;
   ticket_queue?: string; // This turn's automatic notices belong to the batch, not the job.
+  auto_land?: boolean; // Promoted flake job: HUD lands clean settlements itself and notifies main only on failure or handback.
+  auto_land_blocked?: { sig?: string; reason: string; at: string }; // Settlement requires main instead of auto-landing.
   target_hint?: string | null;
   task_length?: number;
   create_options?: Record<string, unknown>;

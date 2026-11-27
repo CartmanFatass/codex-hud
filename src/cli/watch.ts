@@ -82,6 +82,9 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
           return { line: `[${one(tag)}] QUESTION ${id}: ${one(question)}${q.options.length ? ` | options: ${q.options.map(one).join(' / ')}` : ''} | default: ${one(q.suggested)}${q.context ? ` | context: ${one(q.context)}` : ''} | full text: ${file} | reply: hud_respond job=${row.job} request_id=${id}` };
         });
     if (row.land_turn || ((row.workflow || row.batch_flow) && !row.blocked)) return questions;
+    if (row.auto_land && !row.auto_land_blocked && !row.blocked &&
+        row.display_state !== 'failed' && row.display_state !== 'stopped' &&
+        row.state !== 'waiting_orchestrator') return questions;
     if (row.parent_job && settled(row) && row.display_state !== 'failed') return questions;
     // A newly visible row can be old work promoted into the bounded window by retention.
     if (catchup === false && !old && settled(row) && row.notice_mtime + NOTICE_MTIME_SLOP_MS < lastScanAt) return questions;
@@ -102,18 +105,20 @@ function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: Watch
       else olderReports++;
       return questions;
     }
-    const pending = unread || attention;
+    const blockedUnread = Boolean(row.auto_land_blocked && (row.report_unread || !row.report_present));
+    const pending = unread || attention || blockedUnread;
     const report = !row.parent_job && row.report_unread && (!old?.report_unread || row.report_mtime !== old.report_mtime);
     const escalation = row.state === 'waiting_orchestrator' && !row.open_questions && (old?.state !== row.state || old.reason !== row.reason);
     const failingChecks = row.checks && row.checks.passed < row.checks.total && checksJustFinished(row, old);
+    const autoLandBlocked = Boolean(row.auto_land_blocked && row.auto_land_blocked !== old?.auto_land_blocked);
     const failureOrStop = row.display_state === 'failed' || row.display_state === 'stopped';
-    const event = failingChecks || (row.blocked && !old?.blocked) || (row.state !== 'working' && (
+    const event = failingChecks || autoLandBlocked || (row.blocked && !old?.blocked) || (row.state !== 'working' && (
       (!old && row.state !== null && row.state !== 'queued' && !questions.length) ||
       (old && settled(row) && !settled(old)) || report || escalation ||
       (failureOrStop && row.display_state !== old?.display_state)
     ));
     if (!(catchup ? pending : event)) return questions;
-    const defer = !row.blocked && !failureOrStop && !failingChecks && !escalation && (settled(row) || report);
+    const defer = !row.blocked && !failureOrStop && !failingChecks && !escalation && !autoLandBlocked && (settled(row) || report);
     return [...questions, { line: formatJobChange(row), defer, status: row }];
   });
   const older = [
@@ -468,7 +473,7 @@ export async function watchCommand(
       const band = readBand && await readBand(scanAt);
       if (band) await io.stdout(JSON.stringify(band) + '\n');
       if (queue || mod) {
-        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || typedPending !== undefined || Number.isFinite(flowRetryAt) || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread) || row.checks?.state === 'running')))) ||
+        const pending = (mod && events.length > 0) || flows.pending || agyPending || agyBacklog.length > 0 || typedPending !== undefined || Number.isFinite(flowRetryAt) || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread && (!row.auto_land || Boolean(row.auto_land_blocked))) || row.checks?.state === 'running')))) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {

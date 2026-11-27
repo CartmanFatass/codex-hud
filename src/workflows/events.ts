@@ -30,6 +30,16 @@ export function taskNoticeSource(home: string, pane: string | null, cwd: string)
         if (q.task && q.state !== 'working' && directRecipient(q)) return [];
         return noticeEvents(home, { flow: id, notices: q.notices }, false, landFile(home, id));
       }
+      if (isFlowId(id)) {
+        const f = readLand(home, id, pass);
+        if (!f?.wt || !f.auto_land || f.task || f.ticket_queue || f.state !== 'failed') return [];
+        const sameProject = f.wt.main_root === cwd || f.wt.main_root === sharedRoot(cwd);
+        if (f.pane ? f.pane !== pane : !sameProject) return [];
+        const path = landFile(home, id);
+        if (fs.existsSync(`${path}.noticed`)) return [];
+        const outbox = f.workflow ?? { flow: id, notices: { 'end-0': landNoticeLine(f) } };
+        return noticeEvents(home, outbox, false, path);
+      }
       if (!isComposedId(id)) return [];
       const run = pass.header<ComposedRun>(file);
       if (run?.template !== 'composed' || !Object.keys(run.notices).length || !runVisible(run, pane, cwd)) return [];
@@ -73,9 +83,16 @@ export function workflowEvents(home: string, pane: string | null, all = false, c
     if (fs.existsSync(`${path}.${all ? 'observed' : 'noticed'}`)) continue;
     if (land) {
       const f = readLand(home, id, pass);
-      if (!f?.wt || f.task || f.ticket_queue || (!all && f.pane !== pane)) continue;
-      // Cross-project lands report to their authorizing pane; pane-less watches stay project-scoped.
-      if (!all && !pane && f.wt.main_root !== cwd && f.wt.main_root !== sharedRoot(cwd)) continue;
+      if (!f?.wt || f.task || f.ticket_queue) continue;
+      if (f.auto_land && f.state === 'completed') continue;
+      if (!all) {
+        const sameProject = f.wt.main_root === cwd || f.wt.main_root === sharedRoot(cwd);
+        if (f.auto_land && !f.pane) {
+          if (!sameProject) continue;
+        } else if (f.pane !== pane || (!pane && !sameProject)) {
+          continue;
+        }
+      }
       if (activeLand(f)) { pending = true; continue; }
       // Old receipts and new outboxes share the historical end marker (also across rollback).
       const outbox = f.workflow ?? { flow: id, notices: { 'end-0': landNoticeLine(f) } };

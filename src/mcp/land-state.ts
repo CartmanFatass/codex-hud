@@ -33,6 +33,7 @@ export interface LandFlakeCollection {
 export interface LandFlow {
   flow: string; job: string; pane: string | null; task: boolean; wt: ManagedWorktree; config: LandConfig;
   ticket_queue?: string;
+  auto_land?: true;
   protected_spec?: true;
   state: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'; step: string;
   pid: number; start: string; created_at: string; updated_at: string; step_started_at?: string;
@@ -66,7 +67,7 @@ export function writeLand(home: string, f: LandFlow, create = false) {
   f.step_started_at ??= f.updated_at;
   f.updated_at = new Date().toISOString();
   if (f.workflow && !activeLand(f)) settleSealedRun(f.workflow, 'land', f.state === 'cancelled' ? 'stopped' : f.state === 'completed' ? 'completed' : 'failed',
-    f.task || f.ticket_queue ? undefined : landNoticeLine(f));
+    f.task || f.ticket_queue || (f.auto_land && f.state === 'completed') ? undefined : landNoticeLine(f));
   saveHeader(home, f, create);
 }
 function landHeader(home: string, id: string): LandFlow | null {

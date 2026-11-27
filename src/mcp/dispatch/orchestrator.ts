@@ -218,6 +218,7 @@ export interface TicketDispatchOptions {
   workspace?: string;
   runNote?: string;
   ticketRoot?: string;
+  autoLand?: boolean;
 }
 
 /** Queue-capable ticket admission shared by ticket queues (`hud_tickets run`) and automated ticket dispatch. */
@@ -236,10 +237,10 @@ export async function dispatchTicketJob(
 
 type AdvisorInput = Pick<SelectionExcerpt, 'id' | 'excerpt' | 'source' | 'question'>;
 
-export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote, ticketAdmission, workflow, advisor, ticketRoot, callerCwd }: {
+export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote, ticketAdmission, autoLand, workflow, advisor, ticketRoot, callerCwd }: {
   parent?: SonicParent; repair?: { source: Job; derived: boolean }; batch?: boolean; slotGate?: SlotGate;
   queue?: { id: string; canAdmit: () => boolean }; member?: BatchMember; dispatcher?: Job['dispatcher']; workflow?: WorkflowDispatch;
-  workspace?: string; runNote?: string; ticketAdmission?: boolean; advisor?: AdvisorInput; ticketRoot?: string; callerCwd?: string;
+  workspace?: string; runNote?: string; ticketAdmission?: boolean; autoLand?: boolean; advisor?: AdvisorInput; ticketRoot?: string; callerCwd?: string;
 } = {}) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
@@ -335,7 +336,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
   return keyLock(`request:${requestKey}`, () =>
     dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, {
       worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source,
-      ticketQueue: queue?.id, ticketAdmission: Boolean(ticketAdmission || queue?.id), ticketRoot,
+      ticketQueue: queue?.id, ticketAdmission: Boolean(ticketAdmission || queue?.id), ticketRoot, autoLand,
       canAdmit: workflow?.canAdmit ?? member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace, workflow, advisor,
     }));
 }
@@ -493,10 +494,10 @@ export async function dispatchCouncilSeat(parent: Job, seat: CouncilSeat, part: 
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<SonicParent, 'job' | 'objective' | 'headless'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, ticketRoot, member, canAdmit, dispatcher, seat, council, memberStarted, workspace, workflow, advisor }: {
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, ticketRoot, autoLand, member, canAdmit, dispatcher, seat, council, memberStarted, workspace, workflow, advisor }: {
     seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void; workflow?: WorkflowDispatch; advisor?: AdvisorInput;
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
-    ticketQueue?: string; ticketAdmission?: boolean; ticketRoot?: string; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher']; workspace?: string;
+    ticketQueue?: string; ticketAdmission?: boolean; ticketRoot?: string; autoLand?: boolean; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher']; workspace?: string;
   } = {}) {
   const isTicketAdmission = Boolean(ticketAdmission || ticketQueue);
   const { experiment, arm, preview } = args;
@@ -829,6 +830,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         queued_at: nowIso,
         dispatcher,
         ...(ticketQueue && { workflow: ticketQueue, ticket_queue: ticketQueue }),
+        ...(autoLand && !ticketQueue && { auto_land: true }),
         ...(workflow && { workflow: workflow.id, workflow_cheap: workflow.cheap }),
         ...(queuedRoute && { route: queuedRoute }),
         ...((sonic || first.route?.mode === 'headless' || args.mode === 'headless') && { headless: true }),
@@ -908,6 +910,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       ...(retryInput ? { retry_of: required(retryInput, 'retry_of') } : {}),
       ...(landCwd ? { land_turn: request_key } : {}),
       ...(ticketQueue && { workflow: ticketQueue, ticket_queue: ticketQueue }),
+      ...(autoLand && !ticketQueue && { auto_land: true }),
       ...(member && { workflow: member.flow, batch_flow: member.flow }),
       ...(workflow && { workflow: workflow.id, workflow_cheap: workflow.cheap }),
       target_hint: taskTarget(task) || null, // Keep even under another pane; missing means a legacy receipt.
@@ -1518,8 +1521,13 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const delivered = pending.map(({ text: _, ...receipt }) => ({ ...receipt, resumed: true as const }));
   // Answering a headless land repair resumes that repair, not a new independent job turn.
   const answeringLand = answerRequest && current.land_turn?.startsWith('land:');
+  const isFlakeAuto = Boolean(current.auto_land || (typeof current.request_key === 'string' && current.request_key.startsWith('flakes:')));
   const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : answeringLand ? current.land_turn : undefined,
     ticket_queue: land || automatic || answeringLand ? current.ticket_queue : undefined,
+    ...(isFlakeAuto ? {
+      auto_land: land || automatic || answerRequest ? current.auto_land : false,
+      auto_land_blocked: land || automatic || answerRequest ? current.auto_land_blocked : undefined,
+    } : {}),
     workflow: automatic || answerRequest || (land && isComposedId(current.workflow)) ? current.workflow : undefined,
     batch_flow: automatic || answerRequest ? current.batch_flow : undefined,
     headless_task_fence: automatic ? taskFence(current) : undefined,
@@ -1755,7 +1763,13 @@ export async function sendJob(id: string, message: string, explicitKey: string |
     exit_code: null, stderr_tail: '' };
   current.land_turn = land ? key : undefined;
   // A note queued into a working turn leaves that turn with its queue; only a new turn is taken over.
-  if (!land && !queued) { delete current.ticket_queue; delete current.batch_flow; delete current.workflow; }
+  if (!land && !queued) {
+    delete current.ticket_queue; delete current.batch_flow; delete current.workflow;
+    if (current.auto_land || (typeof current.request_key === 'string' && current.request_key.startsWith('flakes:'))) {
+      current.auto_land = false;
+      delete current.auto_land_blocked;
+    }
+  }
   (current.send_outcomes ??= []).push(outcome);
   save(current);
   // Read the rollback baseline at mutation time, with no pane query between it and the write.

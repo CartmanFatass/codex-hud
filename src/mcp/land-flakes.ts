@@ -4,28 +4,37 @@ import { homedir } from 'node:os';
 import { join, relative, resolve, sep } from 'node:path';
 import { scanScratch, slugify } from '../cli/tickets.js';
 import { targetKey, ticketFileEvidence } from '../collectors/ticket-evidence.js';
+import { worktreeGit } from '../collectors/worktrees.js';
+import { readDone, readTurn, receiptForTurn } from '../roles/cli-turn.js';
 import { herdrId } from '../roles/herdr-run.js';
+import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
+import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
+import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
 import { CASES_HEADING, CHECKBOX_LINE, COMMENTS_HEADING, parseFlakeCases, type FlakeCase } from '../tickets/flake-cases.js';
 import {
   legacyTicketPaths, readJsonTicketFeature, ticketFeaturePath, withTicketStoreLock, writeLegacyTicket,
   writeTicketFeature, type FlakeCaseRecord, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
-import { readDirSafe, readFileBounded, readJsonBounded, readJsonFile } from '../utils/atomic-fs.js';
+import { readDirSafe, readFileBounded, readJsonBounded, readJsonFile, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { sonicChildren } from '../worker/sonic-jobs.js';
 import { dispatchTicketJob } from './dispatch/orchestrator.js';
-import { flakeDispatchKey, isRunningListTicket, readFlakesConfig, runningListAdmission } from './flake-admission.js';
-import type { Job } from './job-contracts.js';
+import { flakeDispatchKey, isAutoLandFlakeJob, isRunningListTicket, readFlakesConfig, runningListAdmission } from './flake-admission.js';
+import type { Job, JobStatus } from './job-contracts.js';
 import {
-  activeLand, isFlowId, landFile, updateLandFlakeCollection,
+  activeLand, isFlowId, landAttempt, landFile, updateLandFlakeCollection,
   type LandFlakeCollection, type LandFlow,
 } from './land-state.js';
+import { startLand, validLandConfig } from './land.js';
 import { ticketBlockersByKey } from './local-tickets.js';
 import { jobFiles } from './paths.js';
+import { piReportSettlement } from './pi-read-settlement.js';
+import { extractAssumedLines, extractReportNotes } from './report-notes.js';
 import { ensureJobWatcher } from './watch-pid.js';
 
 export { parseFlakeCases, type FlakeCase } from '../tickets/flake-cases.js';
-export { flakeDispatchKey } from './flake-admission.js';
+export { flakeDispatchKey, isAutoLandFlakeJob } from './flake-admission.js';
 
 export interface GateFlake {
   name: string;
@@ -81,6 +90,9 @@ const WAITING_DISPATCH_ERROR = 'waiting for active flake job';
 const BLOCKED_DISPATCH_ERROR = 'ticket is blocked';
 const UNAVAILABLE_DISPATCH_ERROR = 'ticket readiness unavailable';
 const FEATURE_CHANGED_DISPATCH_ERROR = 'waiting for configured flakes feature';
+const FLAKE_WORKER_RULE =
+  'Auto-land rule: when you settle with a report and a commit, HUD lands this flake fix automatically. ' +
+  'Write any scope assumption on an `Assumed:` line marked with `scope`, and use `Blockers:` only for an owner decision needed before this can land (otherwise write `Blockers: none`).';
 
 const nn = (n: number) => String(n).padStart(2, '0');
 const oneLine = (text: string) => text.replace(/\s+/g, ' ').trim();
@@ -689,6 +701,7 @@ export async function collectGateFlakes(
           : await dispatchTicketJob(
               { role: input.role, cwd: input.cwd, ticket: input.ticket, brief_file: input.brief_file, request_key: input.request_key },
               validPane,
+              { autoLand: true, runNote: FLAKE_WORKER_RULE },
             );
         const error = dispatchAdmissionError(res);
         if (error) return { pending: { stage: 'dispatch' as const, error, ticket: candidate.ticket } };
@@ -847,5 +860,179 @@ export async function retryPendingFlakeCollections(
       else resolved++;
     }
     return { retried, resolved, pending };
+  });
+}
+
+const CLEAN_SETTLED_STATES = new Set(['idle_grace', 'done', 'closed']);
+const MAX_FLAKE_REPORT_BYTES = 1024 * 1024;
+
+function hasOpenQuestions(dir: string): boolean {
+  try {
+    const names = new Set(fs.readdirSync(join(dir, jobFiles.qa)));
+    for (const name of names) {
+      if (/^q\d+\.md$/.test(name) && !names.has(name.replace('.md', '.answer.md'))) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function declaredFlakeReport(dir: string, job: Job, status: Partial<JobStatus>): string | null {
+  if (status.output_written !== true) return null;
+  const sig = cachedReportSignature(dir);
+  if (!sig) return null;
+  if (job.cli) {
+    const turn = readTurn(dir), done = readDone(dir);
+    if (!turn) return sig;
+    return receiptForTurn(turn, done) && done.report_sig === sig &&
+      Date.parse(status.settled_at ?? '') >= Date.parse(turn.sent_at) ? sig : null;
+  }
+  if (job.resume_s !== undefined) {
+    return piReportSettlement(dir, job, status as Pick<JobStatus, 'output_written' | 'settled_at'>) ? sig : null;
+  }
+  return sig;
+}
+
+export function shouldEvaluateAutoLandFlakeJob(
+  job: Job | null | undefined,
+  status: Partial<JobStatus> | null | undefined,
+  priorLand: LandFlow | null | undefined,
+  dir: string,
+): boolean {
+  if (!job || !status || priorLand || !isAutoLandFlakeJob(job)) return false;
+  if (!job.worktree || job.worktree.root !== job.cwd) return false;
+  if (!CLEAN_SETTLED_STATES.has(status.state ?? '')) return false;
+  const blocked = job.auto_land_blocked;
+  if (blocked) {
+    const sig = status.output_written === true ? cachedReportSignature(dir) : null;
+    if (!sig && !blocked.sig) return false;
+    if (sig && blocked.sig === sig) return false;
+  }
+  return true;
+}
+
+export type FlakeAutoLandResult =
+  | { action: 'noop' }
+  | { action: 'wait' }
+  | { action: 'landed'; flow: string }
+  | { action: 'blocked'; reason: string; sig?: string };
+
+export async function settleAutoLandFlakeJob(
+  home: string,
+  id: string,
+  options?: {
+    writeJob?: (jobFile: string, value: Job) => void;
+    startLandFn?: typeof startLand;
+  },
+): Promise<FlakeAutoLandResult> {
+  const dir = join(home, 'jobs', id);
+  const jobFile = join(dir, jobFiles.job);
+  const statusFile = join(dir, jobFiles.status);
+  return withAbstractLock('flake-auto-land', `${home}\0${id}`, async () => {
+    let job: Job;
+    let status: Partial<JobStatus>;
+    try {
+      job = readJsonFile(jobFile) as Job;
+      status = readJsonFile(statusFile) as Partial<JobStatus>;
+    } catch {
+      return { action: 'noop' as const };
+    }
+    if (!job || job.job !== id || !isAutoLandFlakeJob(job)) return { action: 'noop' as const };
+    if (!job.worktree || job.worktree.root !== job.cwd) return { action: 'noop' as const };
+    if (!CLEAN_SETTLED_STATES.has(status.state ?? '')) return { action: 'noop' as const };
+    if (landAttempt(home, id).prior) return { action: 'noop' as const };
+    if (hasOpenQuestions(dir)) return { action: 'wait' as const };
+    const sonic = sonicChildren(dir);
+    if (sonic.open || sonic.uncollected.length) return { action: 'wait' as const };
+
+    const persistBlock = (reason: string, sig?: string): FlakeAutoLandResult => {
+      const cleanReason = oneLine(reason).slice(0, 240) || 'auto-land blocked';
+      try {
+        const latest = readJsonFile(jobFile) as Job;
+        if (latest && latest.job === id && isAutoLandFlakeJob(latest)) {
+          const sameSig = (latest.auto_land_blocked?.sig ?? undefined) === sig;
+          if (!latest.auto_land_blocked || !sameSig || latest.auto_land_blocked.reason !== cleanReason) {
+            const updated: Job = {
+              ...latest,
+              auto_land_blocked: { ...(sig ? { sig } : {}), reason: cleanReason, at: new Date().toISOString() },
+            };
+            if (options?.writeJob) options.writeJob(jobFile, updated);
+            else writeJsonPrivate(jobFile, updated, { mkdir: false });
+          }
+        }
+      } catch { /* Job disappeared before block could be persisted. */ }
+      return { action: 'blocked', reason: cleanReason, ...(sig ? { sig } : {}) };
+    };
+
+    const sig = declaredFlakeReport(dir, job, status);
+    if (!sig) {
+      if (job.auto_land_blocked && !job.auto_land_blocked.sig) return { action: 'noop' as const };
+      return persistBlock('settled without a declared report');
+    }
+    if (job.auto_land_blocked?.sig === sig) return { action: 'noop' as const };
+
+    let reportText: string;
+    try {
+      const report = readFileBounded(join(dir, jobFiles.report), MAX_FLAKE_REPORT_BYTES);
+      if (report.truncated) return persistBlock('report is too large to verify', sig);
+      reportText = report.bytes.toString('utf8');
+    } catch {
+      return persistBlock('report could not be read', sig);
+    }
+
+    if (readReportMeta(dir, sig)?.skip_checks_reason) {
+      return persistBlock('worker checks were skipped', sig);
+    }
+    if (job.checks?.length) {
+      const binding = checkBinding(dir, job, status);
+      if (!binding) return persistBlock('HUD check binding unavailable', sig);
+      const receipt = readCheckReceipt(dir);
+      const current = receipt && sameChecks(binding, receipt);
+      if (current && receipt.results.some(r => r.exit_code !== 0)) {
+        return persistBlock('HUD checks failed', sig);
+      }
+      if (!current || receipt.state !== 'done') return { action: 'wait' as const };
+      if (receipt.results.length !== job.checks.length) {
+        return persistBlock('HUD check results incomplete', sig);
+      }
+    }
+
+    const { blockers } = extractReportNotes(reportText);
+    if (blockers.length) {
+      return persistBlock(`Blockers: ${blockers[0]}`, sig);
+    }
+    const { scopeAssumptions } = extractAssumedLines(reportText);
+    if (scopeAssumptions.length) {
+      return persistBlock(`scope assumption in report: ${scopeAssumptions[0]}`, sig);
+    }
+
+    const wt = job.worktree;
+    let config;
+    try {
+      config = validLandConfig(home, wt.main_root);
+    } catch (err) {
+      return persistBlock(err instanceof Error ? err.message : String(err), sig);
+    }
+
+    try {
+      const head = (await worktreeGit(wt.root, ['rev-parse', '--verify', 'HEAD'])).trim();
+      const countText = (await worktreeGit(wt.main_root, ['rev-list', '--count', `refs/heads/${config.base}..${head}`, '--'])).trim();
+      const count = Number(countText);
+      if (!Number.isSafeInteger(count) || count < 1) {
+        return persistBlock('settled without a commit to land', sig);
+      }
+    } catch (err) {
+      return persistBlock(`cannot verify worker commit: ${err instanceof Error ? err.message : String(err)}`, sig);
+    }
+
+    try {
+      const start = options?.startLandFn ?? startLand;
+      const pane = jobCallerPane(job) ?? null;
+      const flow = await start(home, id, job, status.state ?? null, pane, false, undefined, undefined, undefined, false, true);
+      return { action: 'landed', flow: flow.flow };
+    } catch (err) {
+      return persistBlock(`cannot start land: ${err instanceof Error ? err.message : String(err)}`, sig);
+    }
   });
 }

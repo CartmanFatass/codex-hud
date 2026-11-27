@@ -30,6 +30,13 @@ export function flakeDispatchKey(mainRoot: string, ticket: string, attempt: numb
   return `flakes:${flakeProjectId(mainRoot)}:${ticket}:${attempt}`;
 }
 
+export function isAutoLandFlakeJob(
+  job: Partial<Pick<Job, 'auto_land' | 'request_key' | 'ticket_queue' | 'workflow' | 'batch_flow' | 'land_turn'>> | null | undefined,
+): boolean {
+  if (!job || job.ticket_queue || job.workflow || job.batch_flow || job.land_turn || job.auto_land === false) return false;
+  return job.auto_land === true || (typeof job.request_key === 'string' && job.request_key.startsWith('flakes:'));
+}
+
 /** Shared admission snapshot for running-list tickets of the configured flake feature. */
 export function runningListAdmission(home: string, mainRoot: string, feature: string, cache = new JobIndexCache(home), checkActive = true) {
   const matchesProject = projectJobFilter(mainRoot, localMainRoot);
@@ -66,11 +73,13 @@ export function runningListAdmission(home: string, mainRoot: string, feature: st
       claimedTickets.add(key);
     }
     if (checkActive && !activeJobId) {
-      if (!job.reaped_at && (!SETTLED_JOB_STATES.has(state) || state === 'idle_grace')) {
+      const prior = landAttempt(home, id).prior;
+      if (prior && activeLand(prior)) {
         activeJobId = id;
-      } else {
-        const prior = landAttempt(home, id).prior;
-        if (prior && activeLand(prior)) activeJobId = id;
+      } else if (prior?.state === 'completed') {
+        // Already landed; do not block the next flake list while the worker remains in idle_grace.
+      } else if (!job.reaped_at && (!SETTLED_JOB_STATES.has(state) || state === 'idle_grace')) {
+        activeJobId = id;
       }
     }
   }

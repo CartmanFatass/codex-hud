@@ -39,6 +39,7 @@ export async function startLand(
   retry?: string,
   approvedHead?: string,
   ownerManual = false,
+  autoLand = false,
 ) {
   const wt = job?.worktree;
   if (!job || job.job !== id || !wt || wt.root !== job.cwd)
@@ -63,7 +64,7 @@ export async function startLand(
   }
   const { flow, prior, cleanup } = attempt;
   // A recovering runner observes its earlier attempt. An explicitly resumed queue can retry that specific receipt.
-  if (prior && (!retryableLand(prior) || (ticketQueue && prior.flow !== retry))) {
+  if (prior && (!retryableLand(prior) || (ticketQueue && prior.flow !== retry) || autoLand)) {
     if (!registeredProject(home, wt.main_root).registered) throw Error('hud_land requires a registered project');
     return prior;
   }
@@ -98,9 +99,10 @@ export async function startLand(
     if (won) return { result: won };
     const now = new Date().toISOString();
     const f: LandFlow = { flow, job: id, pane, task, ...(ticketQueue && { ticket_queue: ticketQueue }),
+      ...(autoLand && { auto_land: true as const }),
       ...(approvedHead && { protected_spec: true, single: true }), wt, config: c, source_sha, pid, start,
       state: loaded ? 'queued' : 'failed', step: loaded ? 'main-checkout lease' : 'load land helper', created_at: now, updated_at: now,
-      workflow: { flow, pane: pane ?? '', state: 'working', epoch: 0, streak: 0, settled: 0, failures: 0,
+      workflow: { flow, pane: pane ?? '', ...(autoLand && { project_root: wt.main_root }), state: 'working', epoch: 0, streak: 0, settled: 0, failures: 0,
         steps: { land: { state: 'waiting' } }, notices: {} } };
     if (!loaded) f.error = 'HUD was rebuilt; retry the land';
     if (!fs.existsSync(join(runDir(home, flow), 'graph.json'))) freezeGraph(home, flow, graph);
