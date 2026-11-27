@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { lstatSync, opendirSync, realpathSync, statSync, type Dirent, type Stats } from 'node:fs';
+import { accessSync, constants, lstatSync, opendirSync, realpathSync, statSync, type Dirent, type Stats } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { loadSettings } from '../settings.js';
 import { SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
@@ -9,16 +9,14 @@ import { jobFiles } from './paths.js';
 export type PermissionDecision = { action: 'approve' | 'main'; reason: string };
 export type PermissionRoots = {
   task: string;
-  scratch?: string;
-  temp?: string;
   worktree?: string;
-  /** Verifiable cwd from the prompt or worker process (/proc/<pid>/cwd); never job.cwd. */
+  /** Verifiable shell cwd from the prompt or worker process (/proc/<pid>/cwd); never job.cwd. */
   cwd?: string;
+  path?: string;
 };
 export type PermissionRootCategory =
   | 'scratchpad'
   | 'task scratchpad'
-  | 'temporary directory'
   | 'worktree'
   | 'worktree (Git-tracked files)'
   | 'task directory';
@@ -27,8 +25,7 @@ export type PermissionOpKind =
   | 'file_write'
   | 'file_create'
   | 'housekeeping'
-  | 'read_only'
-  | 'git_local';
+  | 'read_only';
 export type PermissionFlag =
   | 'recursive'
   | 'force'
@@ -95,12 +92,6 @@ function isHudControlPath(rel: string): boolean {
   return !first || HUD_CONTROL_FILES.has(first) || first.startsWith('STATUS.json.');
 }
 
-const FORBIDDEN_ASSIGN_VARS = new Set([
-  'PATH', 'IFS', 'BASH_ENV', 'ENV', 'LD_PRELOAD', 'LD_LIBRARY_PATH', 'NODE_OPTIONS', 'NODE_PATH',
-  'GIT_EXEC_PATH', 'GIT_TEMPLATE_DIR', 'GIT_CONFIG', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG_COUNT',
-  'GIT_SSH', 'GIT_SSH_COMMAND', 'GIT_ASKPASS', 'CARGO_HOME', 'RUSTC_WRAPPER', 'HOME', 'TMPDIR',
-  'SHELL', 'CDPATH', 'GLOBIGNORE', 'PROMPT_COMMAND', 'ZDOTDIR', 'PWD', 'OLDPWD',
-]);
 const READ_ONLY_PIPE_SINKS = new Set(['head', 'tail', 'wc', 'grep', 'rg', 'cat', 'diff']);
 
 type VerifiedRoot = { category: PermissionRootCategory; real: string };
@@ -108,6 +99,7 @@ type ResolvedRoots = {
   ordered: VerifiedRoot[];
   worktree?: string;
   verifiedCwd?: string;
+  path: string;
 };
 
 function verifyRootDir(dir: string | undefined, opts?: { anchor?: string; rejectSymlink?: boolean }): string | undefined {
@@ -135,32 +127,36 @@ function resolveRoots(roots: PermissionRoots): ResolvedRoots {
   };
   const worktree = verifyRootDir(roots.worktree);
   const task = verifyRootDir(roots.task);
-  if (roots.scratch && isAbsolute(roots.scratch)) {
-    const resolvedScratch = resolve(roots.scratch);
-    const underWorktree = Boolean(
-      (roots.worktree && isAbsolute(roots.worktree) && inside(resolve(roots.worktree), resolvedScratch)) ||
-      (worktree && inside(worktree, resolvedScratch)),
-    );
-    const underTask = Boolean(
-      (roots.task && isAbsolute(roots.task) && inside(resolve(roots.task), resolvedScratch)) ||
-      (task && inside(task, resolvedScratch)),
-    );
-    if (underWorktree) {
-      if (worktree) add('scratchpad', roots.scratch, { anchor: worktree, rejectSymlink: true });
-    } else if (underTask) {
-      if (task) add('task scratchpad', roots.scratch, { anchor: task, rejectSymlink: true });
-    } else {
-      add('scratchpad', roots.scratch, { rejectSymlink: true });
-    }
-  }
   if (worktree) add('scratchpad', join(worktree, 'scratchpad'), { anchor: worktree, rejectSymlink: true });
   if (task) add('task scratchpad', join(task, 'scratchpad'), { anchor: task, rejectSymlink: true });
-  add('temporary directory', roots.temp, { rejectSymlink: true });
   if (worktree) add('worktree', worktree);
   if (task) add('task directory', task);
   const cwdReal = verifyRootDir(roots.cwd);
   const verifiedCwd = cwdReal && worktree && inside(worktree, cwdReal) ? cwdReal : undefined;
-  return { ordered, worktree, verifiedCwd };
+  return { ordered, worktree, verifiedCwd, path: roots.path ?? process.env.PATH ?? '' };
+}
+
+const SYSTEM_PATH = '/usr/bin:/bin';
+const SYSTEM_DIRS = new Set(SYSTEM_PATH.split(':'));
+
+function trustedExecutable(verb: string, path: string): string | undefined {
+  if (!/^[a-z]+$/.test(verb)) return;
+  for (const dir of path.split(':')) {
+    // A relative/empty PATH component is cwd-dependent. Do not guess what it resolves to.
+    if (!isAbsolute(dir)) return;
+    const candidate = `${dir}/${verb}`; // Preserve kernel resolution of symlink/.. in an earlier PATH entry.
+    try {
+      const st = statSync(candidate);
+      if (st.isDirectory()) continue;
+      accessSync(candidate, constants.X_OK);
+      if (!st.isFile() || st.uid !== 0 || (st.mode & 0o022) || !SYSTEM_DIRS.has(dir)) return;
+      const real = realpathSync(candidate);
+      if (SYSTEM_DIRS.has(dirname(real))) return real;
+      return;
+    } catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return;
+    }
+  }
 }
 
 type ResolvedTarget = {
@@ -290,8 +286,10 @@ function collectWorktreeFiles(worktreeReal: string, dir: string, recursive: bool
 /** Check that every target path in the worktree matches the Git index byte-for-byte. */
 function gitIndexMatches(worktreeReal: string, relPaths: string[]): boolean {
   if (!relPaths.length || relPaths.length > MAX_TRACKED_FILES) return false;
+  const executable = trustedExecutable('git', SYSTEM_PATH);
+  if (!executable) return false;
   const git = (args: string[], input?: string) => {
-    const result = spawnSync('git', [...SAFE_GIT_ARGS, '--literal-pathspecs', ...args], {
+    const result = spawnSync(executable, [...SAFE_GIT_ARGS, '--literal-pathspecs', ...args], {
       cwd: worktreeReal, env: safeGitEnv(process.env), encoding: 'utf8', timeout: 400, maxBuffer: 1024 * 1024,
       input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'],
     });
@@ -316,6 +314,8 @@ function gitIndexMatches(worktreeReal: string, relPaths: string[]): boolean {
   return objects === unique.map(hash => `${hash} blob\n`).join('');
 }
 
+const SCRATCH_VAR = '\0S\0';
+const SCRATCH_VAR_PATTERN = /^\$(?:\{S\}|S(?![A-Za-z0-9_]))/;
 type Token = { value: string; quoted: boolean };
 type Redir = { mode: 'read' | 'write'; target: string };
 type Separator = 'seq' | 'and' | 'pipe';
@@ -431,10 +431,9 @@ function tokenizeShell(command: string): ParsedCommand[] | undefined {
           const dc = command[i];
           if (dc === '`' || dc === '\\') return;
           if (dc === '$') {
-            if (command[i + 1] === '(') return;
-            const varMatch = /^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/.exec(command.slice(i));
+            const varMatch = SCRATCH_VAR_PATTERN.exec(command.slice(i));
             if (!varMatch) return;
-            value += `\0VAR:${varMatch[1] ?? varMatch[2]}\0`;
+            value += SCRATCH_VAR;
             i += varMatch[0].length;
             continue;
           }
@@ -446,10 +445,9 @@ function tokenizeShell(command: string): ParsedCommand[] | undefined {
         continue;
       }
       if (c === '$') {
-        if (command[i + 1] === '(') return;
-        const varMatch = /^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))/.exec(command.slice(i));
+        const varMatch = SCRATCH_VAR_PATTERN.exec(command.slice(i));
         if (!varMatch) return;
-        value += `\0VAR:${varMatch[1] ?? varMatch[2]}\0`;
+        value += SCRATCH_VAR;
         i += varMatch[0].length;
         continue;
       }
@@ -463,16 +461,6 @@ function tokenizeShell(command: string): ParsedCommand[] | undefined {
   if (pendingRedir || ((sepBefore === 'pipe' || sepBefore === 'and') && !curTokens.length)) return;
   if (!pushCommand(undefined)) return;
   return commands.length ? commands : undefined;
-}
-
-function expandToken(raw: string, vars: Map<string, string>): string | undefined {
-  let ok = true;
-  const expanded = raw.replace(/\0VAR:([A-Za-z_][A-Za-z0-9_]*)\0/g, (_m, name: string) => {
-    const val = vars.get(name);
-    if (val === undefined) { ok = false; return ''; }
-    return val;
-  });
-  return ok && !expanded.includes('\0') ? expanded : undefined;
 }
 
 type StepInternal = PermissionStepProof & { canonicals: string[] };
@@ -632,7 +620,7 @@ function isSafeWriteTarget(target: ResolvedTarget): boolean {
   if (target.isSymlink) return false;
   if (!target.exists) return true;
   if (!target.isFile || !target.singleLink) return false;
-  if (target.category === 'scratchpad' || target.category === 'task scratchpad' || target.category === 'temporary directory') {
+  if (target.category === 'scratchpad' || target.category === 'task scratchpad') {
     return true;
   }
   if (target.category === 'worktree') {
@@ -760,19 +748,12 @@ function validateLn(args: string[], activeCwd: string | undefined, roots: Resolv
 }
 
 function validateChmod(args: string[], activeCwd: string | undefined, roots: ResolvedRoots): StepInternal | undefined {
-  let recursive = false;
   let afterDash = false;
   const positional: string[] = [];
   for (const arg of args) {
     if (!afterDash && arg === '--') { afterDash = true; continue; }
-    if (!afterDash && arg.startsWith('-') && positional.length === 0) {
-      if (arg === '--recursive') { recursive = true; continue; }
-      if (['--verbose', '--changes', '--silent', '--quiet'].includes(arg)) continue;
-      if (isShortFlagBundle(arg, 'Rvcf')) {
-        if (arg.includes('R')) recursive = true;
-        continue;
-      }
-      // Also allow symbolic mode starting with '-' like -x? Reject to avoid flag ambiguity unless after --.
+    if (!afterDash && arg.startsWith('-')) {
+      if (['--verbose', '--changes', '--silent', '--quiet'].includes(arg) || isShortFlagBundle(arg, 'vcf')) continue;
       return;
     }
     positional.push(arg);
@@ -783,11 +764,11 @@ function validateChmod(args: string[], activeCwd: string | undefined, roots: Res
   const validSymbolic = /^[ugoa]*[+-=][rwxX]+(?:,[ugoa]*[+-=][rwxX]+)*$/.test(mode);
   if (!validOctal && !validSymbolic) return;
   const stepRoots: PermissionRootCategory[] = [];
-  const flags: PermissionFlag[] = recursive ? ['recursive'] : [];
+  const flags: PermissionFlag[] = [];
   const canonicals: string[] = [];
   for (const p of paths) {
     const r = resolveTargetPath(p, activeCwd, roots, { mode: 'write', allowRootItself: false });
-    if (!r) return;
+    if (!r || !(r.isDir || (r.isFile && r.singleLink))) return;
     if (r.usedCwd) flags.push('verified_cwd');
     stepRoots.push(r.category);
     canonicals.push(r.canonical);
@@ -882,7 +863,7 @@ function validateReadOnly(
     if (!afterDash && arg === '--') { afterDash = true; continue; }
     if (!afterDash && arg.startsWith('-')) {
       if (verb === 'ls') {
-        if (isShortFlagBundle(arg, 'aAlh1RtrSdFnis') || ['--all', '--almost-all', '--human-readable', '--recursive', '--reverse', '--directory'].includes(arg) || /^--color(?:=\w+)?$/.test(arg)) continue;
+        if (isShortFlagBundle(arg, 'aAlh1trSdFnis') || ['--all', '--almost-all', '--human-readable', '--reverse', '--directory'].includes(arg) || /^--color(?:=\w+)?$/.test(arg)) continue;
         return;
       }
       if (verb === 'cat') {
@@ -940,8 +921,6 @@ function validateSearch(
 ): StepInternal | undefined {
   let afterDash = false;
   let hasExplicitPattern = false;
-  let filesOnly = false;
-  let recursive = false;
   const positional: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -954,41 +933,24 @@ function validateSearch(
         i++; continue;
       }
       if (/^-[ABCm]\d+$/.test(arg)) continue;
-      if (verb === 'rg' && (arg === '-g' || arg === '--glob' || arg === '-t' || arg === '--type' || arg === '-T' || arg === '--type-not')) {
-        if (i + 1 >= args.length) return;
-        i++; continue;
-      }
-      if (verb === 'rg' && /^--(?:glob|type|type-not|color)=/.test(arg)) continue;
-      if (verb === 'grep' && /^--(?:include|exclude|exclude-dir|color)=/.test(arg)) continue;
-      if (verb === 'rg' && arg === '--files') { filesOnly = true; continue; }
-      if (verb === 'grep' && arg === '--recursive') { recursive = true; continue; }
-      if (['--ignore-case', '--invert-match', '--line-number', '--count', '--files-with-matches', '--files-without-match',
-        '--only-matching', '--word-regexp', '--fixed-strings', '--extended-regexp', '--quiet',
-        '--smart-case', '--no-heading', '--with-filename', '--no-filename'].includes(arg)) continue;
-      const allowedShort = verb === 'rg' ? 'ivnclhowxFEqsS' : 'ivnclLhowxFErqsa';
-      if (isShortFlagBundle(arg, allowedShort)) {
-        if (verb === 'grep' && arg.includes('r')) recursive = true;
-        continue;
-      }
+      if (['--ignore-case', '--invert-match', '--line-number', '--count', '--files-with-matches',
+        '--only-matching', '--word-regexp', '--fixed-strings', '--quiet', '--with-filename', '--no-filename'].includes(arg)) continue;
+      if (verb === 'rg' && ['--smart-case', '--no-heading'].includes(arg)) continue;
+      if (verb === 'grep' && ['--files-without-match', '--extended-regexp'].includes(arg)) continue;
+      if (isShortFlagBundle(arg, verb === 'rg' ? 'ivnclHowxFqsS' : 'ivnclLhowxFEqsa')) continue;
       return;
     }
     positional.push(arg);
   }
-  if (filesOnly && hasExplicitPattern) return;
-  if (!filesOnly && !hasExplicitPattern && !positional.length) return;
-  const paths = filesOnly || hasExplicitPattern ? positional : positional.slice(1);
+  if (!hasExplicitPattern && !positional.length) return;
+  const paths = hasExplicitPattern ? positional : positional.slice(1);
   const stepRoots: PermissionRootCategory[] = [];
   const flags: PermissionFlag[] = [];
   const canonicals: string[] = [];
-  if (!paths.length) {
-    if (hasStdin && !filesOnly && !recursive) return { kind: 'read_only', verb, roots: [], flags: [], canonicals: [] };
-    const cwdTarget = resolveTargetPath('.', activeCwd, roots, { mode: 'read', allowRootItself: true });
-    if (!cwdTarget) return;
-    return { kind: 'read_only', verb, roots: [cwdTarget.category], flags: ['verified_cwd'], canonicals: [cwdTarget.canonical] };
-  }
+  if (!paths.length && !hasStdin) return;
   for (const p of paths) {
-    const r = resolveTargetPath(p, activeCwd, roots, { mode: 'read', allowRootItself: true });
-    if (!r) return;
+    const r = resolveTargetPath(p, activeCwd, roots, { mode: 'read' });
+    if (!r?.isFile) return;
     if (r.usedCwd) flags.push('verified_cwd');
     stepRoots.push(r.category);
     canonicals.push(r.canonical);
@@ -996,53 +958,16 @@ function validateSearch(
   return { kind: 'read_only', verb, roots: dedupe(stepRoots), flags: dedupe(flags), canonicals };
 }
 
-function validateFind(args: string[], activeCwd: string | undefined, roots: ResolvedRoots): StepInternal | undefined {
-  let i = 0;
-  const rawStarts: string[] = [];
-  while (i < args.length && !args[i].startsWith('-') && args[i] !== '!' && args[i] !== '(') {
-    rawStarts.push(args[i++]);
-  }
-  let hasDelete = false;
-  for (; i < args.length; i++) {
-    const arg = args[i];
-    if (arg === '-delete') { hasDelete = true; continue; }
-    if (['-not', '-and', '-or', '-a', '-o', '-print', '-print0', '-empty', '-prune'].includes(arg)) continue;
-    if (['-name', '-iname', '-path', '-type', '-maxdepth', '-mindepth', '-size', '-mtime'].includes(arg)) {
-      if (i + 1 >= args.length) return;
-      i++; continue;
-    }
-    // Reject -exec, -execdir, -ok, -okdir, -fprint*, -L, -H, and unknown predicates.
-    return;
-  }
-  const starts = rawStarts.length ? rawStarts : ['.'];
-  const stepRoots: PermissionRootCategory[] = [];
-  const flags: PermissionFlag[] = [];
-  const canonicals: string[] = [];
-  for (const s of starts) {
-    const r = resolveTargetPath(s, activeCwd, roots, { mode: 'read', allowRootItself: true });
-    if (!r) return;
-    if (r.usedCwd) flags.push('verified_cwd');
-    // Allow -delete only inside regenerable scratchpad or temp directories.
-    if (hasDelete && !['scratchpad', 'task scratchpad', 'temporary directory'].includes(r.category)) return;
-    stepRoots.push(r.category);
-    canonicals.push(r.canonical);
-  }
-  return {
-    kind: hasDelete ? 'housekeeping' : 'read_only',
-    verb: 'find',
-    roots: dedupe(stepRoots),
-    flags: dedupe(flags),
-    canonicals,
-  };
-}
-
-function requireWorktreeCwd(activeCwd: string | undefined, roots: ResolvedRoots): string | undefined {
-  if (!activeCwd || !roots.worktree || !inside(roots.worktree, activeCwd)) return;
-  return activeCwd;
-}
-
-const GIT_READS = new Set(['status', 'diff', 'log', 'show']);
-const ALLOWED_GIT_SUBS = new Set([...GIT_READS, 'add', 'commit', 'stash', 'rebase']);
+const GIT_DIFF_OPTIONS = ['--stat', '--shortstat', '--numstat', '--name-only', '--name-status', '--summary',
+  '--no-ext-diff', '--no-textconv', '--no-renames', '--patch', '-p'];
+const GIT_HISTORY_OPTIONS = ['--oneline', '--no-decorate', '--decorate', '--no-patch', '-s', ...GIT_DIFF_OPTIONS];
+const GIT_READ_OPTIONS = new Map([
+  ['status', new Set(['--short', '-s', '--branch', '-b', '-sb', '-bs', '--porcelain', '--porcelain=v1', '--porcelain=v2',
+    '--untracked-files=no', '--untracked-files=normal', '--untracked-files=all', '-uno', '-unormal', '-uall'])],
+  ['diff', new Set(['--cached', '--staged', ...GIT_DIFF_OPTIONS])],
+  ['log', new Set(GIT_HISTORY_OPTIONS)],
+  ['show', new Set(GIT_HISTORY_OPTIONS)],
+]);
 
 function validateGit(args: string[], activeCwd: string | undefined, roots: ResolvedRoots): StepInternal | undefined {
   let gitCwd = activeCwd;
@@ -1058,79 +983,27 @@ function validateGit(args: string[], activeCwd: string | undefined, roots: Resol
     }
     return;
   }
-  const wtCwd = requireWorktreeCwd(gitCwd, roots);
-  if (!wtCwd || i >= args.length) return;
+  if (!gitCwd || !roots.worktree || !inside(roots.worktree, gitCwd)) return;
   const sub = args[i++];
-  if (!ALLOWED_GIT_SUBS.has(sub)) return;
-  const rest = args.slice(i);
-  const canonicals = [wtCwd];
-
-  const checkPath = (p: string, mode: 'read' | 'write') => {
-    const target = resolveTargetPath(p, wtCwd, roots, { mode, allowRootItself: true });
-    if (!target || target.category !== 'worktree') return false;
+  const allowed = GIT_READ_OPTIONS.get(sub);
+  if (!allowed) return;
+  const canonicals = [gitCwd];
+  let afterDash = false;
+  for (; i < args.length; i++) {
+    const arg = args[i];
+    if (!afterDash && arg === '--') { afterDash = true; continue; }
+    if (!afterDash && arg.startsWith('-')) {
+      if (allowed.has(arg)) continue;
+      if ((sub === 'log' || sub === 'show') && (/^-\d+$/.test(arg) || /^--max-count=\d+$/.test(arg))) continue;
+      if ((sub === 'log' || sub === 'show') && ['-n', '--max-count'].includes(arg) && /^\d+$/.test(args[i + 1] ?? '')) { i++; continue; }
+      return;
+    }
+    if (arg.includes(':')) return; // No pathspec magic or object:path lookups.
+    const target = resolveTargetPath(arg, gitCwd, roots, { mode: 'read', allowRootItself: true });
+    if (!target || target.category !== 'worktree') return;
     canonicals.push(target.canonical);
-    return true;
-  };
-  const checkRefOrPath = (arg: string) => {
-    if (arg === '~' || arg.startsWith('~/') || arg.startsWith('~')) return false;
-    if (arg.split('/').includes('..')) return false;
-    if (arg.includes(':')) {
-      const afterColon = arg.slice(arg.indexOf(':') + 1);
-      if (afterColon && isSensitiveRel(afterColon)) return false;
-    }
-    if (isAbsolute(arg)) return checkPath(arg, 'read');
-    if (isSensitiveRel(arg)) return false;
-    return true;
-  };
-
-  if (sub === 'stash') {
-    const action = rest[0];
-    if (action && !action.startsWith('-') && !['list', 'show', 'pop', 'apply', 'save'].includes(action)) return;
-    for (const a of rest) if (!checkRefOrPath(a)) return;
-  } else if (sub === 'rebase') {
-    for (const a of rest) {
-      if (a === '-i' || a === '--interactive' || a === '-x' || a === '--exec' || a.startsWith('--exec=')) return;
-      if (!a.startsWith('-') && !checkRefOrPath(a)) return;
-    }
-  } else if (sub === 'add') {
-    let afterDash = false;
-    for (const a of rest) {
-      if (!afterDash && a === '--') { afterDash = true; continue; }
-      if (!afterDash && a.startsWith('-')) {
-        if (['-A', '--all', '-u', '--update', '-N', '--intent-to-add', '-v', '--verbose', '-n', '--dry-run'].includes(a)) continue;
-        return;
-      }
-      if (!checkPath(a, 'write')) return;
-    }
-  } else if (sub === 'commit') {
-    let afterDash = false;
-    for (let j = 0; j < rest.length; j++) {
-      const a = rest[j];
-      if (!afterDash && a === '--') { afterDash = true; continue; }
-      if (!afterDash && a.startsWith('-')) {
-        if (a === '-m' || a === '--message') { if (j + 1 >= rest.length) return; j++; continue; }
-        if (a.startsWith('--message=')) continue;
-        if (['-a', '--all', '--amend', '--no-edit', '--allow-empty', '-s', '--signoff', '-v', '--verbose'].includes(a)) continue;
-        return;
-      }
-      if (!checkPath(a, 'write')) return;
-    }
-  } else {
-    // status, diff, log, show
-    let afterDash = false;
-    for (const a of rest) {
-      if (!afterDash && a === '--') { afterDash = true; continue; }
-      if (!afterDash && a.startsWith('-')) {
-        if (a === '--no-index' || a === '--ext-diff' || a.startsWith('--output')) return;
-        continue;
-      }
-      if (afterDash) {
-        if (!checkPath(a, 'read')) return;
-      } else if (!checkRefOrPath(a)) return;
-    }
   }
-  const kind = GIT_READS.has(sub) || (sub === 'stash' && rest[0] === 'list') ? 'read_only' : 'git_local';
-  return { kind, verb: `git ${sub}`, roots: ['worktree'], flags: ['verified_cwd'], canonicals };
+  return { kind: 'read_only', verb: `git ${sub}`, roots: ['worktree'], flags: ['verified_cwd'], canonicals };
 }
 
 function summarizeProof(operations: PermissionStepProof[], roots: PermissionRootCategory[]): string {
@@ -1177,37 +1050,33 @@ function proveFilePrompt(target: FilePromptTarget, roots: ResolvedRoots): Permis
 function proveShellPrompt(command: string, roots: ResolvedRoots): PermissionProof | undefined {
   const parsed = tokenizeShell(command);
   if (!parsed) return;
-  const vars = new Map<string, string>();
-  let activeCwd = roots.verifiedCwd;
+  const activeCwd = roots.verifiedCwd;
   const operations: PermissionStepProof[] = [];
   const allCanonicals: string[] = [];
 
-  let allEarlierUnconditional = true;
+  // No shell state to carry across commands. Recognize just the two-command scratchpad rm idiom.
+  const [first, second] = parsed;
+  const literalScratch = first.tokens.length === 1 && !first.tokens[0].quoted
+    ? /^S=(\/[A-Za-z0-9_./+-]*)$/.exec(first.tokens[0].value)?.[1] : undefined;
+  let scratch: ResolvedTarget | undefined;
+  if (literalScratch) {
+    if (parsed.length !== 2 || second.sepBefore !== 'seq' || first.redirs.length || second.redirs.length ||
+        second.tokens[0].value !== 'rm' || second.tokens[0].quoted) return;
+    scratch = resolveTargetPath(literalScratch, undefined, roots, { mode: 'read', allowRootItself: true });
+    if (!scratch?.isDir || scratch.rel || !['scratchpad', 'task scratchpad'].includes(scratch.category)) return;
+    parsed.shift();
+  }
+
   for (const [i, cmd] of parsed.entries()) {
-    if (cmd.sepBefore && cmd.sepBefore !== 'seq') allEarlierUnconditional = false;
-    const canMutateShellState = allEarlierUnconditional && !cmd.pipedFromPrev && !cmd.pipedToNext;
-
-    // Handle standalone literal variable assignments (e.g. S=/path/to/scratch; rm -rf $S/out).
-    if (!cmd.redirs.length && cmd.tokens.length === 1 && !cmd.tokens[0].quoted) {
-      const assign = /^([A-Za-z_][A-Za-z0-9_]*)=(.+)$/.exec(cmd.tokens[0].value);
-      if (assign) {
-        if (!canMutateShellState) return;
-        const [, name, rawVal] = assign;
-        if (FORBIDDEN_ASSIGN_VARS.has(name) || name.startsWith('NPM_CONFIG_') || !/^\/[A-Za-z0-9_./+-]*$/.test(rawVal)) return;
-        if (!resolveTargetPath(rawVal, undefined, roots, { mode: 'read', allowRootItself: true })) return;
-        vars.set(name, rawVal);
-        continue;
-      }
+    const [verb, ...args] = cmd.tokens.map(token => token.value);
+    const executable = trustedExecutable(verb, roots.path);
+    if (!executable) return;
+    for (let a = 0; a < args.length; a++) {
+      const arg = args[a];
+      if (scratch && arg.startsWith(`${SCRATCH_VAR}/`) && !arg.slice(SCRATCH_VAR.length).includes('\0')) {
+        args[a] = literalScratch! + arg.slice(SCRATCH_VAR.length);
+      } else if (arg.includes('\0') || (scratch && !arg.startsWith('-'))) return;
     }
-
-    const words: string[] = [];
-    for (const token of cmd.tokens) {
-      const expanded = expandToken(token.value, vars);
-      if (expanded === undefined) return;
-      words.push(expanded);
-    }
-    const [verb, ...args] = words;
-    if (!verb) return;
     // Only rm path operands use shell globs. Quoted patterns in grep/rg/find are tool arguments, not shell globs.
     if (cmd.tokens.some(t => globChars.test(t.value) && (verb === 'rm' ? t.quoted : !t.quoted))) return;
     if (cmd.pipedFromPrev && !READ_ONLY_PIPE_SINKS.has(verb)) return;
@@ -1219,8 +1088,8 @@ function proveShellPrompt(command: string, roots: ResolvedRoots): PermissionProo
     let hasStdinRedir = false;
     let writesFile = false;
     for (const redir of cmd.redirs) {
-      const target = expandToken(redir.target, vars);
-      if (!target) return;
+      const target = redir.target;
+      if (!target || target.includes('\0')) return;
       if (target === '/dev/null') {
         redirFlags.push(redir.mode === 'read' ? 'redirect_read' : 'redirect_write');
         if (redir.mode === 'read') hasStdinRedir = true;
@@ -1239,21 +1108,10 @@ function proveShellPrompt(command: string, roots: ResolvedRoots): PermissionProo
       redirCanonicals.push(resolved.canonical);
     }
 
-    if (verb === 'cd') {
-      if (!canMutateShellState || cmd.redirs.length) return;
-      const cdArgs = args[0] === '--' ? args.slice(1) : args;
-      if (cdArgs.length !== 1 || cdArgs[0] === '-' || cdArgs[0].startsWith('-')) return;
-      const resolved = resolveTargetPath(cdArgs[0], activeCwd, roots, { mode: 'read', allowRootItself: true });
-      if (!resolved || !resolved.exists || !resolved.isDir) return;
-      activeCwd = resolved.canonical;
-      allCanonicals.push(`cd:${resolved.canonical}`);
-      continue;
-    }
-
     const hasStdin = cmd.pipedFromPrev || hasStdinRedir;
     let step: StepInternal | undefined;
     switch (verb) {
-      case 'rm': step = validateRm(args, activeCwd, roots); break;
+      case 'rm': step = validateRm(args, scratch ? undefined : activeCwd, roots); break;
       case 'mkdir': step = validateMkdir(args, activeCwd, roots); break;
       case 'touch': step = validateTouch(args, activeCwd, roots); break;
       case 'cp':
@@ -1270,17 +1128,17 @@ function proveShellPrompt(command: string, roots: ResolvedRoots): PermissionProo
       case 'diff': step = validateReadOnly(verb, args, activeCwd, roots, hasStdin); break;
       case 'grep':
       case 'rg': step = validateSearch(verb, args, activeCwd, roots, hasStdin); break;
-      case 'find': step = validateFind(args, activeCwd, roots); break;
       case 'git': step = validateGit(args, activeCwd, roots); break;
       default: return;
     }
     if (!step || (writesFile && step.kind !== 'read_only')) return;
+    if (scratch && step.canonicals.some(target => !inside(scratch.canonical, target))) return;
     // Every proof sees the pre-command filesystem. Mutations must be terminal and never concurrent in a pipe.
     if ((writesFile || step.kind !== 'read_only') && (i !== parsed.length - 1 || cmd.pipedFromPrev)) return;
     const stepRoots = dedupe([...step.roots, ...redirRoots]);
     const stepFlags = dedupe([...step.flags, ...redirFlags, ...(cmd.pipedFromPrev ? (['pipe'] as const) : [])]);
     operations.push({ kind: step.kind, verb: step.verb, roots: stepRoots, flags: stepFlags });
-    allCanonicals.push(...step.canonicals, ...redirCanonicals);
+    allCanonicals.push(executable, ...step.canonicals, ...redirCanonicals);
   }
 
   if (!operations.length) return;
@@ -1297,7 +1155,9 @@ function proveShellPrompt(command: string, roots: ResolvedRoots): PermissionProo
 /** Locally prove that a worker file or shell permission prompt stays low-risk inside the job's own roots. */
 export function provePermission(target: PermissionTarget | string | undefined, roots: PermissionRoots): PermissionProof | undefined {
   if (!target) return;
-  const resolved = resolveRoots(roots);
+  const resolved = resolveRoots(typeof target === 'string' ? roots : {
+    ...roots, cwd: target.kind === 'shell' ? target.cwd ?? roots.cwd : target.cwd,
+  });
   if (!resolved.ordered.length) return;
   if (typeof target === 'string') return proveShellPrompt(target, resolved);
   return target.kind === 'shell' ? proveShellPrompt(target.command, resolved) : proveFilePrompt(target, resolved);
@@ -1338,7 +1198,7 @@ export async function classifyPermission(
         : { verified: false, operations: [], roots: [] },
       choices: [{
         name: 'permission',
-        statement: 'Classify a native worker permission prompt from the quoted structural facts only. Approve only when verified is true and every operation is a locally proven low-risk file edit, file housekeeping, read-only inspection, or local git command confined to the job’s own worktree, task directory, scratchpad or dedicated temp directory, with no network write, secrets, git push, installs, privilege escalation or paths outside the job’s roots. If anything is missing or uncertain, hand to main and choose the best reason. Never deny.',
+        statement: 'Classify a native worker permission prompt from the quoted structural facts only. Approve only when verified is true and every operation is a locally proven low-risk file edit, file housekeeping, read-only inspection, or read-only Git command confined to the job’s own worktree, task directory or derived scratchpad, with no network write, secrets, git push, installs, privilege escalation or paths outside the job’s roots. If anything is missing or uncertain, hand to main and choose the best reason. Never deny.',
         choices: choices.map(value => ({ value, description: reasons[value] })),
       }],
     });

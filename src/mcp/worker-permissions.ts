@@ -132,6 +132,7 @@ function parsePromptTarget(harness: string, body: string[], question: number, fi
       let path = fileHeading[2]?.trim();
       let cwd: string | undefined;
       if (path) {
+        // A Cwd-shaped line inside a diff preview is not reliable cwd evidence.
         if (split.rest.length === 0) cwd = split.cwd;
       } else if (split.rest.length === 1) {
         cwd = split.cwd;
@@ -337,30 +338,17 @@ async function capture(home: string, job: Job, binding: Binding, signal?: AbortS
   return parsePermissionPrompt(text, harness) ?? 'unrecognized';
 }
 
-function findClaudeScratchpad(uid: number, sess: string, target: PermissionTarget): string | undefined {
-  const re = new RegExp(`/tmp/claude-${uid}/[A-Za-z0-9_.-]+/${sess}/scratchpad(?=/|$|\\s|['";&|])`);
-  const text = target.kind === 'shell' ? target.command : target.paths.join('\n');
-  return re.exec(text)?.[0];
-}
-
-function proofFor(dir: string, job: Job, status: Partial<JobStatus> | null, binding: Binding, prompt: Prompt) {
+function proofFor(dir: string, job: Job, binding: Binding, prompt: Prompt) {
   const { pid, pidStart } = binding.fields;
-  if (!pidStart || !isProcAlive(Number(pid), pidStart)) return;
+  if (!prompt.target || !pidStart || !isProcAlive(Number(pid), pidStart)) return;
   const env = readProcEnviron(Number(pid));
   if (!env || env.HUD_JOB_DIR !== dir || env.BASH_ENV || env.ENV || env.CDPATH ||
       Object.keys(env).some(key => key.startsWith('BASH_FUNC_'))) return;
-  if (!prompt.target) return;
-  const sess = status?.agent_session_id;
-  const uid = process.getuid?.();
-  const nativeScratch = job.cli?.agent === 'claude' && uid !== undefined && sess && /^[\w-]{8,100}$/.test(sess)
-    ? findClaudeScratchpad(uid, sess, prompt.target) : undefined;
   const worktree = job.worktree?.root && (!job.worktree.owner || job.worktree.owner === job.job) ? job.worktree.root : undefined;
-  const temp = env.TMPDIR && isAbsolute(env.TMPDIR) && /^(?:\/tmp|\/dev\/shm)\//.test(env.TMPDIR) &&
-    basename(env.TMPDIR).includes(job.job) ? env.TMPDIR : undefined;
-  // Relative command/file paths require explicit prompt cwd or live worker /proc/<pid>/cwd inside the worktree; never job.cwd.
-  const cwd = prompt.target.cwd ?? readProcCwd(Number(pid)) ?? undefined;
+  // Only shell prompts can use process cwd; native tools must display their own base directory.
+  const cwd = prompt.target.kind === 'shell' && !prompt.target.cwd ? readProcCwd(Number(pid)) ?? undefined : undefined;
   if (!isProcAlive(Number(pid), pidStart)) return;
-  return provePermission(prompt.target, { task: dir, scratch: nativeScratch, temp, worktree, cwd });
+  return provePermission(prompt.target, { task: dir, worktree, cwd, path: env.PATH ?? '' });
 }
 
 const fingerprint = (binding: Binding, prompt: Prompt) => hash(JSON.stringify([
@@ -419,7 +407,7 @@ async function sendAnswer(home: string, dir: string, job: Job, binding: Binding,
   return { ok: entry.outcome === 'answered', written: entry.outcome === 'answered', code: entry.outcome };
 }
 
-export async function observeWorkerPermission(home: string, dir: string, job: Job, status: Partial<JobStatus> | null,
+export async function observeWorkerPermission(home: string, dir: string, job: Job, _status: Partial<JobStatus> | null,
   binding: Binding, signal: AbortSignal) {
   return withAbstractLock('worker-permission', dir, async () => {
     const observed = await capture(home, job, binding, signal);
@@ -446,12 +434,12 @@ export async function observeWorkerPermission(home: string, dir: string, job: Jo
       retire(state, previous); save(dir, state);
     }
     if (!observed || observed === 'unrecognized') return;
-    const proof = proofFor(dir, job, status, binding, observed);
+    const proof = proofFor(dir, job, binding, observed);
     const decision: PermissionDecision = observed.manualReason ? { action: 'main', reason: observed.manualReason } : await classifyPermission(home, proof);
     if (signal.aborted) return;
     const entry = appendEntry(state, binding, observed, decision);
     if (decision.action === 'approve') {
-      if (!proof || proof.fingerprint !== proofFor(dir, job, status, binding, observed)?.fingerprint) {
+      if (!proof || proof.fingerprint !== proofFor(dir, job, binding, observed)?.fingerprint) {
         requireManual(entry, 'Local path evidence changed before answering.');
       } else {
         const result = await sendAnswer(home, dir, job, binding, state, entry, 'approve', observed, signal);

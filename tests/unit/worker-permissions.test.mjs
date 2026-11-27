@@ -3,7 +3,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import { createServer } from 'node:net';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import test from 'node:test';
 import { watchCommand } from '../../dist/cli/watch.js';
@@ -99,17 +99,16 @@ async function permissionWorker(t, opts = {}) {
   const scratch = join(dir, 'scratchpad');
   fs.mkdirSync(scratch);
   const job = JSON.parse(fs.readFileSync(join(dir, 'job.json'), 'utf8'));
-  const temp = opts.withTemp ? join('/tmp', `hud-perm-test-${job.job}`) : undefined;
-  if (temp) {
-    fs.mkdirSync(temp, { recursive: true });
-    t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
-  }
+  const temp = opts.withTemp ? fs.mkdtempSync(join('/tmp', `hud-perm-test-${job.job}-`)) : undefined;
+  if (temp) t.after(() => fs.rmSync(temp, { recursive: true, force: true }));
+  if (opts.shadowCat) fs.writeFileSync(join(worktree, 'cat'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   const env = { ...process.env, HUD_HOME: f.home, HOME: join(dirname(f.home), 'home'), HERDR_PANE_ID: main,
     HERDR_SOCKET_PATH: herdr.endpoint, HUD_MCP_JSON: '1' };
   const worker = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], {
     stdio: 'ignore',
     cwd: opts.workerCwd ?? worktree ?? dirname(f.home),
-    env: { ...process.env, HUD_JOB_DIR: dir, S: scratch, ...(temp ? { TMPDIR: temp } : {}) },
+    env: { ...process.env, HUD_JOB_DIR: dir, S: scratch, ...(temp ? { TMPDIR: temp } : {}),
+      ...(opts.shadowCat ? { PATH: `${worktree}:${process.env.PATH}` } : {}) },
   });
   const exited = once(worker, 'exit');
   t.after(() => stopChild(worker, exited));
@@ -434,24 +433,25 @@ test('Claude accepts a basename-only question but not conflicting qualified file
 });
 
 test('watcher approves recoverable edits, new files and scratch cleanup once per prompt', { timeout: 20000 }, async t => {
-  const { herdr, dir, scratch, worktree, wait, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true, withTemp: true });
+  const { herdr, dir, scratch, worktree, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true });
+  const worktreeScratch = join(worktree, 'scratchpad');
+  fs.mkdirSync(join(worktreeScratch, 'out'), { recursive: true });
+  fs.writeFileSync(join(worktreeScratch, 'out', 'b.txt'), 'synthetic b');
   fs.mkdirSync(join(scratch, 'out'), { recursive: true });
   fs.writeFileSync(join(scratch, 'out', 'a.png'), 'synthetic a');
-  fs.writeFileSync(join(scratch, 'out', 'b.txt'), 'synthetic b');
-  fs.mkdirSync(join(scratch, 'extra'), { recursive: true });
-  fs.writeFileSync(join(scratch, 'extra', 'c.json'), '{}');
   fs.mkdirSync(join(worktree, 'src'), { recursive: true });
   fs.writeFileSync(join(worktree, 'a'), 'synthetic file');
   fs.writeFileSync(join(worktree, 'src', 'app.ts'), 'export const x = 1;\n');
   execFileSync('git', ['init', '-q'], { cwd: worktree });
   execFileSync('git', ['add', 'src/app.ts'], { cwd: worktree });
   const cases = [
-    { screen: prompt(`S=${scratch}; rm -rf $S/out $S/extra`), match: /Local path check: verified rm \(-r, -f\) in the job’s task scratchpad/ },
+    { screen: prompt(`S=${worktreeScratch}; rm -rf $S/out`), match: /Local path check: verified rm \(-r, -f\) in the job’s scratchpad/ },
     { screen: prompt(`S=${scratch}; rm -f $S/out/*.png`), match: /Local path check: verified rm \(-f, glob\) in the job’s task scratchpad/ },
     { screen: prompt(`cat a > ${dir}/new-copy.txt`), match: /Local path check: verified cat in the job’s worktree and task directory/ },
-    { screen: filePrompt(`Edit file ${worktree}/src/app.ts`, 'Do you want to make this edit to app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
-    { screen: filePrompt('Edit file src/app.ts', 'Do you want to make this edit to app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
-    { screen: filePrompt(`Create file ${dir}/new.txt`, 'Do you want to create new.txt?'), match: /Local path check: verified Create file in the job’s task directory/ },
+    { screen: prompt('cat a | grep synthetic | head -n 1'), match: /Local path check: verified cat, grep, head in the job’s worktree/ },
+    { screen: filePrompt(`Edit file ${worktree}/src/app.ts`, 'Do you want to make this edit to app.ts?', '   -export const x = 1;\n   +export const x = 2;'), match: /Local path check: verified Edit file in the job’s worktree/ },
+    { screen: filePrompt('Edit file src/app.ts', 'Do you want to make this edit to app.ts?', `Cwd: ${worktree}`), match: /Local path check: verified Edit file in the job’s worktree/ },
+    { screen: filePrompt(`Create file ${worktree}/new.txt`, 'Do you want to create new.txt?'), match: /Local path check: verified Create file in the job’s worktree/ },
   ];
 
   herdr.update('blocked', cases[0].screen);
@@ -467,6 +467,37 @@ test('watcher approves recoverable edits, new files and scratch cleanup once per
     assert.equal(entry.action, 'approve');
     assert.match(entry.reason, match);
     assert.doesNotMatch(entry.reason, /regenerable PNG cleanup/i);
+    await unblocked();
+  }
+  assert.deepEqual(herdr.keys, cases.map(() => ['Enter']));
+});
+
+test('milestone review blockers go to main with a recommendation and no keys', { timeout: 20000 }, async t => {
+  const { herdr, dir, worktree, temp, rows, wait, unblocked, startWatch } = await permissionWorker(t, {
+    withWorktree: true, withTemp: true, shadowCat: true,
+  });
+  fs.mkdirSync(join(worktree, 'sub'));
+  fs.writeFileSync(join(worktree, 'sub', 'x'), 'synthetic key');
+  fs.writeFileSync(join(temp, 'out'), 'synthetic temp');
+  execFileSync('git', ['init', '-q'], { cwd: worktree });
+  execFileSync('git', ['add', 'sub/x'], { cwd: worktree });
+  const cases = [
+    prompt('git commit -m x'),
+    prompt('chmod -R 755 sub'),
+    prompt('grep -r key .'),
+    prompt('cd sub; rm -f x'),
+    filePrompt('Edit file sub/x', 'Do you want to make this edit to x?', '   -synthetic key\n   +synthetic value'),
+    prompt(`rm -f ${temp}/out`),
+    prompt('cat sub/x'), // Worker PATH shadows the otherwise allowed system verb.
+  ];
+  herdr.update('blocked', cases[0]);
+  startWatch();
+  for (const [i, screen] of cases.entries()) {
+    if (i > 0) herdr.update('blocked', screen);
+    await wait(() => permissionStatus(dir).active?.action === 'main');
+    assert.equal(permissionStatus(dir).active.outcome, 'pending', screen);
+    assert.match(jobChanges([], rows()).join('\n'), /recommends.*hud_respond/, screen);
+    assert.deepEqual(herdr.keys, [], screen);
     await unblocked();
   }
 });
@@ -646,7 +677,7 @@ test('decision model receives only structural facts without raw args or absolute
 test('local proof allows confined forms and refuses unproven flags, sequences and paths', t => {
   const f = fixture(t), task = f.job(null), worktree = join(dirname(f.home), 'wt-policy');
   const scratch = join(task, 'scratchpad');
-  const temp = join('/tmp', `hud-perm-unit-${basename(task)}`);
+  const temp = join(dirname(f.home), 'external-temp');
   fs.mkdirSync(scratch, { recursive: true });
   fs.mkdirSync(join(worktree, 'src'), { recursive: true });
   fs.mkdirSync(join(worktree, 'dest-empty'), { recursive: true });
@@ -666,7 +697,10 @@ test('local proof allows confined forms and refuses unproven flags, sequences an
   fs.writeFileSync(join(worktree, 'archive.tar.gz'), 'synthetic');
   fs.writeFileSync(join(worktree, 'bundle.zip'), 'synthetic');
   fs.symlinkSync(dirname(f.home), join(worktree, 'escape-link'));
-  const roots = { task, scratch, temp, worktree, cwd: worktree };
+  const roots = { task, worktree, cwd: worktree };
+  fs.writeFileSync(join(worktree, 'src', 'linked.ts'), 'synthetic hard-linked file');
+  fs.linkSync(join(worktree, 'src', 'linked.ts'), join(dirname(f.home), 'hardlink.ts'));
+  fs.writeFileSync(join(temp, 'out'), 'synthetic external bytes');
 
   const allowed = [
     `S=${scratch}; rm -rf $S/out`,
@@ -685,24 +719,13 @@ test('local proof allows confined forms and refuses unproven flags, sequences an
     `ls -la src && cat src/a.ts | head -n 5 | wc -l`,
     `tail -n 10 src/a.ts`,
     `grep -n export src/a.ts`,
-    `rg export src`,
-    `rg --files src`,
-    `rg --files`,
-    `grep -r export src`,
-    `find src -name '*.ts'`,
-    `find ${scratch} -name '*.png' -delete`,
     `diff -u src/a.ts src/a.ts`,
     `git status -s && git diff --stat && git log -n 5 --oneline`,
     `git show HEAD`,
-    `git add src/a.ts`,
-    `git commit -m "synthetic fix"`,
-    `git stash list`,
-    `git rebase main`,
     `cat src/a.ts > ${scratch}/copy.txt`,
     `cat src/a.ts > dest-tracked/a.ts`,
     `cat src/a.ts 2>/dev/null`,
-    `cd ${worktree} && git status -s`,
-    `S=${scratch}; cd ${worktree} && rm -rf $S/out`,
+    `git -C ${worktree} status -s`,
   ];
   for (const cmd of allowed) {
     assert.ok(provePermission(cmd, roots), `expected allowed: ${cmd}`);
@@ -711,6 +734,18 @@ test('local proof allows confined forms and refuses unproven flags, sequences an
   const denied = [
     'chmod 4755 src/a.ts',
     'chmod u+s src/a.ts',
+    'chmod 755 src/linked.ts',
+    'chmod --recursive 755 src',
+    'chmod 755 -R src',
+    'ls -R src',
+    'grep -r export src',
+    'grep export src',
+    'rg export src',
+    'rg export',
+    'rg --files src',
+    'rg --files',
+    `find ${scratch} -name '*.png' -delete`,
+    `rm -f ${temp}/out`,
     'ln -s /etc/passwd src/bad-link',
     'ln -s ../../../../etc/passwd src/bad-link',
     'ln src/a.ts src/hard-link',
@@ -729,7 +764,14 @@ test('local proof allows confined forms and refuses unproven flags, sequences an
     `cp src/a.ts ${worktree}/dest-symlink/a.ts`,
     'test -d src && cd src; rm -f a.ts',
     'ls src && cd src; rm -f a.ts',
+    'cd src && rm -f a.ts',
+    `cd ${worktree} && git status -s`,
     `ls src && S=${scratch}; rm -rf $S/out`,
+    `S=${scratch}; cd ${worktree} && rm -rf $S/out`,
+    `S=${scratch} && rm -rf $S/out`,
+    `S=${worktree}; rm -f $S/src/a.ts`,
+    `S=${scratch}; touch $S/out`,
+    `S=${scratch}; rm -rf ${scratch}/out`,
     'cd src | cat',
     `S=${scratch} | cat`,
     'cat src/a.ts | wc -l; cd src; ls',
@@ -738,7 +780,15 @@ test('local proof allows confined forms and refuses unproven flags, sequences an
     'cat src/a.ts > new.txt; ls new.txt',
     'cat src/a.ts | head > new.txt',
     'git add src/a.ts && git commit -m "synthetic fix"',
+    'git add src/a.ts',
+    'git commit -m "synthetic fix"',
+    'git stash list',
+    'git rebase main',
     'git restore src/a.ts',
+    'git status --unknown',
+    'git log --max-count=unknown',
+    'git diff --ext-diff',
+    'git show --output=out',
     'diff -r src dest-empty',
     'find src -delete',
     'find src -exec rm {} ;',
@@ -786,6 +836,8 @@ test('local proof allows confined forms and refuses unproven flags, sequences an
   assert.equal(provePermission({ kind: 'file_edit', paths: [join(worktree, '.git', 'HEAD')] }, roots), undefined);
   assert.equal(provePermission({ kind: 'file_edit', paths: [join(worktree, 'escape-link', 'x.ts')] }, roots), undefined);
   assert.ok(provePermission({ kind: 'file_create', paths: [join(worktree, 'new-dir', 'sub', 'file.ts')] }, roots));
+  assert.equal(provePermission({ kind: 'file_edit', paths: ['src/a.ts'] }, roots), undefined);
+  assert.ok(provePermission({ kind: 'file_edit', paths: ['src/a.ts'], cwd: worktree }, roots));
 });
 
 test('narrowed proof rejects symlinked scratchpads', t => {
@@ -801,7 +853,6 @@ test('narrowed proof rejects symlinked scratchpads', t => {
   // Symlinked worktree/scratchpad pointing outside the job must never become a deletion root.
   fs.symlinkSync(outside, join(worktree, 'scratchpad'));
   assert.equal(provePermission(`S=${worktree}/scratchpad; rm -rf $S/out`, { task, worktree }), undefined);
-  assert.equal(provePermission(`S=${worktree}/scratchpad; rm -rf $S/out`, { task, worktree, scratch: join(worktree, 'scratchpad') }), undefined);
 
   // Symlinked worktree/scratchpad pointing to a worktree subdir must not promote it to a scratchpad root.
   fs.unlinkSync(join(worktree, 'scratchpad'));

@@ -166,7 +166,7 @@
     {
       "number": 25,
       "title": "Narrow automatic permission approval to forms it can prove; send the rest to main",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "In a scratch herdr pane bound to a synthetic job, show Claude Code prompts for (a) `S=<scratchpad>; rm -rf $S/out`, (b) a Claude Edit of a file in the worktree with an absolute path, (c) `git commit -m x`, (d) `grep -r key .`, (e) `cd sub; rm -f x`, (f) a Claude Edit with a relative path and a diff preview. (a) and (b) get one automatic answer; (c)-(f) reach main with a recommendation.",
       "approved_removals": [
@@ -185,22 +185,29 @@
         {
           "id": 1,
           "text": "Fixture tests: each of review j297aaffd5e903d3d blockers 1-5 goes to main (one case per blocker), and the kept forms (scratchpad rm via S=<abs>, worktree absolute-path Edit/create, read-only command with a filter pipe) still get one automatic answer",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "permission-policy.ts plus worker-permissions.ts have fewer lines than at 9583cd22",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "docs/reference.md lists the narrowed approved set and nothing it no longer approves",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T15:01:00.784Z",
+        "job": "j5a27ba969d5c0ab4",
+        "flow": "f5a27ba969d5c0ab4",
+        "replay_base": "3102424819f6b7be9496e7535b49d71fcadaa4fc",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T14:40:03.969Z",
-      "updated_at": "2026-11-27T14:40:03.969Z"
+      "updated_at": "2026-11-27T15:01:00.784Z"
     },
     {
       "number": 26,
