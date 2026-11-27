@@ -57,12 +57,12 @@ export function parsePermissionPrompt(screen: string, harness: string): Prompt |
   const body = lines.slice(headings[0]).filter(Boolean);
   while (/^[╰╯─━—]+$/.test(body.at(-1) ?? '')) body.pop();
   const text = body.join('\n');
-  // Output after a finished menu is not evidence of a permission wait.
+  if (Buffer.byteLength(text) > 3500) return manual(body[0].slice(0, 120), oversized);
+  // On a confirmed block, an earlier complete menu (or a heading in a preview) makes the current menu ambiguous.
+  if (headings.length !== 1) return manual(text, 'The visible pane contains multiple permission menu headings.');
+  // Output after a single finished menu is not evidence of a permission wait.
   const unknownLayout = () => body.slice(1, -1).some(line => FOOTER.test(line) || /^╰[─━—]+╯$/.test(line)) ? null
     : manual(text, 'HUD could not safely map the visible permission menu.');
-  // Do not mistake a heading in a preview (or earlier visible output) for the start of a fresh menu.
-  if (Buffer.byteLength(text) > 3500) return manual(body[0].slice(0, 120), oversized);
-  if (headings.length !== 1) return unknownLayout();
   // In a visible box, the heading must be its first row, never a row of the command preview.
   const preceding = lines.slice(0, headings[0]).filter(Boolean).reverse();
   const box = preceding.findIndex(line => /^(?:╭[─━—]+╮|╰[─━—]+╯)$/.test(line));
@@ -86,6 +86,7 @@ export function parsePermissionPrompt(screen: string, harness: string): Prompt |
   const footer = body.slice(i).join(' ');
   if (!FOOTER.test(footer)) return unknownLayout();
   const parsedTarget = parsePromptTarget(harness, body, question, firstOption);
+  if (parsedTarget.manualReason) return manual(text, parsedTarget.manualReason);
   return {
     text: [...body.slice(0, firstOption), ...options.map((option, i) => `${i + 1}. ${option.label}`), footer].join('\n'),
     command: parsedTarget.command,
@@ -115,7 +116,7 @@ function extractSingleCwd(lines: string[]): { cwd?: string; rest: string[] } | n
   return { cwd, rest };
 }
 
-function parsePromptTarget(harness: string, body: string[], question: number, firstOption: number): { command?: string; target?: PermissionTarget } {
+function parsePromptTarget(harness: string, body: string[], question: number, firstOption: number): Pick<Prompt, 'command' | 'target' | 'manualReason'> {
   const heading = body[0];
   if (harness === 'claude') {
     if (firstOption !== question + 1) return {};
@@ -142,7 +143,10 @@ function parsePromptTarget(harness: string, body: string[], question: number, fi
       const qPath = CLAUDE_FILE_QUESTION.exec(body[question])?.[1]?.trim();
       if (qPath) {
         if (path) {
-          if (qPath !== path && basename(qPath) !== basename(path) && !path.endsWith(`/${qPath}`)) return {};
+          // Claude may abbreviate the question to just the filename, but a qualified path must agree exactly.
+          if (qPath !== path && (qPath !== basename(qPath) || qPath !== basename(path))) {
+            return { manualReason: 'The displayed file paths disagree; HUD cannot verify the target.' };
+          }
         } else if (split.rest.length === 0 && isAbsolute(qPath)) {
           cwd = split.cwd;
           path = qPath;

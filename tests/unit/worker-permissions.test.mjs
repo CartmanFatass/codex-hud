@@ -225,6 +225,7 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
   for (const [visible, reason] of [
     [`Edit file synthetic.txt\n${'x'.repeat(40_000)}\nDo you want to make this edit?\n❯ 1. Yes\n2. No\nEsc to cancel`, 'exceeds the safe parsing limit'],
     [prompt('rm -f $S/*.png').replace('Esc to cancel · Tab to amend', 'Unfamiliar footer'), 'could not safely map'],
+    [filePrompt(`Edit file ${scratch}/x.ts`, 'Do you want to make this edit to /w/b/x.ts?'), 'The displayed file paths disagree'],
   ]) {
     await unblocked();
     const oldRows = rows(), before = herdr.reads();
@@ -407,6 +408,17 @@ test('native approval layouts pin one-time action and reject stale, wrapped and 
   assert.deepEqual(parsePermissionPrompt(piEdit, 'pi').target, { kind: 'file_edit', paths: ['src/app.ts'], cwd: '/tmp/wt' });
 });
 
+test('Claude accepts a basename-only question but not conflicting qualified file paths', () => {
+  const parse = path => parsePermissionPrompt(filePrompt('Edit file /w/a/x.ts', `Do you want to make this edit to ${path}?`), 'claude');
+  assert.deepEqual(parse('x.ts').target, { kind: 'file_edit', paths: ['/w/a/x.ts'], cwd: undefined });
+  for (const path of ['/w/b/x.ts', 'a/x.ts', './x.ts']) {
+    const parsed = parse(path);
+    assert.equal(parsed.target, undefined, path);
+    assert.match(parsed.manualReason, /file paths disagree/);
+    assert.deepEqual(parsed.options, []);
+  }
+});
+
 test('watcher auto-approves widened low-risk prompts within one pass and names the operation', { timeout: 20000 }, async t => {
   const { herdr, dir, scratch, worktree, wait, unblocked, startWatch } = await permissionWorker(t, { withWorktree: true, withTemp: true });
   fs.mkdirSync(join(scratch, 'out'), { recursive: true });
@@ -420,7 +432,7 @@ test('watcher auto-approves widened low-risk prompts within one pass and names t
   const cases = [
     { screen: prompt(`S=${scratch}; rm -rf $S/out $S/extra`), match: /Local path check: verified rm \(-r, -f\) in the job’s task scratchpad/ },
     { screen: prompt(`mkdir -p ${worktree}/tmp/x && cp a b && mv b tmp/x/c`), match: /Local path check: verified mkdir, cp, mv in the job’s worktree/ },
-    { screen: filePrompt(`Edit file ${worktree}/src/app.ts`, 'Do you want to make this edit to src/app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
+    { screen: filePrompt(`Edit file ${worktree}/src/app.ts`, 'Do you want to make this edit to app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
     { screen: filePrompt('Edit file src/app.ts', 'Do you want to make this edit to app.ts?'), match: /Local path check: verified Edit file in the job’s worktree/ },
     { screen: prompt('npm run build'), match: /Local path check: verified npm run in the job’s worktree/ },
   ];

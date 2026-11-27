@@ -786,7 +786,7 @@
     {
       "number": 20,
       "title": "Repair unattended/08-09: multiple permission menus and conflicting file targets on a blocked pane go to main",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "In a scratch herdr pane bound to a synthetic job, show (a) a blocked pane with an earlier complete Claude permission menu still visible above the current one and (b) a Claude Edit file prompt whose heading path and question path name different directories with the same basename: each yields one main notice naming the pane and no key press.",
       "approved_removals": [],
@@ -802,17 +802,24 @@
         {
           "id": 1,
           "text": "Test: a blocked pane showing two complete permission menus yields one manual main entry and notice, no key press, and no worker failure after the grace",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: heading `/w/a/x.ts` with question `/w/b/x.ts` is manual; heading `/w/a/x.ts` with question `x.ts` still proves the heading path",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T12:51:51.087Z",
+        "job": "j03cd2f48d0559600",
+        "flow": "f03cd2f48d0559600",
+        "replay_base": "682cf072333b31e2e5d3038f332eaba26fb51c29",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T12:37:30.226Z",
-      "updated_at": "2026-11-27T12:37:30.226Z"
+      "updated_at": "2026-11-27T12:51:51.087Z"
     },
     {
       "number": 21,

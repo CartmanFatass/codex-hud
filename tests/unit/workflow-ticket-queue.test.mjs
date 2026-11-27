@@ -263,16 +263,29 @@ for (const mode of ['ordinary', 'unattended']) {
       stillWorking();
       release('pane-read-timeout');
     };
-    await blockWhileWatching('Edit file synthetic.txt\nDo you want to make this edit?\n❯ 1. Yes\n2. No\nUnfamiliar footer');
+    const menu = command => `Bash command\n${command}\nDo you want to proceed?\n❯ 1. Yes\n2. No\nEsc to cancel`;
+    const boxed = command => `╭─────────────────╮\n${menu(command)}\n╰─────────────────╯`;
+    await blockWhileWatching(`${boxed('pwd')}\n${boxed('git status -s')}`);
     await until(() => active()?.action === 'main', 6000);
+    const entry = active();
+    assert.equal(entry.outcome, 'pending');
+    assert.deepEqual(entry.options, []);
+    // Age the same block past the 45 s grace and wake the queue without waiting it out.
+    const blockedAt = new Date(Date.now() - 60_000).toISOString();
+    const reads = watcherReads();
+    writeFixtureFile(statusFile, JSON.stringify({ ...status(), blocked_at: blockedAt }));
+    await until(() => watcherReads() > reads + 1, 6000);
+    assert.equal(status().blocked_at, blockedAt);
+    assert.equal(status().blocked, true);
+    assert.deepEqual(readJson(join(dir, 'permissions.json')).entries, [entry]);
     assert.deepEqual(keys(), []);
     if (u) {
-      const entry = active();
       await until(() => f.flow(flow).notices[`handback-${entry.id}`], 6000);
       assert.deepEqual(workflowEvents(f.home, null, false, tmpdir()).lines, []);
       const notices = taskNoticeSource(f.home, f.env.HERDR_PANE_ID, f.root)();
       assert.equal(notices.length, 1);
       assert.ok(notices[0].line.includes(`Open pane ${entry.pane}`), notices[0].line);
+      assert.doesNotMatch(notices[0].line, /hud_respond/);
       assert.deepEqual(workflowEvents(f.home, f.env.HERDR_PANE_ID, false, f.root).lines, []);
     }
     stillWorking();
@@ -281,7 +294,7 @@ for (const mode of ['ordinary', 'unattended']) {
     await until(() => !status().blocked && !active(), 6000);
     const scratch = join(dir, 'scratchpad');
     fs.mkdirSync(scratch);
-    await blockWhileWatching(`Bash command\nrm -f ${scratch}/*.png\nDo you want to proceed?\n❯ 1. Yes\n2. No\nEsc to cancel`);
+    await blockWhileWatching(menu(`rm -f ${scratch}/*.png`));
     await until(() => permissionStatus(dir).latest?.outcome === 'answered', 6000);
     assert.deepEqual(keys(), [['Enter']]);
     stillWorking();
