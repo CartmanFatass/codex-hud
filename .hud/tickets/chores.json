@@ -991,7 +991,7 @@
       "number": 50,
       "title": "Folded sonic helpers of a queue-run worker stay counted and reachable; fold only on known-closed questions",
       "kind": "impl",
-      "status": "ready-for-agent",
+      "status": "done",
       "role": "frontend-imp",
       "owner_try": false,
       "live_try": "With a ticket-queue run whose ticket worker started three hud_sonic helpers and settled (queue ended), open the panel's Execution tab: no Recent rows titled \"Read-only\"; from the queue's Recent row → Run Detail, the worker's ticket row shows `+3 sonic` and Enter on it opens the worker's Inspector listing each helper with its ask after the leading label.",
@@ -1005,27 +1005,34 @@
         {
           "id": 1,
           "text": "Test (queue-backed, via a ticket-queue receipt, not just a job with a `ticket` field): a ended queue whose ticket worker has three settled sonic children shows no child rows in Recent, and Run Detail's ticket row shows `+3 sonic` and targets the worker's Inspector, which lists the three children",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: a child whose run-member parent settled outside the Recent window keeps its own row",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: a child with unreadable `qa/` keeps its own row; a child whose only unanswered question has a recorded timeout is folded",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T11:39:24.107Z",
+        "job": "j0279697d04ecb59e",
+        "flow": "f0279697d04ecb59e",
+        "replay_base": "4bcd8abf27d44d66b6d045cd60a943b683e130c7",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T11:17:04.189Z",
-      "updated_at": "2026-11-27T11:17:04.189Z"
+      "updated_at": "2026-11-27T11:39:24.107Z"
     }
   ]
 }

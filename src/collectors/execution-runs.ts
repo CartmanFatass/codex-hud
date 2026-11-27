@@ -38,6 +38,7 @@ import {
   type MetroStationState,
   type ReducedMetroMap,
 } from './execution-metro.js';
+import type { EndedExecutionJob } from './execution.js';
 import { targetKey } from './ticket-evidence.js';
 import { displayTicketQueues } from './ticket-queue-display.js';
 import { scanTicketStore } from './ticket-store.js';
@@ -109,6 +110,8 @@ export interface ExecutionRunTicket {
   readonly reason?: string;
   readonly landingUnknown?: true;
   readonly execJob?: ExecutionRunJobTarget;
+  /** Settled helpers of this ticket's job, counted here instead of taking Recent rows. */
+  readonly children?: readonly EndedExecutionJob[];
 }
 
 export interface LandProgress {

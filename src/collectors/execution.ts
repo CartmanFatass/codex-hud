@@ -341,13 +341,16 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
     const job = receipt(jobId);
     return [job.ticket_queue, job.workflow, job.batch_flow, job.council?.id, job.land_turn].some((id) => id && runIds.has(id));
   };
-  const hasOpenQuestion = (jobId: string, worker: OwnerWorker): boolean => {
-    if (worker.homeNeedsHuman || worker.files?.some((f) => f.kind === 'question' && f.state === 'open')) return true;
-    try { return cache.readQa(jobId).openIds.length > 0; }
-    catch { return false; }
+  /** `unknown` when `qa/` cannot be read. A question with a recorded timeout is closed. */
+  const questionState = (jobId: string, worker: OwnerWorker): 'open' | 'closed' | 'unknown' => {
+    if (worker.homeNeedsHuman) return 'open';
+    try {
+      const { openIds } = cache.readQa(jobId), timedOut = receipt(jobId).timed_out_questions;
+      return openIds.some((id) => !timedOut?.includes(id)) ? 'open' : 'closed';
+    } catch { return 'unknown'; }
   };
   const childNeedsOwnRow = (jobId: string, worker: OwnerWorker): boolean =>
-    worker.state === 'failed' || worker.state === 'error' || Boolean(worker.work?.failed) || hasOpenQuestion(jobId, worker);
+    worker.state === 'failed' || worker.state === 'error' || Boolean(worker.work?.failed) || questionState(jobId, worker) !== 'closed';
   const standaloneEnded: EndedExecutionJob[] = [...workers]
     .flatMap(([jobId, worker]) => {
       const endedAt = worker.settledAt;
@@ -356,34 +359,41 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
     })
     .sort((a, b) => b.endedAt - a.endedAt || a.jobId.localeCompare(b.jobId));
   const standaloneById = new Map(standaloneEnded.map((entry) => [entry.jobId, entry]));
+  // Run Detail leads to a member only through a ticket row that can open its retained job.
+  const ticketRows = new Set(runs.flatMap((run) => run.tickets.flatMap((ticket) => ticket.jobId && ticket.execJob ? [ticket.jobId] : [])));
+  // A run receipt does not prove that its member settled within the window.
+  const reachable = (jobId: string) => {
+    const settledAt = workers.get(jobId)?.settledAt;
+    return liveSet.has(jobId) || standaloneById.has(jobId) || (ticketRows.has(jobId) && settledAt != null && recent(settledAt));
+  };
+  const parentOf = ({ jobId, worker }: EndedExecutionJob) => {
+    const parent = jobIdOf(worker.parentJobId);
+    return parent === jobId ? undefined : parent;
+  };
+  /** The ancestor whose rows count this child instead of its own Recent row: a live card, a Recent row or a ticket row. */
+  const foldTarget = (entry: EndedExecutionJob): string | undefined => {
+    let parentId = parentOf(entry);
+    if (!parentId || !reachable(parentId) || childNeedsOwnRow(entry.jobId, entry.worker)) return undefined;
+    const seen = new Set([entry.jobId]);
+    while (!seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = standaloneById.get(parentId);
+      if (!parent) return parentId;
+      const next = parentOf(parent);
+      if (!next || !reachable(next) || childNeedsOwnRow(parentId, parent.worker)) return parentId;
+      parentId = next;
+    }
+    return undefined;
+  };
   const foldedChildren = new Map<string, EndedExecutionJob[]>();
   const foldedIds = new Set<string>();
-  const foldTarget = (entry: EndedExecutionJob): string | 'suppress' | null => {
-    if (childNeedsOwnRow(entry.jobId, entry.worker)) return null;
-    let parentId = jobIdOf(entry.worker.parentJobId);
-    if (!parentId || parentId === entry.jobId) return null;
-    const seen = new Set<string>([entry.jobId]);
-    while (parentId && !seen.has(parentId)) {
-      seen.add(parentId);
-      if (liveSet.has(parentId) || belongsToRun(parentId)) return 'suppress';
-      const parentEntry = standaloneById.get(parentId);
-      if (!parentEntry) return null;
-      const nextParent = jobIdOf(parentEntry.worker.parentJobId);
-      if (!nextParent || nextParent === parentId || childNeedsOwnRow(parentId, parentEntry.worker)) return parentId;
-      if (!standaloneById.has(nextParent) && !liveSet.has(nextParent) && !belongsToRun(nextParent)) return parentId;
-      parentId = nextParent;
-    }
-    return null;
-  };
   for (const entry of standaloneEnded) {
     const target = foldTarget(entry);
     if (!target) continue;
     foldedIds.add(entry.jobId);
-    if (target !== 'suppress') {
-      let list = foldedChildren.get(target);
-      if (!list) foldedChildren.set(target, list = []);
-      list.push(entry);
-    }
+    let list = foldedChildren.get(target);
+    if (!list) foldedChildren.set(target, list = []);
+    list.push(entry);
   }
   const endedJobs: EndedExecutionJob[] = standaloneEnded
     .filter((entry) => !foldedIds.has(entry.jobId))
@@ -393,6 +403,10 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
     });
   const ordered = live.map((id) => ({ ...jobs.get(id)!, children: children.get(id)?.map((child) => jobs.get(child)!).sort(byStart) }))
     .sort((a, b) => PHASE_ORDER[a.phase] - PHASE_ORDER[b.phase] || byStart(a, b));
+  const counted = runs.map((run) => ({ ...run, tickets: run.tickets.map((ticket) => {
+    const folded = ticket.jobId ? foldedChildren.get(ticket.jobId) : undefined;
+    return folded ? { ...ticket, children: folded } : ticket;
+  }) }));
   const excerpts = readSelectionExcerpts(home, cache, { project: scope.root });
-  return { ...snapshot, endedJobs, jobs: ordered, ...(excerpts.length && { excerpts }) };
+  return { ...snapshot, ...(counted.length && { runs: counted }), endedJobs, jobs: ordered, ...(excerpts.length && { excerpts }) };
 }

@@ -682,6 +682,130 @@ test('Recent folds settled sonic children into their parent row, keeps failed/as
   assert.doesNotMatch(detail, /Read-only/);
 });
 
+/** Settled synthetic jobs and ended ticket queues for the fold into parent rows. */
+function foldFixture(t) {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-queue-fold-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const project = join(root, 'project'), hud = join(root, 'hud');
+  const id = (n) => `j${n.toString(16).padStart(16, '0')}`;
+  const writeJob = (n, brief, minutes, { role = 'sonic', questions = [], ...receipt } = {}) => {
+    const jobId = id(n), dir = join(hud, 'jobs', jobId);
+    putJson(join(dir, 'job.json'), {
+      job: jobId, role, cwd: project, project_root: project, created_at: ago(minutes + 5),
+      ...(role === 'sonic' && { headless: true }), ...receipt,
+    });
+    putJson(join(dir, 'STATUS.json'), { state: 'done', settled_at: ago(minutes), ended_at: ago(minutes) });
+    fs.writeFileSync(join(dir, 'brief.md'), brief);
+    for (const qid of questions) {
+      fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+      fs.writeFileSync(join(dir, 'qa', `${qid}.md`), '# Question\n\nKeep the legacy helper?\n\nDefault if unanswered: yes\n');
+    }
+    return jobId;
+  };
+  const queue = (flow, fields) => putJson(join(hud, 'flows', `${flow}.json`), {
+    flow, root: project, project_root: project, feature: 'sample', pane: PANE, state: 'completed',
+    created_at: ago(90), updated_at: ago(5), ...fields,
+  });
+  const collect = async () => {
+    const execution = new PanelExecution(hud, PANE, {}, () => {});
+    t.after(() => execution.dispose());
+    execution.sync(project, false);
+    await execution.refresh(undefined, NOW);
+    return { execution, view: execution.view(project) };
+  };
+  return { hud, writeJob, queue, collect };
+}
+
+test('an ended queue counts settled sonic helpers on the ticket row, which opens the worker Inspector listing them', async (t) => {
+  const f = foldFixture(t), flow = 'q0000000000000050';
+  const member = { role: 'imp', ticket_queue: flow };
+  const worker = f.writeJob(1, '# 01: Fold queue helpers\n', 10, member);
+  const helpers = ['inspect the collector', 'list the render callers', 'check the fixtures'].map((ask, i) =>
+    f.writeJob(2 + i, `Read-only: ${ask}\n`, 12 + i, { parent_job: worker }));
+  const second = f.writeJob(5, '# 02: Second ticket\n', 20, member);
+  f.writeJob(6, 'Read-only survey: find the owners\n', 22, { parent_job: second });
+  const plainWorker = f.writeJob(7, '# 03: No helpers\n', 30, member);
+  f.queue(flow, { tickets: [worker, second, plainWorker].map((job, i) => ({ ticket: `0${i + 1}`, role: 'imp', job, landed: true })) });
+
+  const { execution, view } = await f.collect();
+  assert.deepEqual(view.endedJobs, [], 'neither members nor their helpers take Recent rows');
+  assert.deepEqual(view.runs[0].tickets.map((tk) => tk.children?.map((child) => child.jobId)),
+    [helpers, [`j${'6'.padStart(16, '0')}`], undefined]);
+
+  const press = (state, key, size = {}) => {
+    const frame = render(view, { state, ...size, workboard: state.subpage && execution.board() });
+    return handleMonitorInput(frame.state, { type: 'key', key }, { frame, nowMs: NOW }).state;
+  };
+  const recent = render(view);
+  assert.deepEqual(recent.workboard.rows.map((row) => row.item).filter(Boolean), [`project:exec-run:${flow}`]);
+  assert.doesNotMatch(text(recent), /Read-only|inspect the collector|find the owners/);
+  const detail = press(onExecution({ cursor: `project:exec-run:${flow}` }), 'enter');
+  assert.deepEqual(detail.subpage, { kind: 'run-detail', flow, scroll: 0 });
+
+  const rowItem = (ticket) => `project:run-ticket:${ticket}`;
+  for (const lang of ['en', 'zh']) for (const width of [40, 62, 100]) {
+    const frame = render(view, { state: detail, lang, width, workboard: execution.board() });
+    const targets = frame.workboard.rows.filter((row) => row.item);
+    assert.deepEqual(targets.map((row) => [row.item, row.execJob.target.workerId]),
+      [[rowItem('01'), `thin-job:${worker}`], [rowItem('02'), `thin-job:${second}`]]);
+    assert.ok(targets[0].text.includes(lang === 'zh' ? '+3 个 sonic' : '+3 sonic'), `${lang} ${width}: ${targets[0].text}`);
+    assert.ok(targets[1].text.includes(lang === 'zh' ? '+1 个 sonic' : '+1 sonic'), `${lang} ${width}: ${targets[1].text}`);
+    assert.ok(text(frame).includes(lang === 'zh' ? '⏎ 详情' : '⏎ details'));
+    for (const line of frame.lines) assert.equal(visualLength(line), width, `${lang} ${width}: ${line}`);
+    for (const line of render(view, { state: detail, lang, width, theme: 'mocha' }).lines) assert.equal(visualLength(line), width);
+  }
+
+  // Enter with nothing selected opens the first such row; Esc returns to it in Run Detail, then to Recent.
+  const inspector = press(detail, 'enter');
+  assert.deepEqual([inspector.subpage.kind, inspector.subpage.from, inspector.subpage.target.workerId],
+    ['inspector', 'execution', `thin-job:${worker}`]);
+  const listed = text(render(view, { state: inspector, height: 40, workboard: execution.board() }));
+  assert.match(listed, /Sonic children/);
+  for (const ask of ['inspect the collector', 'list the render callers', 'check the fixtures']) assert.ok(listed.includes(ask), listed);
+  assert.doesNotMatch(listed, /Read-only|find the owners/);
+  const back = press(inspector, 'escape');
+  assert.deepEqual([back.subpage.kind, back.subpage.cursor], ['run-detail', rowItem('01')]);
+  assert.match(text(render(view, { state: back })), /▸ \S 01 /);
+  assert.equal(press(back, 'escape').subpage, undefined);
+
+  // Tab selects the next row, and a click opens one.
+  const next = press(press(back, 'tab'), 'enter');
+  assert.equal(next.subpage.target.workerId, `thin-job:${second}`);
+  const frame = render(view, { state: detail });
+  const y = frame.lines.findIndex((line) => line.includes('+1 sonic'));
+  const clicked = handleMonitorInput(frame.state, { type: 'mouse', button: 'left', x: 4, y }, { frame, nowMs: NOW }).state;
+  assert.equal(clicked.subpage.target.workerId, `thin-job:${second}`);
+});
+
+test('helpers keep their own Recent rows when no row leads to the run member that started them', async (t) => {
+  const f = foldFixture(t), flow = 'q0000000000000051';
+  const stale = f.writeJob(1, '# 01: Settled yesterday\n', 1500, { role: 'imp', ticket_queue: flow });
+  const late = f.writeJob(2, 'Read-only: check older callers\n', 20, { parent_job: stale });
+  const reviewer = f.writeJob(3, '# Review the run\n', 15, { role: 'reviewer', ticket_queue: flow });
+  const reviewHelper = f.writeJob(4, 'Read-only: check the review range\n', 16, { parent_job: reviewer });
+  f.queue(flow, { tickets: [{ ticket: '01', role: 'imp', job: stale, landed: true }], review_job: reviewer });
+
+  const { view } = await f.collect();
+  assert.ok(view.runs[0].tickets[0].execJob, 'the old member is still retained');
+  assert.equal(view.runs[0].tickets[0].children, undefined);
+  assert.deepEqual(view.endedJobs.map((job) => job.jobId), [reviewHelper, late]);
+});
+
+test('a helper folds only when its questions are known to be closed', async (t) => {
+  const f = foldFixture(t);
+  const parent = f.writeJob(1, '# 01: Parent worker\n', 10, { role: 'imp' });
+  const unreadable = f.writeJob(2, 'Read-only: inspect the unreadable one\n', 11, { parent_job: parent });
+  fs.writeFileSync(join(f.hud, 'jobs', unreadable, 'qa'), 'not a directory');
+  const timedOut = f.writeJob(3, 'Read-only: inspect the expired question\n', 12,
+    { parent_job: parent, questions: ['q1'], timed_out_questions: ['q1'] });
+  const asking = f.writeJob(4, 'Read-only: inspect the open question\n', 13,
+    { parent_job: parent, questions: ['q1', 'q2'], timed_out_questions: ['q1'] });
+
+  const { view } = await f.collect();
+  assert.deepEqual(view.endedJobs.map((job) => job.jobId), [parent, unreadable, asking]);
+  assert.deepEqual(view.endedJobs[0].children.map((child) => child.jobId), [timedOut]);
+});
+
 test('fixed and graph workflows render from cached records; Enter and batch control use the selected row', async (t) => {
   const root = fs.mkdtempSync(join(tmpdir(), 'exec-fixed-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

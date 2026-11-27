@@ -7,6 +7,7 @@ import type { MonitorRow } from './monitor.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { fit, monitorText, pair } from './monitor-text.js';
 import { roleIcon } from './model-glyphs.js';
+import { childTag } from './execution-run-detail.js';
 import { runItem, workflowLabel, workflowSectionRows } from './execution-workflow.js';
 import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
 import { jobTitle, roleInk } from './work-job-row.js';
@@ -144,13 +145,8 @@ function endedRow(entry: EndedExecutionJob | (ExecutionRun & { endedAt: number }
   const landedLabel = landed ? t('{n} landed', { n: landed }) : '';
   const detailedOutcome = !landedLabel ? '' : interruptedQueue ? `${outcome}${muted(` · ${landedLabel}`)}` : state.ink(landedLabel);
   const detail = detailedOutcome ? `${detailedOutcome} ${age}` : '';
-  const folded = 'flow' in entry ? undefined : entry.children;
-  const childTag = folded?.length
-    ? folded.every((child) => child.worker.role === 'sonic')
-      ? t('+{n} sonic', { n: folded.length })
-      : t(folded.length === 1 ? '+{n} child' : '+{n} children', { n: folded.length })
-    : '';
-  const childFacts = childTag ? `${muted(`${childTag} · `)}${facts}` : '';
+  const tag = 'flow' in entry ? '' : childTag(entry.children);
+  const childFacts = tag ? `${muted(`${tag} · `)}${facts}` : '';
   const minTitle = Math.min(visualLength(title), 14);
   const right = detail && visualLength(left + title + detail) + 1 <= width ? detail
     : childFacts && visualLength(left) + minTitle + 2 + visualLength(childFacts) <= width ? childFacts

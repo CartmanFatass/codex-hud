@@ -1,5 +1,6 @@
 /** Shared workflow state formatting and the Inspector-style Run Detail / Station Detail scroll views. Pure; no I/O. */
 import type { ExecutionRun, ExecutionRunStep, ExecutionRunTicket, MetroPoolCounts, MetroStation, RunStepKey, RunStepState } from '../collectors/execution-runs.js';
+import type { EndedExecutionJob } from '../collectors/execution.js';
 import type { MonitorRow } from './monitor.js';
 import type { MetroStationInspect } from './monitor-state.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
@@ -102,8 +103,15 @@ export function ticketStageView(ticket: ExecutionRunTicket): TicketStagePresenta
   }
 }
 
+/** The count of helpers folded onto a job's row (`+3 sonic`, else `+2 children`); empty without any. */
+export function childTag(children: readonly EndedExecutionJob[] | undefined): string {
+  if (!children?.length) return '';
+  if (children.every((child) => child.worker.role === 'sonic')) return t('+{n} sonic', { n: children.length });
+  return t(children.length === 1 ? '+{n} child' : '+{n} children', { n: children.length });
+}
+
 /** Inspector-style scroll view for one workflow; queues retain full review/decision/todo detail. */
-export function runDetailRows(run: ExecutionRun, width: number, now: number, diagram?: MonitorRow[]): MonitorRow[] {
+export function runDetailRows(run: ExecutionRun, width: number, now: number, diagram?: MonitorRow[], cursor?: string): MonitorRow[] {
   const plain = (text: string) => boardRow(fit(text, width));
   const state = runStateView(run.state);
   const elapsed = runElapsed(run, now);
@@ -131,12 +139,19 @@ export function runDetailRows(run: ExecutionRun, width: number, now: number, dia
       const stage = ticketStageView(tk);
       const rolePart = tk.role ? `${runRoleInk(tk.role)(roleIcon(tk.role))} ${runRoleInk(tk.role)(monitorText(tk.role))}` : '';
       const jobPart = tk.jobId ? muted(tk.jobId.slice(0, 8)) : '';
-      const rightChoices = [[rolePart, jobPart].filter(Boolean).join(' '), rolePart, ''];
-      const leftHead = `  ${stage.ink(stage.glyph)} ${monitorText(tk.ticket)}  `;
-      const right = rightChoices.find((r) => visualLength(leftHead + stage.shortText) + (r ? visualLength(r) + 2 : 0) <= width) ?? '';
+      // A row with folded helpers opens its job's Inspector; their count outlasts the role and job ID.
+      const tag = childTag(tk.children);
+      const open = tag && tk.execJob ? { item: `project:run-ticket:${tk.ticket}`, execJob: tk.execJob } : undefined;
+      const rightChoices = [[rolePart, jobPart], [rolePart], []]
+        .map((parts) => [tag && muted(tag), parts.filter(Boolean).join(' ')].filter(Boolean).join(muted(' · ')));
+      const marker = open && cursor === open.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
+      const leftHead = `${marker}${stage.ink(stage.glyph)} ${monitorText(tk.ticket)}  `;
+      const beside = (text: string) => rightChoices.find((r) => visualLength(leftHead + text) + (r ? visualLength(r) + 2 : 0) <= width);
+      // Beside a count, role and job ID also give way before the hold or failure words are cut.
+      const right = (tag ? beside(stage.fullText) : undefined) ?? beside(stage.shortText) ?? '';
       const room = Math.max(0, width - visualLength(leftHead) - (right ? visualLength(right) + 2 : 0));
       const stageText = visualLength(stage.fullText) <= room ? stage.fullText : truncateAnsi(stage.fullText, room);
-      rows.push(plain(pair(leftHead + stage.ink(stageText), right, width)));
+      rows.push({ ...plain(pair(leftHead + stage.ink(stageText), right, width)), ...open });
       if (tk.reason && (tk.stage === 'held' || tk.stage === 'failed')) {
         rows.push(...stemLines(tk.reason, width, stage.ink).map((line) => boardRow(line)));
       }

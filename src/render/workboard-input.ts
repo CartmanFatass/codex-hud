@@ -462,17 +462,17 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
       };
       return result();
     }
+    if ((sub?.kind === 'feature' || sub?.kind === 'run-detail') && !fileOnly && row?.execJob) {
+      next.subpage = {
+        kind: 'inspector',
+        target: row.execJob.target,
+        scroll: 0,
+        from: sub.kind === 'feature' ? 'feature' : 'execution',
+        back: { ...sub, cursor: row.item, revealed: row.item === sub.cursor ? sub.revealed : undefined },
+      };
+      return result();
+    }
     if (sub?.kind === 'feature' && !fileOnly) {
-      if (row?.execJob) {
-        next.subpage = {
-          kind: 'inspector',
-          target: row.execJob.target,
-          scroll: 0,
-          from: 'feature',
-          back: { ...sub, cursor: row.item, revealed: row.item === sub.cursor ? sub.revealed : undefined },
-        };
-        return result();
-      }
       if (row?.item?.startsWith('feature:ticket:')) {
         const expanded = new Set(sub.expanded ?? []);
         if (!expanded.delete(row.item)) expanded.add(row.item);
@@ -539,7 +539,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
   }
   if (enter || key === 'open-session') {
     const request = sub?.kind === 'inspector' ? boardFrame.snapshot.workers.find((w) => w.id === sub.target.workerId)?.work?.requestInfo : undefined;
-    const preferred = sub?.kind === 'inspector' && (actions.find((row) => row.files?.[0].endsWith('/report.md'))
+    const preferred = sub?.kind === 'run-detail' ? actions[0] : sub?.kind === 'inspector' && (actions.find((row) => row.files?.[0].endsWith('/report.md'))
       ?? (request && actions.find((row) => row.files?.[0].endsWith(`/qa/${request.id}.md`)))
       ?? actions.find((row) => row.files?.[0].endsWith('/brief.md')) ?? actions.find((row) => row.files));
     return act(actions.find((row) => row.item === cursor) ?? (preferred || undefined), key === 'open-session');
@@ -554,7 +554,7 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     // Home can page past Waiting into the handoff; Inspector scrolls its evidence.
     return moveScroll(key === 'home' ? 0 : key === 'end' ? pane.contentLength : nav.scroll + step);
   }
-  if ((objective || feature || sub?.kind === 'inspector' || sub?.kind === 'native-inspector') && actions.length && (key === 'tab' || key === 'shift-tab')) {
+  if ((objective || feature || sub?.kind === 'inspector' || sub?.kind === 'native-inspector' || sub?.kind === 'run-detail') && actions.length && (key === 'tab' || key === 'shift-tab')) {
     const at = actions.findIndex((r) => r.item === cursor);
     return select(actions[(at < 0 ? key === 'tab' ? 0 : actions.length - 1 : (at + (key === 'tab' ? 1 : -1) + actions.length) % actions.length)]?.item);
   }

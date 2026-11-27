@@ -22,11 +22,11 @@ export interface InspectorState extends RowNav {
   target: JobTarget;
   /** Opened from the Execution tab or a Feature page: it reads that project's jobs, and back returns there. */
   from?: 'execution' | 'feature';
-  back?: FeatureDetail | InspectorState;
+  back?: FeatureDetail | InspectorState | RunDetailState;
 }
 /** Walk nested job Inspectors back to the Feature page that opened the chain, if any. */
 export function inspectorFeatureBack(sub: InspectorState): FeatureDetail | undefined {
-  let cur: FeatureDetail | InspectorState | undefined = sub.back;
+  let cur: InspectorState['back'] = sub.back;
   while (cur?.kind === 'inspector') cur = cur.back;
   return cur?.kind === 'feature' ? cur : undefined;
 }

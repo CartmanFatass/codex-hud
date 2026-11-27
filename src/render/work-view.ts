@@ -408,7 +408,7 @@ export function renderWorkboardFrame(
     : feat ? featureDetailRows(feat, width, now, featProject, input.projectActivity, input.projectLandings)
     : objDetail ? objectiveDetailRows(objDetail, width, now, objProject, input.projectActivity, objResultAt)
     : stationDetail ? activeRun ? stationDetailRows(activeRun, stationDetail.stationId, stationDetail.station, width, now) : [boardRow(fit(t('Run not available'), width))]
-    : runDetail ? activeRun ? runDetailRows(activeRun, width, now, activeRun.kind === 'queue' ? undefined : workflowDetailRows(activeRun, width, now)) : [boardRow(fit(t('Run not available'), width))]
+    : runDetail ? activeRun ? runDetailRows(activeRun, width, now, activeRun.kind === 'queue' ? undefined : workflowDetailRows(activeRun, width, now), runDetail.cursor) : [boardRow(fit(t('Run not available'), width))]
     : native ? nativeInspectorRows(input.tree, width, now)
       : inspector ? worker ? workInspectorRows(worker, width, now, source.workers.filter((w) => w.parentJobId === worker.id), workerObjectiveTarget)
         : [boardRow(t('Job not available'))]
@@ -539,7 +539,7 @@ export function renderWorkboardFrame(
     : objective ? (selectedReq
         ? [isRequestMoreItem(selectedReq.item) ? reqFoldHint : '⏎ open', ...(!isRequestMoreItem(selectedReq.item) && selectedReq.files ? ['o file'] : []), 'Esc back']
         : [...(selected?.featureTarget || selected?.files || selected?.commit ? ['⏎ open'] : []), 'Esc back'])
-    : runDetail || stationDetail ? ['Esc back']
+    : runDetail || stationDetail ? [...(runDetail && actions.length ? ['⏎ details'] : []), 'Esc back']
     : inspector ? inspectorKeys(worker)
       : native ? ['Esc back'] : jobs ? [...(selected?.batch ? batchKeys(selected.batch) : listCursor ? ['⏎ details'] : []), 'n subagents', 'Esc back']
         : resourcePage ? expHints(resourcePage, expEdit)
