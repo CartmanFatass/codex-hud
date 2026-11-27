@@ -983,3 +983,75 @@ test('batch pool change time: failed pilot stays lastChangedStationId over unsta
   assert.equal(legacyRun.metro.lastChangedId, 'pilot');
   assert.equal(fs.readFileSync(legacyPath, 'utf8'), legacyRawBefore, 'legacy batch record must not be rewritten');
 });
+
+test('legacy composed batch without item changed_at and land repair without retained job receipts still parse truthfully', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'exec-metro-legacy-repair-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hud = join(root, 'hud'), project = join(root, 'project'), flows = join(hud, 'flows');
+  fs.mkdirSync(project, { recursive: true });
+  const id = (p, n) => `${p}${n.toString(16).padStart(16, '0')}`;
+
+  // 1. Old composed batch record without item.changed_at or handback.
+  const wOld = id('w', 40);
+  putJson(join(flows, wOld, 'graph.json'), {
+    version: 1, name: 'legacy-composed-batch',
+    steps: {
+      work: { kind: 'batch', role: 'sonic', needs: [], items: [{ task: 'a' }, { task: 'b' }] },
+    },
+  });
+  putJson(join(flows, `${wOld}.json`), {
+    flow: wOld, cwd: project, project_root: project, pane: '', template: 'composed',
+    state: 'working', created_at: ago(12), updated_at: ago(5),
+    steps: {
+      work: {
+        state: 'running', changed_at: ago(10),
+        items: [{ state: 'done', attempt: 0 }, { state: 'running', attempt: 0 }],
+      },
+    },
+  });
+
+  // 2. Standalone land repair with missing repair & source job receipts: role stays absent, not imp.
+  const fAbsent = id('f', 41);
+  putJson(join(flows, `${fAbsent}.json`), {
+    flow: fAbsent, job: id('j', 41), pane: '', task: false,
+    wt: { root: project, main_root: project, branch: 'wt/absent' },
+    config: { base: 'main', gate: ['unit'], after: [], push: false },
+    state: 'running', step: 'repair 1', pid: process.pid, start: '1',
+    created_at: ago(8), updated_at: ago(2), step_started_at: ago(2), source_sha: 'a'.repeat(40),
+    repairs: [{ step: 'gate[1]: unit', job: id('j', 42), outcome: 'waiting for worker', started_at: ago(2), changed_at: ago(2) }],
+    timings: [{ step: 'create integration', ok: true, ms: 5 }, { step: 'gate[1]: unit', ok: false, ms: 10 }],
+  });
+
+  // 3. Standalone land repair where only the source job receipt (frontend-imp) is retained.
+  const jFrontSrc = id('j', 43);
+  putJson(join(hud, 'jobs', jFrontSrc, 'job.json'), {
+    job: jFrontSrc, cwd: project, project_root: project, role: 'frontend-imp',
+    dispatch_exit_code: 0, created_at: ago(15),
+  });
+  putJson(join(hud, 'jobs', jFrontSrc, 'STATUS.json'), { state: 'closed', settled_at: ago(10) });
+  const fFront = id('f', 43);
+  putJson(join(flows, `${fFront}.json`), {
+    flow: fFront, job: jFrontSrc, pane: '', task: false,
+    wt: { root: project, main_root: project, branch: 'wt/front' },
+    config: { base: 'main', gate: ['unit'], after: [], push: false },
+    state: 'running', step: 'repair 1', pid: process.pid, start: '1',
+    created_at: ago(8), updated_at: ago(1), step_started_at: ago(1), source_sha: 'b'.repeat(40),
+    repairs: [{ step: 'gate[1]: unit', job: id('j', 44), outcome: 'waiting for worker', started_at: ago(1), changed_at: ago(1) }],
+    timings: [{ step: 'create integration', ok: true, ms: 5 }, { step: 'gate[1]: unit', ok: false, ms: 10 }],
+  });
+
+  const runs = new Map(readExecutionRuns(hud, { root: project, pane: null }, new Map(), NOW).map(r => [r.flow, r]));
+
+  const oldRun = runs.get(wOld);
+  assert.equal(oldRun.handback, undefined);
+  const oldPool = oldRun.metro.stations.find(s => s.id === 'work');
+  assert.deepEqual(oldPool.pool, { done: 1, working: 1 });
+  assert.equal(oldPool.changedAt, agoMs(10));
+
+  const absentRun = runs.get(fAbsent);
+  assert.equal(absentRun.metro.stations.find(s => s.id === 'pick').state, 'done');
+  assert.equal(absentRun.metro.stations.find(s => s.id === 'gate').repair.role, undefined);
+
+  const frontRun = runs.get(fFront);
+  assert.equal(frontRun.metro.stations.find(s => s.id === 'gate').repair.role, 'frontend-imp');
+});

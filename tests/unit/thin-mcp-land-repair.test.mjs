@@ -4,12 +4,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { setImmediate as immediate } from 'node:timers/promises';
+import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
 import { withDistLock } from '../../scripts/dist-lock.mjs';
 import { installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.js';
 import { waitSonic } from '../../dist/worker/tools.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
-import { taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
+import { fallbackRole, taskCall, taskRpc, until } from '../helpers/thin-mcp-harness.mjs';
 import { bindSourceTab, checkout, job, jobDir, repair, settle } from '../helpers/thin-mcp-land.mjs';
 
 test('red gate continues the source in grace with clean assertion evidence; its rebased fix passes', async t => {
@@ -397,4 +398,27 @@ test('empty repair turn still fails, preserves the branch, and hud_land explains
   assert.match(text, new RegExp(`hud_read job=${flow}`));
   assert.match(text, new RegExp(`hud_create retry_of=${job}`));
   assert.doesNotMatch(text, /expected idle_grace, done or closed/);
+});
+
+test('Execution projects frontend-imp role on a frontend-imp land repair instead of imp', async t => {
+  const f = await checkout(t, ['grep fixed tracked']);
+  fallbackRole(f, 'frontend-imp', [{ harness: 'pi', pi_role: 'implementer', split: false }]);
+  const srcJobFile = join(jobDir(f), 'job.json');
+  writeFixtureFile(srcJobFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(srcJobFile, 'utf8')), role: 'frontend-imp' }));
+
+  const { flow } = await f.call('hud_land', { job });
+  const repairId = await repair(f, flow, 0);
+  assert.equal(JSON.parse(fs.readFileSync(join(jobDir(f, repairId), 'job.json'), 'utf8')).role, 'frontend-imp');
+
+  const run = readExecutionRuns(f.home, { root: f.main, pane: null }, new Map()).find(r => r.flow === flow);
+  assert.ok(run, 'standalone land repair run collected');
+  const gateStation = run.metro.stations.find(s => s.id === 'gate');
+  assert.equal(gateStation.repair.role, 'frontend-imp');
+  assert.equal(gateStation.repairs[0].role, 'frontend-imp');
+  assert.equal(run.nodes.flat().find(n => n.key === 'repair').role, 'frontend-imp');
+
+  fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
+  f.git(f.worktree, 'commit', '-qam', 'frontend repair');
+  settle(f, repairId, 'Fixed.');
+  await until(() => f.flowState(flow).state === 'completed', 15_000);
 });

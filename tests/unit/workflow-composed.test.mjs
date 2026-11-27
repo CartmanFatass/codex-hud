@@ -7,6 +7,8 @@ import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
+import { stripAnsi } from '../../dist/render/colors.js';
+import { stationDetailRows } from '../../dist/render/execution-run-detail.js';
 import { panelDelivery } from '../../dist/mcp/panel-delivery.js';
 import { setHarnessDisabled } from '../../dist/roles/harness-switches.js';
 import { WORKFLOW_WORKER_RULE_NO_ASK } from '../../dist/mcp/workflow-lead.js';
@@ -964,6 +966,103 @@ test('Execution shows planned and recorded members of a composed batch', { timeo
   assert.equal(pool().state, 'working');
   assert.equal(pool().count, 3);
   assert.deepEqual(pool().pool, { done: 1, working: 1, waiting: 1 });
+});
+
+test('Execution projects paused composed main hand-back prompt and choices onto the matching station only', { timeout: 30_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  const p = await call(f, 'plan', { graph: graph({
+    choose: { kind: 'handback', to: 'main', ask: 'Ship now?', options: ['ship', 'defer'] },
+    other: { kind: 'handback', to: 'main', ask: 'Unrelated choice?', options: ['yes', 'no'], needs: ['choose'], when: { step: 'choose', is: 'ship' } },
+    finish: { ...task, needs: ['other'] },
+  }) });
+  assert.equal((await start(f, p)).state, 'working');
+  const state = () => f.flow(p.run);
+  await until(() => state().state === 'paused' && state().handback?.step === 'choose', 10_000);
+  const run = readExecutionRuns(f.home, { root: f.root, pane: null }, new Map()).find(r => r.flow === p.run);
+  assert.deepEqual(run.handback, {
+    step: 'choose',
+    choices: ['ship', 'defer'],
+    question: 'Ship now?',
+    request_id: 'h-choose',
+  });
+  const detailText = (stationId) => stationDetailRows(run, stationId, undefined, 80, Date.now()).map(r => stripAnsi(r.text)).join('\n');
+  const chooseDetail = detailText('choose');
+  assert.match(chooseDetail, /Ship now\?/);
+  assert.match(chooseDetail, /ship · defer/);
+  const otherDetail = detailText('other');
+  assert.doesNotMatch(otherDetail, /Ship now\?|ship · defer/);
+  const finishDetail = detailText('finish');
+  assert.doesNotMatch(finishDetail, /Ship now\?|ship · defer/);
+  assert.equal((await call(f, 'control', { run: p.run, action: 'stop' })).state, 'stopped');
+});
+
+test('Execution projects composed batch pilot stall, clears stall after resume, and advances pool changedAt on member transitions', { timeout: 35_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 0 });
+  sonicTask(f);
+  const p = await call(f, 'plan', { graph: { ...graph({ items: { ...batch('sonic', 3), max_parallel: 1 } }), policy: { breaker: 'rate' } } });
+  assert.equal((await start(f, p)).state, 'working');
+  const state = () => f.flow(p.run);
+  const items = () => state().steps.items.items;
+  const pool = () => stations(f, p.run).find(s => s.id === 'items');
+
+  await until(() => items()?.[0].job, 10_000);
+  const pilotJob = items()[0].job;
+  const startPool = pool();
+  assert.equal(startPool.state, 'working');
+  assert.deepEqual(startPool.pool, { working: 1, waiting: 2 });
+  const start0At = startPool.changedAt;
+  assert.equal(start0At, Date.parse(items()[0].changed_at));
+
+  const statusPath = join(f.dir(pilotJob), 'STATUS.json');
+  await until(() => fs.existsSync(statusPath), 10_000);
+  const origStatus = JSON.parse(fs.readFileSync(statusPath, 'utf8'));
+  await delay(15, undefined, { signal: t.signal });
+  put(statusPath, JSON.stringify({ ...origStatus, state: 'waiting_orchestrator', blocked: true }));
+  await until(() => state().state === 'paused', 10_000);
+
+  const stalledPool = pool();
+  assert.equal(items()[0].state, 'running');
+  assert.ok(items()[0].stall);
+  assert.equal(stalledPool.state, 'stalled');
+  assert.deepEqual(stalledPool.pool, { stalled: 1, waiting: 2 });
+  const stallAt = stalledPool.changedAt;
+  assert.equal(stallAt, Date.parse(items()[0].changed_at));
+  assert.ok(stallAt > start0At);
+
+  assert.equal((await call(f, 'control', { run: p.run, action: 'resume' })).state, 'working');
+  assert.ok(items()[0].stall, 'historical stall remains recorded after resume');
+  const resumedPool = pool();
+  assert.equal(resumedPool.state, 'working');
+  assert.deepEqual(resumedPool.pool, { working: 1, waiting: 2 });
+
+  await until(() => !!state().pid, 10_000);
+  assert.equal((await call(f, 'control', { run: p.run, action: 'pause' })).state, 'paused');
+  assert.equal(pool().state, 'working', 'an unrelated pause does not revive a historical stall');
+  assert.equal((await call(f, 'control', { run: p.run, action: 'resume' })).state, 'working');
+
+  await delay(15, undefined, { signal: t.signal });
+  put(statusPath, JSON.stringify(origStatus));
+  put(join(f.dir(pilotJob), 'release-sonic'), '');
+  await until(() => items()[0].state === 'done' && items()[1].job, 10_000);
+  const stepStartedAt = Date.parse(state().steps.items.changed_at);
+  const afterPilot = pool();
+  assert.equal(state().steps.items.state, 'running');
+  assert.equal(afterPilot.state, 'working');
+  assert.deepEqual(afterPilot.pool, { done: 1, working: 1, waiting: 1 });
+  assert.ok(afterPilot.changedAt > stepStartedAt, 'pool changedAt advances past step cursor changed_at');
+  assert.ok(afterPilot.changedAt > stallAt, 'pool changedAt advances on pilot settle / next member start');
+
+  const item1At = afterPilot.changedAt;
+  await delay(15, undefined, { signal: t.signal });
+  put(join(f.dir(items()[1].job), 'release-sonic'), '');
+  await until(() => items()[1].state === 'done' && items()[2].job, 10_000);
+  const afterSecond = pool();
+  assert.equal(state().steps.items.state, 'running');
+  assert.deepEqual(afterSecond.pool, { done: 2, working: 1 });
+  assert.ok(afterSecond.changedAt > item1At, 'pool changedAt advances again as later members settle and start');
+
+  put(join(f.dir(items()[2].job), 'release-sonic'), '');
+  await until(() => state().state === 'completed', 10_000);
 });
 
 test('a composed council uses its bound grant without consuming the standalone grant', { timeout: 35_000 }, async t => {

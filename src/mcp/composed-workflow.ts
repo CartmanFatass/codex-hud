@@ -155,9 +155,12 @@ export async function callWorkflow(home: string, pane: string | null, args: Args
       if (action === 'retry_failed' && retryable && failed.some(([key]) => graph.steps[key].kind === 'land'))
         return { value: { ok: false, code: 'sealed_land_not_replayable' } };
       if (controlRun(run, action, retryable)) {
-        if (action === 'retry_failed') for (const [key, c] of failed) {
-          run.steps[key] = { state: c.items?.some(i => i.state === 'running') ? 'running' : 'waiting', attempt: (c.attempt ?? 0) + 1, ...(c.repairs && { repairs: c.repairs }),
-            ...(c.items && { items: c.items.map(i => i.state === 'failed' ? { state: 'waiting', attempt: i.attempt + 1 } : i) }) };
+        if (action === 'retry_failed') {
+          const retryAt = new Date().toISOString();
+          for (const [key, c] of failed) {
+            run.steps[key] = { state: c.items?.some(i => i.state === 'running') ? 'running' : 'waiting', attempt: (c.attempt ?? 0) + 1, changed_at: retryAt, ...(c.repairs && { repairs: c.repairs }),
+              ...(c.items && { items: c.items.map(i => i.state === 'failed' ? { state: 'waiting', attempt: i.attempt + 1, changed_at: retryAt } : i) }) };
+          }
         }
         if (run.state === 'stopped') {
           const stoppedAt = new Date().toISOString();

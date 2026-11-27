@@ -16,7 +16,7 @@ export const SONIC_INPUT_UNKNOWN = 'Earlier Sonic input bytes could not be accou
 export const SONIC_LEDGER_VERSION = 3;
 export const workflowGrants = runGrantStore('workflow-grant');
 export type CheckResult = { exit_code: number | null; tail: string; error?: string };
-export type Item = { job?: string; state: 'waiting' | 'running' | 'done' | 'failed'; attempt: number; reason?: string; stall?: string };
+export type Item = { job?: string; state: 'waiting' | 'running' | 'done' | 'failed'; attempt: number; reason?: string; stall?: string; changed_at?: string };
 export type ComposedCursor = Cursor & { attempt?: number; job?: string; land?: string; items?: Item[];
   pending_settlements?: number[];
   failure_groups?: ReturnType<typeof failuresByReason>;

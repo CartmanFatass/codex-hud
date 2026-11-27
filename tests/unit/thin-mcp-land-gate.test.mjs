@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
 import { LandOutput } from '../../dist/mcp/land-evidence.js';
 import { landNotice } from '../../dist/mcp/land-state.js';
 import { landTask } from '../../dist/mcp/land.js';
@@ -178,4 +179,24 @@ test('flow receipt records per-step timings including separate gate reruns', asy
     assert.equal(typeof entry.ms, 'number');
     assert.ok(Number.isInteger(entry.ms) && entry.ms >= 0);
   }
+});
+
+test('Execution projects Pick as done during a standalone fast-forward land gate step', async t => {
+  const f = await checkout(t, ['touch "$HOME/gate-started"; while [ ! -f "$HOME/gate-release" ]; do sleep 0.05; done']);
+  const { flow } = await f.call('hud_land', { job });
+  await until(() => fs.existsSync(join(f.env.HOME, 'gate-started')) && f.flowState(flow).step.startsWith('gate[1]:'), 15_000);
+  const raw = f.flowState(flow);
+  assert.equal(raw.timings?.some(timing => timing.step === 'cherry-pick'), false, 'fast-forward skips cherry-pick');
+  assert.equal(raw.timings?.some(timing => timing.step === 'create integration' && timing.ok), true);
+
+  const run = readExecutionRuns(f.home, { root: f.main, pane: null }, new Map()).find(r => r.flow === flow);
+  assert.ok(run, 'standalone fast-forward land run collected');
+  const pickStation = run.metro.stations.find(s => s.id === 'pick');
+  const gateStation = run.metro.stations.find(s => s.id === 'gate');
+  assert.equal(pickStation.state, 'done');
+  assert.equal(run.nodes.flat().find(n => n.key === 'pick').state, 'done');
+  assert.equal(gateStation.state, 'working');
+
+  fs.writeFileSync(join(f.env.HOME, 'gate-release'), '');
+  await until(() => f.flowState(flow).state === 'completed', 15_000);
 });

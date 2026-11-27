@@ -616,3 +616,43 @@ test('resumeQueueAfterAnswer keys question dedupe on worker_job across reviewer 
     ],
   );
 });
+
+test('Execution projects a lead-answered review question as working at the answer time and restores asking on a newer open question', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root });
+  const [first] = await f.jobs(flow, 1);
+  await f.settle(first);
+  await until(() => !!f.flow(flow).review_job, 15_000);
+  const reviewJob = f.flow(flow).review_job;
+  const reviewDir = f.dir(reviewJob);
+  await until(() => fs.existsSync(join(reviewDir, 'STATUS.json')), 10_000);
+
+  const qaDir = join(reviewDir, 'qa');
+  fs.mkdirSync(qaDir, { recursive: true });
+  writeFixtureFile(join(qaDir, 'q1.md'), '# Question q1 from reviewer\n\nShould review enforce the synthetic contract?\n');
+  writeFixtureFile(join(reviewDir, 'STATUS.json'), JSON.stringify({
+    ...read(join(reviewDir, 'STATUS.json')),
+    state: 'waiting_orchestrator',
+  }));
+  await until(() => f.flow(flow).active_lead?.kind === 'question' && f.flow(flow).active_lead.step === 'review', 15_000);
+
+  const collectReview = () => readExecutionRuns(f.home, { root: f.root, pane: null }, new Map())
+    .find(r => r.flow === flow).metro.stations.find(s => s.id === 'review');
+  assert.equal(collectReview().state, 'asking');
+
+  await f.settleLead(f.flow(flow).active_lead.job, 'Decision: answer\nReason: Enforce the synthetic contract.\nAnswer: Yes, enforce the synthetic contract.\n');
+  await until(() => f.flow(flow).decisions?.some(d => d.step === 'review' && d.kind === 'question' && d.decision === 'answer'), 15_000);
+  assert.equal(fs.existsSync(join(qaDir, 'q1.answer.md')), true);
+  assert.equal(read(join(reviewDir, 'STATUS.json')).state, 'waiting_orchestrator');
+
+  const answerDecision = f.flow(flow).decisions.find(d => d.step === 'review' && d.kind === 'question' && d.decision === 'answer');
+  const answered = collectReview();
+  assert.equal(answered.state, 'working', 'answered reviewer leaves ? while STATUS is still waiting_orchestrator');
+  assert.equal(answered.changedAt, Date.parse(answerDecision.at));
+
+  writeFixtureFile(join(qaDir, 'q2.md'), '# Question q2 from reviewer\n\nWhat about the second synthetic invariant?\n');
+  assert.equal(collectReview().state, 'asking', 'a newer open question overrides the earlier delivered answer');
+
+  await f.call('hud_tickets', { op: 'run', feature: 'sample', cancel: true, cwd: f.root });
+  await until(() => f.flow(flow).state !== 'working', 15_000);
+});

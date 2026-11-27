@@ -92,7 +92,7 @@ async function pendingSonicBytes(run: ComposedRun, steps: Graph['steps'], projec
   return pending;
 }
 
-function sonicAdmission(run: ComposedRun, key: string, role: string, steps: Graph['steps'], index?: number) {
+function sonicAdmission(run: ComposedRun, key: string, role: string, steps: Graph['steps'], index?: number, prevChangedAt?: string) {
   if (role !== 'sonic' || run.cost !== 'cheap') return;
   let charged = 0;
   return {
@@ -119,7 +119,12 @@ function sonicAdmission(run: ComposedRun, key: string, role: string, steps: Grap
         // A guard refusal leaves no admitted cursor, only a local dispatch receipt.
         const cursor = latest.steps[key];
         if (index === undefined) delete cursor.admitted;
-        else cursor.items![index].state = 'waiting';
+        else {
+          const item = cursor.items![index];
+          item.state = 'waiting';
+          if (prevChangedAt === undefined) delete item.changed_at;
+          else item.changed_at = prevChangedAt;
+        }
         saveHeader(hudHome, latest);
         return why;
       });
@@ -213,7 +218,7 @@ function tickJob(run: ComposedRun, key: string, cursor: ComposedCursor, role: st
 
 function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'batch' }>, cursor: ComposedCursor, graph: Pick<Graph, 'steps' | 'policy'>): Tick {
   let changed = !cursor.items;
-  const items = cursor.items ??= step.items!.map(() => ({ state: 'waiting', attempt: 0 }));
+  const items: Item[] = cursor.items ??= step.items!.map((): Item => ({ state: 'waiting', attempt: 0 }));
   const request = (i: number) => `workflow:${run.flow}:${key}:${i}:${items[i].attempt}`;
   const evidence = () => items.map((item, i) => ({ ...item, item: i + 1 }));
   const pause = (why: string) => pauseComposed(run, key, why);
@@ -237,7 +242,7 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
   const settled = items.flatMap((item, i) => {
     if (item.state !== 'running') return [];
     const job = item.job ? findJob(item.job) : receipt(run, request(i));
-    if (job && item.job !== job.job) { item.job = job.job; changed = true; }
+    if (job && item.job !== job.job) { item.job = job.job; item.changed_at = new Date().toISOString(); changed = true; }
     const result = job ? batchJobOutcome(job, i === 0) : { at: 0, failure: item.reason || 'dispatch interrupted without a job receipt' };
     return result ? [{ item, i, ...result }] : [];
   }).sort((a, b) => a.at - b.at || a.i - b.i);
@@ -245,11 +250,13 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
     if (stall) {
       if (graph.policy.breaker === 'none' || run.state !== 'working' || item.stall === stall) continue;
       item.stall = stall;
+      item.changed_at = new Date().toISOString();
       pause(`pilot ${i + 1} (${item.job}) stalled: ${reason(stall)}`);
     } else {
       delete item.stall;
       const defer = run.state !== 'working';
       applySettlement(item, i, failure);
+      item.changed_at = new Date().toISOString();
       if (defer && run.state === 'paused' && !(run.handback?.step === key && /^(?:pilot failed|failure circuit breaker) — /.test(run.reason ?? ''))) {
         (cursor.pending_settlements ??= []).push(i);
       }
@@ -275,8 +282,10 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
   // While a pilot is pending, no other item may be admitted.
   if (items[0].state === 'running' || next < 0 || running >= step.max_parallel! || !batchHasRoom(step.role)) return { ...wait(1_000), changed };
   const brief = workflowBrief(run, step.items![next].task!, step.from, step.ask === true);
-  const admission = sonicAdmission(run, key, step.role, graph.steps, next);
+  const prevChangedAt = items[next].changed_at;
+  const admission = sonicAdmission(run, key, step.role, graph.steps, next, prevChangedAt);
   items[next].state = 'running';
+  items[next].changed_at = new Date().toISOString();
   return effect(run, async () => {
     let result: Awaited<ReturnType<typeof create>>;
     try {
@@ -285,8 +294,13 @@ function tickBatch(run: ComposedRun, key: string, step: Extract<Step, { kind: 'b
     } catch (error) { result = { job: undefined, code: undefined, error: reason(error), noLaunch: false }; }
     if (result.code !== 'workflow_input_changed') await update(run, key, (c, latest) => {
       const item = c.items![next];
-      if (result.code === 'batch_wait' || result.code === 'queue_stopped') item.state = 'waiting';
-      else { item.job = result.job; item.reason = result.error; }
+      if (result.code === 'batch_wait' || result.code === 'queue_stopped') {
+        item.state = 'waiting';
+        if (prevChangedAt === undefined) delete item.changed_at;
+        else item.changed_at = prevChangedAt;
+      } else {
+        item.job = result.job; item.reason = result.error; item.changed_at = new Date().toISOString();
+      }
       if (result.noLaunch) admission?.refund(latest);
     });
     return result.code === 'batch_wait' ? 1_000 : 0;
