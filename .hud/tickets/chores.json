@@ -383,6 +383,90 @@
       "comments": [],
       "created_at": "2026-11-27T15:03:07.459Z",
       "updated_at": "2026-11-27T15:15:22.553Z"
+    },
+    {
+      "number": 64,
+      "title": "Ticket archive: one archive-aware write path, archive-family replacement lookup, committed hand-edit reconciliation",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/60"
+      ],
+      "what": "Structural repair of the chores/60 ticket archive (follow-up to chores/61). Milestone review j93033c2fe4271edc found three more majors of the same kinds round 1 repaired, so fix the shape, not each case:\n\n1. One write path. Every production ticket writer goes through the archive-aware path under the existing locks: `collectGateFlakes` (`src/mcp/land-flakes.ts` ~466, ~491) and `recordUnattendedAcceptance` (`src/mcp/local-tickets.ts` ~609) currently call `writeTicketFeature` directly, which applies the 64 KiB cap before `prepareTicketWrites` ever runs. Make the cap-checking raw writer unreachable from production callers (private to the store or folded into the archive-aware entry point) so a future writer cannot bypass archiving. Plan the acceptance documents together so one archive's ref rewrites are not overwritten by another preloaded document. A file holding only the protected highest ticket still fails as today.\n2. Replacement lookup. `ticketReplacements` (`src/mcp/local-tickets.ts` ~406–419) and `TicketRollup.derive` (`src/collectors/ticket-rollup.ts`, dropped-target branch) resolve `Replaced by <feature>/NN` against the loaded archive family (the same resolution `get` uses), at lookup time. Never rewrite the owner's comment text.\n3. Committed hand edit. When a pending HUD write group's member (e.g. `.hud/objectives.md`) no longer matches its digest but is clean and committed in Git, reconcile: retire that member from the group without overwriting or recommitting the owner's bytes, and sweep the remaining matching HUD members as before (`src/tickets/commit.ts` ~77–113, `src/mcp/land-records.ts` ~167–172). Uncommitted mismatches keep the current fence and message.\n4. Delete the fallback archive scan in `waitSettled` (`src/collectors/project-board.ts` ~120–142); production passes `ticketsScan.resolve`. Keep literal matching without a resolver; test archive matching through the collector.\n\nOut of scope: archive layout, shard naming, the all-eligible policy chores/61 set, the `.noticed` foreign-claim issue in `src/workflows/events.ts`.\nSize: about 150–250 source lines net, 3–4 main-path tests extended in the existing ticket-commit/archive suites.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A ready ticket whose dependency is a wontfix ticket `Replaced by` a done ticket stays ready after a cap-crossing add archives the replacement (`hud_tickets ready` lists it before and after).",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A gate-flake add and an unattended finish on a feature just below 64 KiB with an archivable old done ticket both succeed and archive instead of failing; a feature with only the protected highest ticket still fails with the current error.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "No production module imports the cap-checking raw ticket writer except the archive-aware entry point (module privacy or a unit assertion).",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "After an archive adds an Objective Features link, editing and committing `.hud/objectives.md` as the land error instructs lets the next land for that feature succeed, with the owner's committed bytes unchanged.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "`waitSettled` has no own archive scan; the archive-match case is covered through the collector.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T15:30:50.828Z",
+      "updated_at": "2026-11-27T15:30:50.828Z"
+    },
+    {
+      "number": 65,
+      "title": "Remove Mistral code from HUD",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [
+        "mistral request-size/image guard in the pi worker (mistral-budget.ts)",
+        "mistral_api_key and mistral_base_url from jev config",
+        "hud import and the project page key list",
+        "mistral/deepseek-v4-1-flash-1017 catalog model and any mistral default (owner",
+        "2026-11-27)"
+      ],
+      "blocked_by": [],
+      "what": "The owner used up the Mistral quota and approved removing HUD's Mistral code (2026-11-27). Sonic already runs on ds/qwen through pi presets.\n\nRemove:\n- `src/harness/pi/worker/mistral-budget.ts` and its import/call in `src/harness/pi/worker/index.ts` (the request-size/image guard for provider `mistral`);\n- `MISTRAL_API_KEY` / `MISTRAL_BASE_URL` in `src/jev/ask/config.ts`, `src/cli/import.ts` (import allowlist) and `src/collectors/project-board.ts` (the fixed key list on the Project page; the key is gone from the store);\n- `mistral/deepseek-v4-1-flash-1017` from the catalog's preset/model list (`src/models/models-catalog.json` ~line 17) and any default that still names a `mistral/` model (check `src/roles/`);\n- the matching tests/fixtures (`tests/unit/project-page.test.mjs`, `tests/unit/pi-footer.test.ts` — switch the synthetic provider to `ds`) and docs mentions in `docs/reference.md` / `docs/reference.zh.md`.\n\nKeep: the catalog `vendor: mistral` pricing rows, the `mistral` provider glyph, and the `mistral` word in `src/render/providers.ts` VENDOR_WORDS — they price and label historical sessions; `tests/unit/model-catalog.test.mjs` provider-mark cases stay.\nOut of scope: docs/archive, decisions-log history.\nSize: mostly deletions, under ~60 added lines; no new tests beyond adjusting existing ones.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "`grep -rn -i mistral src` shows only the kept catalog pricing/glyph rows and VENDOR_WORDS.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "pi workers start and run with no mistral-budget hook loaded (existing pi worker tests pass).",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "The Project page key list no longer shows MISTRAL_API_KEY.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "`hud import` no longer imports MISTRAL_* keys.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T15:30:50.828Z",
+      "updated_at": "2026-11-27T15:30:50.828Z"
     }
   ]
 }

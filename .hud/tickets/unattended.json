@@ -240,6 +240,45 @@
       "comments": [],
       "created_at": "2026-11-27T14:40:03.969Z",
       "updated_at": "2026-11-27T15:21:20.542Z"
+    },
+    {
+      "number": 27,
+      "title": "Drop Git from permission auto-approval; keep indented Blockers children",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/25",
+        "unattended/26"
+      ],
+      "what": "From milestone review jaf9f426dbdf5c418 (blocker 1 and major 6).\n\n1. Git. `src/mcp/permission-policy.ts` (~972–1008) classifies ordinary `git diff` (and similar Git reads) as `read_only`. Git can run repository-configured helpers (external diff, textconv, fsmonitor, pager and similar) on ordinary read commands, so a system-Git argv check does not prove a read. Remove every Git form from the worker auto-approval set: any `git ...` permission prompt goes to main. Delete the Git-read classifier code rather than adding another Git interpreter. HUD's own internal index check (~288–298) is HUD-run, not a worker prompt, and stays.\n2. Blockers parsing. `src/mcp/report-notes.ts` (~164–175) now breaks on every bullet, so `- Blockers: owner live try remains` followed by an indented `  - Owner must choose which layout ships` loses the child. Keep indented child bullets in their enclosing field (a nested item under Blockers is a blocker). The same-indent prose cases added by unattended/26 stay.\n\nThis narrows auto-approval further, in line with D-2026-11-27-02 (narrow, then ship). Update the auto-approval list in `docs/reference.md` (and `.zh`) to say Git commands go to main.\nOut of scope: notice delivery, receipts and task epochs (reviewer majors 2–5; separate design pass), judgeSettlement cleanup.\nSize: net negative source lines in permission-policy; one or two parser tests; adjust existing worker-permissions tests that expected Git auto-approval.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A worker permission prompt for `git diff`, `git log -p` or `git status` is handed to main, never auto-approved.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No Git-specific read classifier remains in `src/mcp/permission-policy.ts`.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "A report with `- Blockers: ...` followed by an indented child bullet records the child as a blocker and the ticket does not land without the owner.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "`docs/reference.md` lists Git as going to main.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T15:31:42.445Z",
+      "updated_at": "2026-11-27T15:31:42.445Z"
     }
   ]
 }
