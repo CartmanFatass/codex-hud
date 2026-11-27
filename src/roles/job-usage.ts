@@ -108,7 +108,10 @@ function piTierSuffix(rawTier: unknown, model: string): string {
   return '';
 }
 function piModel(m: Record<string, unknown>, u: Record<string, unknown>, activeTier?: string): string | undefined {
-  const model = modelId(m.responseModel) ?? modelId(m.model);
+  const responseModel = modelId(m.responseModel);
+  // Pi can persist the requested alias and zero usage after a failed request.
+  if ((m.stopReason === 'error' || m.stopReason === 'aborted') && !responseModel && !(count(u.input) || count(u.output))) return;
+  const model = responseModel ?? modelId(m.model);
   if (!model) return;
   const provider = text(m.provider)?.trim();
   const qualified = provider && !model.startsWith(`${provider}/`) ? `${provider}/${model}` : model;
@@ -197,7 +200,9 @@ function resultUsage(row: Record<string, unknown>, agent: string, models?: Serve
   }
 }
 
-function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobStatus>, models: ServedModels) {
+// Undefined means no native transcript; an incomplete read can still have cumulative totals.
+type TranscriptUsage = { intact: boolean; totals?: Totals };
+function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobStatus>, models: ServedModels): TranscriptUsage | undefined {
   const id = status.agent_session_id ?? status.session_id;
   if (!id || !/^[\w-]{1,128}$/.test(id)) return;
   const userHome = homedir();
@@ -207,11 +212,14 @@ function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobSt
     path = join(process.env.CLAUDE_CONFIG_DIR || join(userHome, '.claude'), 'projects', job.cwd.replace(/[^a-zA-Z0-9-]/g, '-'), `${id}.jsonl`);
   if (agent === 'codex') path = findRolloutBySessionId(id)?.path;
   if (!path) return;
-  const window = rows(path);
-  if (!window) return;
+  let window;
+  try { window = rows(path); }
+  catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT' ? undefined : { intact: false }; }
+  if (!window) return { intact: false };
+  const intact = !window.cut && !window.malformed;
   if (agent === 'codex') {
     // A cumulative count can survive a partial read; model history cannot.
-    if (!window.cut && !window.malformed) {
+    if (intact) {
       const metaModels = new ServedModels();
       for (const row of window.data) {
         const p = record(row.payload);
@@ -224,10 +232,10 @@ function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobSt
     for (const row of [...window.data].reverse()) {
       const p = record(row.payload);
       const total = row.type === 'event_msg' && p.type === 'token_count' ? record(p.info).total_token_usage : undefined;
-      if (total && !newerRequest) return codexUsage(total);
+      if (total && !newerRequest) return { intact, totals: codexUsage(total) };
       if (row.type === 'token_usage_record') newerRequest = true;
     }
-    if (window.cut || window.malformed) return;
+    if (!intact) return { intact };
     // Modern per-response records and legacy per-request mirrors can coexist.
     // Prefer modern per turn (as the trace reader does), never sum both.
     const turns = new Map<string, { modern: (Totals | undefined)[]; legacy: (Totals | undefined)[] }>();
@@ -252,14 +260,14 @@ function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobSt
       turns.set(key, entry);
     }
     const usages = [...turns.values()].flatMap(t => t.modern.length ? t.modern : t.legacy);
-    return usages.length ? usages.reduce(sum) : undefined;
+    return { intact, totals: usages.length ? usages.reduce(sum) : undefined };
   }
   // These transcripts have per-request, not cumulative, usage.
-  if (window.cut || window.malformed) return;
+  if (!intact) return { intact };
   if (agent === 'agy') {
     const planner = window.data.filter(row => row.type === 'PLANNER_RESPONSE');
     for (const row of planner) models.add(row.model);
-    return planner.length ? planner.map(agyUsage).reduce(sum) : undefined;
+    return { intact, totals: planner.length ? planner.map(agyUsage).reduce(sum) : undefined };
   }
   const turns = new Map<string, Totals | undefined>();
   let unkeyed = false;
@@ -272,7 +280,7 @@ function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobSt
     const usage = claudeUsage(m.usage);
     if (usage || !turns.has(key)) turns.set(key, usage);
   }
-  return !unkeyed && turns.size ? [...turns.values()].reduce(sum) : undefined;
+  return { intact, totals: !unkeyed && turns.size ? [...turns.values()].reduce(sum) : undefined };
 }
 
 type Receipt = { key: string; usage?: JobUsage; stream?: { end: number; usage?: JobUsage; modelsComplete?: boolean } };
@@ -293,8 +301,14 @@ export function recordJobUsage(dir: string, job: Partial<Job>, status: Partial<J
   const prior = load(dir);
   if (prior?.key === key) return;
   let usage: JobUsage | undefined, stream: Receipt['stream'], totals: Totals | undefined;
-  const streamModels = new ServedModels();
+  let native: TranscriptUsage | undefined, terminalModels: ServedModels | undefined;
+  const models = new ServedModels(), nativeModels = new ServedModels();
   const agent = job.cli?.agent ?? (status.agent === 'pi' ? undefined : status.agent);
+  if (agent) {
+    // Consult both views for model evidence, even if the stream has all token totals.
+    try { native = transcriptUsage(agent, job, status, nativeModels); }
+    catch { /* Native transcript lookup is best effort. */ }
+  }
   if (agent && (job.headless || status.slot === 'headless')) {
     try {
       const start = count(status.stdout_start), window = rows(join(dir, files.sonicStdout), start ?? 0);
@@ -310,33 +324,33 @@ export function recordJobUsage(dir: string, job: Partial<Job>, status: Partial<J
         const complete = start !== undefined ? results.length === 1 : intact && results.length > 0 && starts <= results.length;
         const current = complete ? results.map(r => r.usage).reduce(sum) : undefined;
         totals = start ? sum(numericUsage(record(prefix?.usage)), current) : current;
-        // Never reconstruct a complete model history from later turns alone.
-        const modelsComplete = complete && resultModels !== undefined && (!start || prefix?.modelsComplete === true);
+        // A terminal result cannot fill gaps in earlier turns or in an incomplete AGY planner log.
+        const modelsComplete = complete && resultModels !== undefined && (!start || prefix?.modelsComplete === true) &&
+          (agent !== 'agy' || native?.intact !== false);
+        const streamModels = new ServedModels();
         if (modelsComplete) {
-          streamModels.addUsage(record(prefix?.usage));
-          streamModels.merge(resultModels);
+          models.addUsage(record(prefix?.usage));
+          terminalModels = resultModels;
           if (agent === 'claude') {
             // Assistant observations give the order missing from modelUsage keys.
-            for (const row of window.data) if (row.type === 'assistant') streamModels.add(record(row.message).model);
+            for (const row of window.data) if (row.type === 'assistant') terminalModels.add(record(row.message).model);
           }
+          streamModels.merge(models);
+          streamModels.merge(terminalModels);
         }
         stream = { end: window.end, usage: streamModels.withTotals(totals), modelsComplete };
       }
     } catch { /* No readable result stream. */ }
   }
   if (agent) {
-    const models = new ServedModels();
-    try {
-      // Consult both views for model evidence, even if the stream has all token totals.
-      // Select a numeric source instead of adding two views of the same traffic.
-      const native = transcriptUsage(agent, job, status, models);
-      if (native && (totals?.input === undefined || totals.output === undefined)) {
-        // A headless receipt can still report cost even when native supplies the tokens.
-        totals = totals?.cost_usd === undefined ? native : { ...native, cost_usd: totals.cost_usd };
-      }
-    } catch { /* Native files can be absent, rotated or too large to total. */ }
-    // Stream results are terminal observations, after the native request history.
-    models.merge(streamModels);
+    // Select a numeric source instead of adding two views of the same traffic.
+    if (native?.totals && (totals?.input === undefined || totals.output === undefined)) {
+      // A headless receipt can still report cost even when native supplies the tokens.
+      totals = totals?.cost_usd === undefined ? native.totals : { ...native.totals, cost_usd: totals.cost_usd };
+    }
+    // Prior stream observations precede native history; only the current turn can follow it.
+    models.merge(nativeModels);
+    if (terminalModels) models.merge(terminalModels);
     usage = models.withTotals(totals);
   } else {
     try {

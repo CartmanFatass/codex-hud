@@ -38,6 +38,32 @@ test('pi totals use native entries and copied-session timestamps; unpriced entri
   assert.equal(readJobUsage(home, later), undefined, 'a tail of a per-request transcript is not a job total');
 });
 
+test('Pi failed turns only add a served model when there is response evidence', t => {
+  const { home, put } = fixture(t);
+  const zero = { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+  const assistant = message => ({ type: 'message', message: { role: 'assistant', provider: 'openai', ...message } });
+  const cases = [
+    [{ stopReason: 'error', usage: zero }, undefined],
+    [{ stopReason: 'aborted', responseModel: '<synthetic>', usage: { ...zero, cacheRead: 1 } }, undefined],
+    [{ stopReason: 'error', responseModel: 'gpt-snapshot', usage: zero }, 'openai/gpt-snapshot'],
+    [{ stopReason: 'aborted', usage: { ...zero, output: 1 } }, 'openai/gpt-alias'],
+  ];
+  for (const [i, [failed, observed]] of cases.entries()) {
+    const session_file = put('session.jsonl', [
+      { type: 'session' },
+      assistant({ model: 'gpt-served', usage: { ...zero, input: 5, output: 2 } }),
+      assistant({ model: 'gpt-alias', ...failed }),
+    ]);
+    const current = { ...status, session_file, settled_at: `2026-11-23T10:10:0${i}Z` };
+    recordJobUsage(home, {}, current);
+    assert.deepEqual(readJobUsage(home, current), {
+      input: 5, cache_read: failed.usage.cacheRead, cache_write: 0, output: 2 + failed.usage.output,
+      served_model: observed ?? 'openai/gpt-served',
+      ...(observed ? { served_models: ['openai/gpt-served', observed] } : {}),
+    });
+  }
+});
+
 test('CLI results can be read after oversized output and summed across contiguous headless turns', t => {
   const { home, put } = fixture(t), job = { headless: true, cli: { agent: 'claude' } };
   const result = (input_tokens, total_cost_usd) => ({ type: 'result', usage: { input_tokens, output_tokens: 2 }, total_cost_usd });
@@ -84,6 +110,48 @@ test('AGY keeps stream totals and adds missing model history from the native tra
   assert.deepEqual(readJobUsage(home, merged), {
     input: 10, cache_read: 2, output: 5, served_model: 'agy-b', served_models: ['agy-a', 'agy-b'],
   });
+});
+
+test('AGY continuations order prior results before native model history', t => {
+  const { home, put } = fixture(t), agy = { headless: true, cli: { agent: 'agy' } };
+  const oldHome = process.env.HOME;
+  process.env.HOME = home;
+  t.after(() => { if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome; });
+  const result = (input_tokens, output_tokens, model) => ({ event: 'result', result: { model, usage: { input_tokens, output_tokens } } });
+  const planner = model => ({ type: 'PLANNER_RESPONSE', model, input_tokens: 2, output_tokens: 1 });
+  const first = { ...status, stdout_start: 0, agent_session_id: 'synthetic-session' };
+  const native = put('.gemini/antigravity-cli/brain/synthetic-session/.system_generated/logs/transcript_full.jsonl', [planner('agy-a')]);
+  const stdout = put('stdout.jsonl', [{ event: 'init' }, result(10, 5, 'agy-a')]);
+  recordJobUsage(home, agy, first);
+  assert.deepEqual(readJobUsage(home, first), { input: 10, output: 5, served_model: 'agy-a' });
+
+  const next = { ...first, settled_at: '2026-11-23T12:00:00Z', stdout_start: fs.statSync(stdout).size };
+  fs.appendFileSync(native, JSON.stringify(planner('agy-b')) + '\n');
+  fs.appendFileSync(stdout, JSON.stringify(result(4, 2)) + '\n');
+  recordJobUsage(home, agy, next);
+  assert.deepEqual(readJobUsage(home, next), {
+    input: 14, output: 7, served_model: 'agy-b', served_models: ['agy-a', 'agy-b'],
+  });
+});
+
+test('AGY keeps stream totals but omits served models when the native transcript is cut or malformed', t => {
+  const { home, put } = fixture(t), agy = { headless: true, cli: { agent: 'agy' } };
+  const oldHome = process.env.HOME;
+  process.env.HOME = home;
+  t.after(() => { if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome; });
+  put('stdout.jsonl', [{ event: 'init' }, { event: 'result', result: {
+    model: 'agy-b', usage: { input_tokens: 10, cache_read_tokens: 2, output_tokens: 5 },
+  } }]);
+  for (const [i, gap] of [{ type: 'USER_REQUEST', text: 'x'.repeat(1024 * 1024) }, '{broken'].entries()) {
+    put('.gemini/antigravity-cli/brain/synthetic-session/.system_generated/logs/transcript_full.jsonl', [
+      { type: 'PLANNER_RESPONSE', model: 'agy-a', input_tokens: 7, cache_read_tokens: 2, output_tokens: 3 },
+      gap,
+      { type: 'PLANNER_RESPONSE', model: 'agy-b', input_tokens: 2, cache_read_tokens: 0, output_tokens: 1 },
+    ]);
+    const current = { ...status, stdout_start: 0, settled_at: `2026-11-23T12:00:0${i}Z`, agent_session_id: 'synthetic-session' };
+    recordJobUsage(home, agy, current);
+    assert.deepEqual(readJobUsage(home, current), { input: 10, cache_read: 2, output: 5 });
+  }
 });
 
 test('Codex retains cumulative totals but not model evidence from a cut or malformed rollout', t => {
