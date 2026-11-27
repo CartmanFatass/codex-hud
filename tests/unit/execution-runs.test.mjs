@@ -896,13 +896,13 @@ test('helpers of council, batch and unrecorded reviewer steps fold into their Ru
   // 1. Ended queue with review_job not yet appended to reviews[].
   const qFlow = 'q0000000000000053';
   const unrecordedRev = f.writeJob(1, '# Review before record\n', 15, { role: 'reviewer', ticket_queue: qFlow });
-  const unrecordedRevHelper = f.writeJob(2, 'Read-only: inspect unrecorded review\n', 16, { parent_job: unrecordedRev });
+  f.writeJob(2, 'Read-only: inspect unrecorded review\n', 16, { parent_job: unrecordedRev });
   f.queue(qFlow, { tickets: [], review_job: unrecordedRev });
 
   // 2. Ended council whose member started two settled sonic helpers.
   const seat = f.writeJob(3, '# Council seat\n', 20, { role: 'oracle' });
-  const seatHelper1 = f.writeJob(4, 'Read-only: council fact one\n', 22, { parent_job: seat });
-  const seatHelper2 = f.writeJob(5, 'Read-only: council fact two\n', 21, { parent_job: seat });
+  f.writeJob(4, 'Read-only: council fact one\n', 22, { parent_job: seat });
+  f.writeJob(5, 'Read-only: council fact two\n', 21, { parent_job: seat });
   const council = f.writeJob(6, '# Architecture council\n', 18, {
     role: 'council', synthesizer: 'main', council_members: [{ preset: 'fable', job: seat }],
   });
@@ -915,7 +915,7 @@ test('helpers of council, batch and unrecorded reviewer steps fold into their Ru
   // 3. Ended batch whose item started a settled sonic helper.
   const batch = 'b0000000000000053';
   const batchItem = f.writeJob(7, '# Batch item one\n', 25, { role: 'imp', batch_flow: batch });
-  const batchHelper = f.writeJob(8, 'Read-only: inspect batch target\n', 26, { parent_job: batchItem });
+  f.writeJob(8, 'Read-only: inspect batch target\n', 26, { parent_job: batchItem });
   const batchFile = join(f.hud, 'flows', `${batch}.json`);
   putJson(batchFile, {
     flow: batch, cwd: f.project, project_root: f.project, pane: PANE,
@@ -951,7 +951,76 @@ test('helpers of council, batch and unrecorded reviewer steps fold into their Ru
     const back = press(insp, 'escape');
     assert.deepEqual([back.subpage.kind, back.subpage.cursor], ['run-detail', expectedItem]);
   }
-  assert.ok([unrecordedRevHelper, seatHelper1, seatHelper2, batchHelper].length === 4);
+});
+
+test('graph helpers fold onto the owning node instead of a waiting land step reusing its job ID', async (t) => {
+  const f = foldFixture(t);
+  const flow = 'w0000000000000056';
+  const build = f.writeJob(1, '# Build feature\n', 20, { role: 'imp', workflow: flow });
+  const buildHelper = f.writeJob(2, 'Read-only: inspect build callers\n', 21, { parent_job: build });
+  const review = f.writeJob(3, '# Review feature\n', 10, { role: 'reviewer', workflow: flow });
+  putJson(join(f.hud, 'flows', `${flow}.json`), {
+    flow, template: 'composed', cwd: f.project, project_root: f.project, pane: PANE,
+    state: 'paused', created_at: ago(30), updated_at: ago(5),
+    steps: {
+      build: { state: 'done', job: build, changed_at: ago(20) },
+      verify: { state: 'done', changed_at: ago(15) },
+      review: { state: 'done', job: review, changed_at: ago(10) },
+      accept: { state: 'asking', changed_at: ago(5) },
+      publish: { state: 'waiting' },
+    },
+  });
+  putJson(join(f.hud, 'flows', flow, 'graph.json'), {
+    version: 1, name: 'build-publish',
+    steps: {
+      build: { kind: 'job', role: 'imp', isolation: 'worktree', needs: [], from: [], optional: false, task: 'Build feature' },
+      verify: { kind: 'check', job: 'build', run: ['npm', 'test'], repair: 0, needs: ['build'], from: [], optional: false },
+      review: { kind: 'job', role: 'reviewer', needs: ['verify'], from: ['build'], optional: false, task: 'Review feature' },
+      accept: { kind: 'handback', ask: 'Publish?', options: ['publish', 'hold'], to: 'main', needs: ['review'], from: ['review'], optional: false },
+      publish: { kind: 'land', job: 'build', needs: ['accept'], from: [], optional: false },
+    },
+  });
+
+  const { execution, view } = await f.collect();
+  assert.deepEqual(view.endedJobs, [], 'build helper folds into the graph run');
+  const flatNodes = view.runs[0].nodes.flat();
+  const buildNode = flatNodes.find((n) => n.key === 'build');
+  const publishNode = flatNodes.find((n) => n.key === 'publish');
+  assert.deepEqual(buildNode.children?.map((c) => c.jobId), [buildHelper]);
+  assert.equal(publishNode.jobId, build);
+  assert.equal(publishNode.borrowedJob, true);
+  assert.equal(publishNode.children, undefined);
+
+  const press = (state, key) => {
+    const frame = render(view, { state, width: 80, height: 40, workboard: state.subpage && execution.board() });
+    return handleMonitorInput(frame.state, { type: 'key', key }, { frame, nowMs: NOW }).state;
+  };
+  const detail = press(onExecution({ cursor: `project:exec-run:${flow}` }), 'enter');
+  for (const lang of ['en', 'zh']) for (const width of [40, 62, 100]) {
+    const frame = render(view, { state: detail, lang, width, workboard: execution.board() });
+    const targets = frame.workboard.rows.filter((row) => row.item);
+    assert.deepEqual(targets.map((row) => [row.item, row.execJob.target.workerId]),
+      [['project:run-node:build', `thin-job:${build}`]]);
+    const needle = lang === 'zh' ? '+1 个 sonic' : '+1 sonic';
+    assert.ok(targets[0].text.includes(needle), `${lang} ${width}: ${targets[0].text}`);
+    const publishRow = frame.workboard.rows.find((row) => row.text.includes('publish'));
+    assert.ok(publishRow, `${lang} ${width}: missing publish row`);
+    assert.equal(publishRow.item, undefined);
+    assert.ok(!publishRow.text.includes(needle), `${lang} ${width} publish: ${publishRow.text}`);
+    for (const line of frame.lines) {
+      assert.equal(visualLength(line), width, `${lang} ${width}: ${line}`);
+      assert.equal(line, stripAnsi(line));
+    }
+  }
+
+  const insp = press(detail, 'enter');
+  assert.deepEqual([insp.subpage.kind, insp.subpage.target.workerId], ['inspector', `thin-job:${build}`]);
+  const inspText = text(render(view, { state: insp, width: 80, height: 40, workboard: execution.board() }));
+  assert.match(inspText, /Sonic children/);
+  assert.ok(inspText.includes('inspect build callers'), inspText);
+  assert.doesNotMatch(inspText, /Read-only/);
+  const back = press(insp, 'escape');
+  assert.deepEqual([back.subpage.kind, back.subpage.cursor], ['run-detail', 'project:run-node:build']);
 });
 
 test('a helper folds only when its questions are known to be closed', async (t) => {

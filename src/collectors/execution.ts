@@ -471,12 +471,18 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
       ? claim(run.lead.jobId, run.lead.execJob) : undefined;
     const lead = run.lead && leadFolded ? { ...run.lead, children: leadFolded } : run.lead;
     const flatNodes = (run.nodes ?? []).flat();
-    const lastNodeIndexForJob = new Map<string, number>();
-    flatNodes.forEach((node, idx) => { if (node.jobId && node.execJob) lastNodeIndexForJob.set(node.jobId, idx); });
+    const targetNodeIndexForJob = new Map<string, number>();
+    flatNodes.forEach((node, idx) => {
+      if (!node.jobId || !node.execJob) return;
+      const prev = targetNodeIndexForJob.get(node.jobId);
+      if (prev === undefined || !node.borrowedJob || flatNodes[prev].borrowedJob) {
+        targetNodeIndexForJob.set(node.jobId, idx);
+      }
+    });
     let flatIdx = 0;
     const nodes = run.nodes?.map((wave) => wave.map((node) => {
       const idx = flatIdx++;
-      const folded = node.jobId && lastNodeIndexForJob.get(node.jobId) === idx
+      const folded = node.jobId && targetNodeIndexForJob.get(node.jobId) === idx
         ? claim(node.jobId, node.execJob) : undefined;
       return folded ? { ...node, children: folded } : node;
     }));

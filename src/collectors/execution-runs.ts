@@ -163,6 +163,8 @@ export interface WorkflowNode {
   readonly reason?: string;
   readonly jobId?: string;
   readonly execJob?: ExecutionRunJobTarget;
+  /** True when `jobId` is borrowed from another step (such as a graph `land` step). */
+  readonly borrowedJob?: true;
   /** Settled helpers of this step's job, counted here instead of taking Recent rows. */
   readonly children?: readonly EndedExecutionJob[];
 }
@@ -1231,7 +1233,8 @@ function readFixedExecutionRun(
       : parseTime(cursor?.changed_at) ?? undefined;
     return { key, state: cursorState(cursor), blockers: step.needs, reason: cursor?.reason,
       role: step.kind === 'job' || step.kind === 'batch' ? step.role : undefined,
-      jobId, execJob: jobTargetFor(home, worker, jobId), since: worker?.startedAt ?? undefined,
+      jobId, ...(step.kind === 'land' && jobId ? { borrowedJob: true as const } : {}),
+      execJob: jobTargetFor(home, worker, jobId), since: worker?.startedAt ?? undefined,
       changedAt };
   });
   const stepIds = new Set(stepEntries.map(([key]) => key));
