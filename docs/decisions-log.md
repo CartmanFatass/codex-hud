@@ -18,6 +18,10 @@ separately attested owner decision. Short refs `DD.NN` expand to `D-2026-11-DD-N
   commands that carry `cd` state across separators, native edits whose base directory is ambiguous and deletion under
   external scratch/temp roots go to main. Rejected: a third repair round on the wide rule; switching automatic
   approval off entirely.
+- **D-2026-11-27-03** (§2.1 run branches): Owner: the lead or main already decides each repair after acceptance, so
+  drop the fixed two-round cap there (and its inheritance by later runs). The lead escalates instead when a review
+  repeats a kind of finding an earlier round already repaired. The automatic land-gate repair, which nobody judges,
+  keeps its cap of two. Supersedes the "at most two repairs" bound for acceptance repairs.
 
 ## 2026-11-26
 

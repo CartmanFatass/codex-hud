@@ -60,7 +60,8 @@ agent proposes.
    at thinking high with the HUD MCP tools, minus `hud_land`). The lead reads the run packet (reports, checks, live try
    instructions, and the milestone `reviewer` report), tries the result live where specified, judges findings, and
    declares `finish` (in unattended runs, recording durable acceptance per landed ticket), `repair` (adding repair
-   tickets admitted by the same run, bounded to at most 2 repair rounds, then holding for the owner), or `escalate` —
+   tickets admitted by the same run; no fixed round count, escalate instead when a review repeats a kind of finding
+   an earlier round already repaired), or `escalate` —
    then the runner closes the lead session immediately through herdr. Non-blocking doubts or follow-ups go to `Todo:`
    lines stored on the run record (`hud_read({ job: <run> })` lists them; they never wake main). Worker `Assumed:`
    lines also go to the run todo (more than three, or one about scope, pauses the run without waking main); `Blockers:`
