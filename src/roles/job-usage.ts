@@ -200,6 +200,38 @@ function resultUsage(row: Record<string, unknown>, agent: string, models?: Serve
   }
 }
 
+function codexServedModels(rows: Record<string, unknown>[], models: ServedModels) {
+  const metaModels = new ServedModels();
+  const contexts = new Map<string | number, unknown>();
+  const servedTurns = new Set<string | number>();
+  let turn: string | number = -1, lastMeteredTotal: string | undefined, hasTotal = false;
+  for (const [i, row] of rows.entries()) {
+    const p = record(row.payload), turnId = text(p.turn_id);
+    const event = row.type === 'event_msg' ? p.type : undefined;
+    if (row.type === 'session_meta') metaModels.add(p.model);
+    if (event === 'task_started' || event === 'turn_started') turn = turnId ?? i;
+    if (row.type === 'turn_context') {
+      // Without an ID, use the preceding start or open a new turn at this context.
+      turn = turnId ?? (contexts.has(turn) ? i : turn);
+      contexts.set(turn, p.model ?? record(record(p.collaboration_mode).settings).model);
+    }
+    if (event === 'token_count') {
+      const info = record(p.info), total = info.total_token_usage;
+      if (total) hasTotal = true;
+      if (!info.last_token_usage) continue;
+      // A repeated cumulative count can carry the previous response's last usage.
+      const cumulative = total ? JSON.stringify(total) : undefined;
+      if (cumulative && cumulative === lastMeteredTotal) continue;
+      if (cumulative) lastMeteredTotal = cumulative;
+    } else if (row.type !== 'token_usage_record' && event !== 'agent_message' &&
+      !(row.type === 'response_item' && p.type === 'message' && p.role === 'assistant')) continue;
+    servedTurns.add(turnId ?? turn);
+  }
+  for (const [key, model] of contexts) if (servedTurns.has(key)) models.add(model);
+  // Old rollouts with only session metadata can prove usage at session scope.
+  if (!models.last && (servedTurns.size || (!contexts.size && hasTotal))) models.merge(metaModels);
+}
+
 // Undefined means no native transcript; an incomplete read can still have cumulative totals.
 type TranscriptUsage = { intact: boolean; totals?: Totals };
 function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobStatus>, models: ServedModels): TranscriptUsage | undefined {
@@ -219,15 +251,7 @@ function transcriptUsage(agent: string, job: Partial<Job>, status: Partial<JobSt
   const intact = !window.cut && !window.malformed;
   if (agent === 'codex') {
     // A cumulative count can survive a partial read; model history cannot.
-    if (intact) {
-      const metaModels = new ServedModels();
-      for (const row of window.data) {
-        const p = record(row.payload);
-        if (row.type === 'turn_context') models.add(p.model ?? record(record(p.collaboration_mode).settings).model);
-        else if (row.type === 'session_meta') metaModels.add(p.model);
-      }
-      if (!models.last) models.merge(metaModels);
-    }
+    if (intact) codexServedModels(window.data, models);
     let newerRequest = false;
     for (const row of [...window.data].reverse()) {
       const p = record(row.payload);

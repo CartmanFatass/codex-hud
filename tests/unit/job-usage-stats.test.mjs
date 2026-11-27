@@ -154,7 +154,7 @@ test('AGY keeps stream totals but omits served models when the native transcript
   }
 });
 
-test('Codex retains cumulative totals but not model evidence from a cut or malformed rollout', t => {
+function codexRolloutFixture(t) {
   const { home, put } = fixture(t);
   const date = new Date(), y = String(date.getFullYear()), m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0'), session = '01234567-0123-0123-0123-0123456789ab';
@@ -162,6 +162,45 @@ test('Codex retains cumulative totals but not model evidence from a cut or malfo
   process.env.CODEX_HOME = home;
   t.after(() => { if (old === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = old; });
   const rollout = `sessions/${y}/${m}/${d}/rollout-${y}-${m}-${d}T22-00-00-${session}.jsonl`;
+  return { home, put, rollout, session };
+}
+
+test('Codex only records a served model for a turn with response evidence', t => {
+  const { home, put, rollout, session } = codexRolloutFixture(t);
+  const meta = { type: 'session_meta', payload: { id: session, model: 'codex-default' } };
+  const context = (turn_id, model) => ({ type: 'turn_context', payload: { turn_id, model } });
+  const event = (type, payload) => ({ type: 'event_msg', payload: { type, ...payload } });
+  const usage = { input_tokens: 12, cached_input_tokens: 2, output_tokens: 3 };
+  const totals = { input: 10, cache_read: 2, output: 3 };
+  const noResponse = [
+    event('task_started', { turn_id: 'b' }), context('b', 'codex-b'),
+    { type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'Synthetic instructions' }] } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Synthetic request' }] } },
+    event('task_complete', { turn_id: 'b' }),
+  ];
+  const cases = [
+    ['request and lifecycle records alone', noResponse, undefined],
+    ['a later response-less turn does not replace the earlier model', [
+      context('a', 'codex-a'),
+      event('token_count', { info: { last_token_usage: usage, total_token_usage: usage } }),
+      ...noResponse,
+      event('token_count', { info: { last_token_usage: usage, total_token_usage: usage } }),
+      event('token_count', { info: { total_token_usage: usage } }),
+    ], { ...totals, served_model: 'codex-a' }],
+    ['metering without turn context uses session metadata', [
+      { type: 'token_usage_record', payload: { turn_id: 'a', response_id: 'r1', usage } },
+    ], { ...totals, served_model: 'codex-default' }],
+  ];
+  for (const [i, [description, rows, expected]] of cases.entries()) {
+    put(rollout, [meta, ...rows]);
+    const current = { ...status, settled_at: `2026-11-23T12:0${i}:00Z`, agent_session_id: session };
+    recordJobUsage(home, { cli: { agent: 'codex' } }, current);
+    assert.deepEqual(readJobUsage(home, current), expected, description);
+  }
+});
+
+test('Codex retains cumulative totals but not model evidence from a cut or malformed rollout', t => {
+  const { home, put, rollout, session } = codexRolloutFixture(t);
   for (const [index, gap] of [{ type: 'response_item', text: 'x'.repeat(2 * 1024 * 1024) }, '{broken'].entries()) {
     put(rollout, [
       { type: 'session_meta', payload: { id: session } },
@@ -366,6 +405,7 @@ test('Pi, Claude, Codex and AGY settlement record served_model and served_models
     { type: 'session_meta', payload: { id: cxMixed, model: 'gpt-ignored-when-turn-context' } },
     { type: 'turn_context', payload: { turn_id: 't1', model: '<synthetic>' } },
     { type: 'turn_context', payload: { turn_id: 't2', model: 'gpt-6-a' } },
+    { type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Synthetic answer' }] } },
     { type: 'turn_context', payload: { turn_id: 't3', model: 'gpt-6-b' } },
     { type: 'token_usage_record', payload: { turn_id: 't3', response_id: 'r1', usage: { input_tokens: 20, cached_input_tokens: 5, output_tokens: 7 } } },
   ]);
