@@ -145,7 +145,8 @@ test('read-close: hud_read closes settled CLI and pi workers within one tick', {
     const repair = await f.call('hud_send', send);
     assert.equal(repair.continued_as, repair.job);
     assert.notEqual(repair.job, job.job);
-    assert.equal(repair.role, role);
+    assert.equal(repair.role, role === 'imp' ? 'frontier-imp' : role);
+    assert.equal(repair.route?.source, role === 'imp' ? 'repair-route' : undefined);
     assert.equal(repair.package, 'Original package');
     const brief = fs.readFileSync(join(repair.task_dir, 'brief.md'), 'utf8');
     assert.ok(brief.startsWith(`${send.text}\n\n## Context References\n`));

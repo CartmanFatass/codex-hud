@@ -31,7 +31,7 @@ const ticketSpec = {
 };
 const ticketUpdate = {
   ...ticketSpec, status: ticketStatus, owner_try: bool, objective: ticketObjective, blocked_by: blockers, repairs,
-  tick: { type: 'array', items: ticketNumber, description: 'Mark acceptance items done by stable ID.' },
+  tick: { type: 'array', items: ticketNumber, description: 'Check acceptance IDs.' },
   acceptance: { type: 'array', items: { type: 'object', properties: { id: ticketNumber, text }, required: ['id', 'text'], additionalProperties: false } },
   comment: { ...text, description: 'Append a comment.' },
 };

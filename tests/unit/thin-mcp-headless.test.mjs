@@ -497,7 +497,7 @@ test('the panel Answer action resumes the paused session and records who answere
   assert.ok(noTab(f));
 });
 
-test('queued headless imp can overflow without borrowing the general role definition', async t => {
+test('queued headless Imp keeps its chain on overflow, then escalates an expired repair', async t => {
   const f = await fixture(t);
   const roles = join(f.env.HUD_HOME, 'roles');
   fs.mkdirSync(roles, { recursive: true });
@@ -519,9 +519,14 @@ test('queued headless imp can overflow without borrowing the general role defini
   write(join(queued.task_dir, 'STATUS.json'), JSON.stringify({ ...cliState(queued.task_dir), ended_at: new Date(0).toISOString() }));
   const replacement = await f.call('hud_send', { job: queued.job, text: 'Expired overflow follow-up.' });
   assert.equal(replacement.continuation, 'repair');
-  assert.equal(replacement.overflow_from, 'imp', JSON.stringify(replacement));
+  assert.equal(replacement.role, 'frontier-imp', JSON.stringify(replacement));
+  assert.equal(replacement.route.source, 'repair-route');
+  assert.equal(replacement.overflow_from, undefined);
   await closed(replacement, t.signal);
-  assert.equal(read(join(replacement.task_dir, 'job.json')).model, receipt.model);
+  const repair = read(join(replacement.task_dir, 'job.json'));
+  assert.equal(repair.headless, true);
+  assert.equal(repair.model, 'openai/gpt-6.2-astra');
+  assert.equal(repair.thinking, 'xhigh');
 });
 
 test('direct and queued unrouted headless creates skip incompatible places and pre-input rejections', async t => {
