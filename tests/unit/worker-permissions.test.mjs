@@ -23,10 +23,11 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 const pane = 'w1:p2', main = 'w1:p1';
 const prompt = (command, highlighted = 1) => `Historical output\n╭─────────────────╮\n Bash command\n\n   ${command}\n\n Do you want to proceed?\n ${highlighted === 1 ? '❯' : ' '} 1. Yes\n ${highlighted === 2 ? '❯' : ' '} 2. Yes, and don't ask again\n ${highlighted === 3 ? '❯' : ' '} 3. No\n\n Esc to cancel · Tab to amend\n╰─────────────────╯\n`;
 
-async function syntheticHerdr(t, f) {
+async function syntheticHerdr(t, f, holdSubscribe) {
   const endpoint = join(dirname(f.home), 'permissions.sock');
   const sockets = new Set(), subscribers = new Set(), keys = [];
   let reads = 0, state = 'working', visible = '', afterRead, sendMode = 'ok';
+  let subscribeAck, tabProbes = 0, tabPresent = true;
   const update = (status, text = visible) => {
     visible = text;
     state = status;
@@ -43,8 +44,18 @@ async function syntheticHerdr(t, f) {
       let result;
       switch (method) {
         case 'ping': result = { type: 'pong', version: '1.0-hud' }; break;
-        case 'events.subscribe': subscribers.add(socket); result = { type: 'subscribed' }; break;
-        case 'pane.get': result = { pane: { pane_id: params.pane_id, launch_id: 'launch', terminal_id: 'terminal', agent: 'claude', agent_status: state } }; break;
+        case 'events.subscribe':
+          subscribers.add(socket);
+          result = { type: 'subscribed' };
+          if (holdSubscribe) { subscribeAck = () => socket.write(JSON.stringify({ id, result }) + '\n'); return; }
+          break;
+        case 'tab.get':
+          tabProbes++;
+          if (!tabPresent) return socket.write(JSON.stringify({ id, error: { code: 'tab_not_found' } }) + '\n');
+          result = { tab: { tab_id: params.tab_id } }; break;
+        case 'pane.get':
+          if (state === 'missing') return socket.write(JSON.stringify({ id, error: { code: 'pane_not_found' } }) + '\n');
+          result = { pane: { pane_id: params.pane_id, launch_id: 'launch', terminal_id: 'terminal', agent: 'claude', agent_status: state } }; break;
         case 'pane.read':
           reads++; assert.equal(params.source, 'visible'); result = { read: { text: visible } };
           if (afterRead !== undefined) { visible = afterRead; afterRead = undefined; }
@@ -66,12 +77,13 @@ async function syntheticHerdr(t, f) {
     return new Promise(done => server.close(done));
   });
   return { endpoint, keys, reads: () => reads, update,
+    subscribeAck: () => subscribeAck, tabProbes: () => tabProbes, hideTab: () => { tabPresent = false; },
     changeAfterRead: text => { afterRead = text; }, sendMode: mode => { sendMode = mode; } };
 }
 
-async function permissionWorker(t) {
+async function permissionWorker(t, { holdSubscribe = false } = {}) {
   const f = fixture(t);
-  const herdr = await syntheticHerdr(t, f);
+  const herdr = await syntheticHerdr(t, f, holdSubscribe);
   const dir = f.job(null, { role: 'imp', created_at: new Date().toISOString(), cwd: dirname(f.home), herdr_pane: main,
     cli: { agent: 'claude', can_continue: true, idle_grace_s: 600 }, ticket_queue: 'synthetic-run' });
   const scratch = join(dir, 'scratchpad');
@@ -93,8 +105,31 @@ async function permissionWorker(t) {
     herdr.update('working', 'No native prompt');
     await wait(() => !permissionStatus(dir).active);
   };
-  return { f, herdr, dir, scratch, job, env, rows, wait, unblocked, startWatch: () => f.start(preload) };
+  return { f, herdr, dir, scratch, job, env, rows, wait, unblocked, startWatch: (extra = '') => f.start(preload + extra) };
 }
+
+test('initial subscribe ack reconciles a missing tab without revisiting an answered prompt', { timeout: 15000 }, async t => {
+  const { f, herdr, dir, scratch, startWatch } = await permissionWorker(t, { holdSubscribe: true });
+  const tabJob = f.job({ state: 'working' });
+  writeFixtureFile(join(tabJob, 'SESSION.txt'), `TAB=synthetic-tab\nHERDR_SOCKET_PATH=${herdr.endpoint}\n`);
+  herdr.update('blocked', prompt(`S=${scratch}; rm -f $S/*.png`));
+  startWatch("process.env.HUD_WATCH_CLI_CHECK_MS = '60000';");
+  await until(() => herdr.subscribeAck() && herdr.tabProbes() > 0 && permissionStatus(dir).active?.outcome === 'answered', t.signal);
+  const approved = permissionStatus(dir).active;
+  const reads = herdr.reads();
+
+  herdr.hideTab(); // No close event: the failed job below confirms the ack triggered tab reconciliation.
+  herdr.subscribeAck()();
+  await until(() => JSON.parse(fs.readFileSync(join(tabJob, 'STATUS.json'), 'utf8')).exit_reason === 'tab closed', t.signal);
+  assert.equal(herdr.reads(), reads);
+  assert.deepEqual(permissionStatus(dir).active, approved);
+  assert.deepEqual(herdr.keys, [['Enter']]);
+
+  herdr.update('missing'); // A real pane lookup miss still retires the active entry, without erasing history.
+  await until(() => !permissionStatus(dir).active, t.signal);
+  assert.deepEqual(permissionStatus(dir).latest, approved);
+  assert.deepEqual(herdr.keys, [['Enter']]);
+});
 
 test('one watcher pass approves only the proven worker cleanup; restart, handoff and gone are safe', { timeout: 15000 }, async t => {
   const { f, herdr, dir, scratch, job, env, rows, wait, unblocked, startWatch } = await permissionWorker(t);

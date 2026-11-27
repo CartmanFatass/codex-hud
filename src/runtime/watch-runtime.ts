@@ -1434,7 +1434,8 @@ export function openRuntime(emit: typeof notify) {
         schedule();
       }
     },
-    reconcileTabs() { checkAllTabs = true; permissionsSeen.clear(); schedule(); },
+    // A subscription ack carries no permission-state change. Keep the per-pane check schedule.
+    reconcileTabs() { checkAllTabs = true; schedule(); },
     pause() {
       if (stopped) return null;
       // Stop admitting scans; don't rely on a 30 s tick landing between two reaps.
