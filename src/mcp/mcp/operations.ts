@@ -1210,7 +1210,7 @@ export async function withChanges(value: unknown, markExhaustion: boolean, scan:
   const rows = sessionRows(markExhaustion, scan);
   const changes = [...jobChanges(session.cursor, rows), ...tries.changes(cwd), ...answers.changes(new Set(rows.map(row => row.job)), cwd)];
   session.cursor = new Map(rows.map(row => [row.job, row]));
-  const perms = watching(callerPane, hudHome) ? [] : (await permissionEvents(hudHome, pull)).events;
+  const perms = watching(callerPane, hudHome) ? [] : (await permissionEvents(hudHome, pull, false, { jobs: scan.all(), rows })).events;
   for (const event of [...flows.events, ...perms].filter(beginNotice)) {
     changes.push(event.line);
     settleNotice(event, 'sent', 'mcp-changes');

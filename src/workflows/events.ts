@@ -7,8 +7,8 @@ import { pruneFlakeBlockJobs, readFlakeBlockJobs } from '../mcp/flake-block-inde
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { activeLand, isFlowId, landFile, landNoticeLine, readLand, type LandFlow } from '../mcp/land-state.js';
 import { isTicketQueueId, liveQueueTask, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
-import { claimPermissionNotice, permissionNoticeable, permissionNoticeMarker, permissionStatus } from '../mcp/worker-permissions.js';
-import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { claimPermissionNotice, permissionNoticeable, permissionNoticeMarker, permissionStatus, type PermissionEntry } from '../mcp/worker-permissions.js';
+import { getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
 import { noticeResolver, type NoticeOrigin } from '../roles/select-send.js';
 import { readJsonBounded } from '../utils/atomic-fs.js';
 import { claimDelivery, isDeliveryActive, isDeliveryClaimable, readDeliveryRecord, type DeliveryNotice } from '../utils/delivery-record.js';
@@ -24,15 +24,21 @@ export function noticeReader(home: string, pane: string | null, cwd: string, env
 }
 type Pull = ReturnType<typeof noticeReader>;
 
-export async function permissionEvents(home: string, pull: Pull, all = false) {
+export async function permissionEvents(home: string, pull: Pull, all = false,
+  sampled?: { jobs: readonly Job[]; rows: readonly { job: string; permission?: PermissionEntry }[] }) {
   const cache = getJobIndexCache(home), events: DeliveryNotice[] = [];
-  let pending = false;
-  for (const { id, dir } of cache.listJobDirsByMtime().dirs) {
+  // MCP already scanned the receipt inventory and sampled its own job rows in this call.
+  const observed = new Map(sampled?.rows.map(row => [row.job, row]));
+  const jobs = sampled?.jobs ?? cache.listJobDirsByMtime().dirs.flatMap(({ id }) => {
     const loaded = cache.readJob<Job>(id);
-    if (loaded.status !== 'ok') continue;
-    const job = loaded.value;
-    if (job.job !== id || job.scout_only || job.council || job.headless || job.bro || job.jev || job.reaped_at) continue;
-    const entry = permissionStatus(dir, cache).active;
+    return loaded.status === 'ok' && loaded.value.job === id ? [loaded.value] : [];
+  });
+  let pending = false;
+  for (const job of jobs) {
+    const id = job.job;
+    if (!JOB_ID_RE.test(id) || job.scout_only || job.council || job.headless || job.bro || job.jev || job.reaped_at) continue;
+    const dir = join(home, 'jobs', id), row = observed.get(id);
+    const entry = row ? row.permission : permissionStatus(dir, cache).active;
     if (!permissionNoticeable(entry)) continue;
     const marker = permissionNoticeMarker(dir, entry.id, all);
     if (!isDeliveryActive(marker)) continue;

@@ -445,7 +445,7 @@
     {
       "number": 32,
       "title": "Notice delivery consolidation: one resolver, one send gate, explicit transport outcomes",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -460,37 +460,44 @@
         {
           "id": 1,
           "text": "A failed auto-land whose stored pane is gone (no origin_mcp) is claimed by a watch started by a live main in the same project; a project shell's `hud watch` that is not a listed main agent does not consume it.",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "If the originating MCP exits while its pane stays listed, the queue permission goes to a main that can answer it, and that main's `hud_respond` succeeds.",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "A buffered permission notice whose menu timed out is not sent on retry.",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Killing the watcher after the Antigravity mailbox accepted an item does not republish it on restart.",
-          "done": false
+          "done": true
         },
         {
           "id": 5,
           "text": "A Pi deliver that did not send (session not current, sendMessage error) leaves the notice pending.",
-          "done": false
+          "done": true
         },
         {
           "id": 6,
           "text": "The feature commit removes more source lines than it adds.",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T18:54:51.150Z",
+        "job": "j822cf410d895f9a4",
+        "flow": "f822cf410d895f9a4-2",
+        "replay_base": "eaf72fa54498d8fef7c776a04fe9b747114c20fa",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T17:43:59.631Z",
-      "updated_at": "2026-11-27T17:43:59.631Z"
+      "updated_at": "2026-11-27T18:54:51.150Z"
     },
     {
       "number": 33,

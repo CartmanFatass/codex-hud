@@ -1,0 +1,261 @@
+{
+  "version": 1,
+  "feature": "unified-left",
+  "tickets": [
+    {
+      "number": 1,
+      "title": "fork: sidebar.set_hud projection, request crown, +N prj and the minimal rail's HUD marks",
+      "status": "done",
+      "role": "imp",
+      "repo": "~/projects/herdr-hud",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "objective": "interaction",
+      "what": "Repo: ~/projects/herdr-hud (dispatch with cwd there; land via its own land block). D-2026-11-27-05, design `~/projects/MyHUD/docs/design/unified-left/README.md`, frames C1/C3/C5 in `~/projects/MyHUD/docs/design/unified-left/tui/preview.mjs`. Add one bounded API `sidebar.set_hud` (generation-tagged JSON, bounded size, leased like `pane.strip.set` so an expired lease shows `·` stale instead of frozen marks; documented in HUD-FORK.md) carrying: owner requests (count, first request's project, age, sentence), launcher counts, extra project count, and per-run graph data keyed by `hud_group`/`hud_subgroup` (consumed by unified-left/03, only stored here). Draw from it: the crown above `spaces` when requests exist (0 rows when calm: `?N project · waits age` + the sentence), the launcher row `◆ Home Proj Exec·N Ctrl` (click sends `sidebar.hud_activate {gen, target}` as an event HUD subscribes to), `+N prj` in the spaces header (activates Home). In the existing 4-column folded sidebar: `?N` as the top row when requests exist, and folded groups show their strongest state shape before the count (`▸×2`). Every existing sidebar function stays unchanged.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fork tests: set_hud renders crown, launcher and +N prj in the expanded sidebar; nothing extra when the projection is empty",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Fork tests: 4-column folded sidebar shows ?N and shape-first folded groups",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "Fork test: an expired lease degrades marks to · and drops the crown",
+          "done": true
+        },
+        {
+          "id": 4,
+          "text": "Fork test: launcher and +N prj clicks emit sidebar.hud_activate with the projection generation",
+          "done": true
+        },
+        {
+          "id": 5,
+          "text": "Fork gate passes; report names the built binary",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T18:32:57.745Z",
+        "job": "jee0199e56bc6028c",
+        "flow": "fee0199e56bc6028c",
+        "replay_base": "5875f5644ccba27c4bf1eff083049b69081a1716",
+        "gates": 4,
+        "commit": "ba8e2617a7399a0677934906a53619efd172104b"
+      },
+      "comments": [],
+      "created_at": "2026-11-27T18:04:42.556Z",
+      "updated_at": "2026-11-27T18:32:57.745Z"
+    },
+    {
+      "number": 2,
+      "title": "HUD publishes the sidebar projection on change and opens pages from sidebar clicks",
+      "status": "ready-for-agent",
+      "role": "imp",
+      "owner_try": false,
+      "live_try": "Main: with the fork from unified-left/01 installed, file and resolve a synthetic owner request and watch the crown; click each launcher item.",
+      "approved_removals": [],
+      "blocked_by": [
+        "unified-left/01"
+      ],
+      "objective": "interaction",
+      "what": "MyHUD side of unified-left/01. D-2026-11-27-05, design `docs/design/unified-left/README.md`. The running panel (or hud-watch when no panel runs) builds the projection from the same facts Home uses (owner requests with Home's order and rule, active-today projects, runs and their steps with state, role glyph and live pane id) and sends `sidebar.set_hud` only when it changes. Event-driven: watch jobs-revision.json, flows/, unattended records and every registered project's `.hud/` and STATE.md (STATE.md edits do not bump jobs-revision.json); no timer. Renew the lease while alive. Handle `sidebar.hud_activate`: open the named page (Home, Project, Execution, Control; Execution at a run/step when the target names one) in today's panel.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Unit tests: projection built from fixture state matches Home's requests and runs; unchanged state sends nothing",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: editing a fixture STATE.md waiting item updates the projection without a timer",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: hud_activate targets open the matching page and step",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Live try by main on the installed fork: an owner request appears in the crown within a second and clears when resolved",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T18:04:42.556Z",
+      "updated_at": "2026-11-27T18:04:42.556Z"
+    },
+    {
+      "number": 3,
+      "title": "fork: running workflows as miniature graphs in the agents tree and the 13-column rail",
+      "status": "ready-for-agent",
+      "role": "imp",
+      "repo": "~/projects/herdr-hud",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "unified-left/01"
+      ],
+      "objective": "interaction",
+      "what": "Repo: ~/projects/herdr-hud. D-2026-11-27-05, frames C1 and C3 in `~/projects/MyHUD/docs/design/unified-left/tui/preview.mjs`. In the expanded agents section, a `hud_subgroup` that has run data in the projection renders as `run <name>  age` followed by its miniature graph (parallel steps fanned with box rules, then review/accept), `▾/▸` folding it; state shape glued before the role glyph. A step with a live pane is a hit that focuses it (peeks a hidden tab); any other step emits `sidebar.hud_activate` for Execution at that step. Add the 13-column folded form (C3): workspace number + short name, the request row, the graph in miniature, glued pairs for workers outside runs. `sidebar_collapsed_mode` gains `rail` (13) beside `compact` (4) and `hidden` (0), rail the new default; folded width never changes with runs. Add a per-client preference command so HUD Settings can set the folded form (persisted like the other per-client preferences).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fork tests: a run renders its graph in the agents tree and in the 13-column rail; folding hides it",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Fork tests: live-pane step click focuses the pane; other step clicks emit hud_activate with the step",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Fork test: folded widths stay 13/4/0 with and without runs",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Fork test: the folded-form preference persists per client",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Fork gate passes; report names the built binary",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T18:04:42.556Z",
+      "updated_at": "2026-11-27T18:05:01.445Z"
+    },
+    {
+      "number": 4,
+      "title": "HUD Settings choose the folded sidebar form; Execution uses the sidebar's marks",
+      "status": "ready-for-agent",
+      "role": "imp",
+      "owner_try": false,
+      "live_try": "Main: toggle Settings → Folded sidebar both ways with a run active and idle.",
+      "approved_removals": [],
+      "blocked_by": [
+        "unified-left/02",
+        "unified-left/03"
+      ],
+      "objective": "interaction",
+      "what": "D-2026-11-27-05. Settings → Panel gains Folded sidebar: rail (13 columns, default) or minimal (4 columns), applied through the fork's per-client preference command from unified-left/03. The Execution page's step states use the sidebar vocabulary (`✓ ◐ × ? ○`, keeping `◇` review and `☆` accept) so the sidebar graph and the metro map read the same. Update docs/reference.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Settings test: the choice sends the preference command and survives restart",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Render tests: Execution step marks match the sidebar vocabulary",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Live try by main: switch the folded form in Settings and see the sidebar change without pane reflow when a run starts",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T18:04:42.556Z",
+      "updated_at": "2026-11-27T18:04:42.556Z"
+    },
+    {
+      "number": 5,
+      "title": "fork: the dock as a center ◆ HUD tab, hidden on navigation, pinnable at wide widths; narrow header summary",
+      "status": "ready-for-agent",
+      "role": "imp",
+      "repo": "~/projects/herdr-hud",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "unified-left/01"
+      ],
+      "objective": "interaction",
+      "what": "Repo: ~/projects/herdr-hud. D-2026-11-27-05, frames C2 and C4. A new dock placement `center`: the dock terminal fills the pane surface as a peeked tab labelled `[◆ HUD · <page>]` (page name from a HUD-settable label), using the hidden-tab peek semantics; focusing any workspace, tab or agent hides it again (the terminal keeps running); focus, copy mode and zoom work as for the docked forms. At pane-surface widths of at least 112 columns a pin key (`P`, or a `dock.pin` command) shows it as a push split beside the panes instead. Narrow terminals (mobile threshold): header row 2 shows state counts, `?N` and one-line run strips from the projection; the center tab fills the width. Edge placements (left/right/bottom, push/overlay) stay unchanged as settings.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Fork tests: center placement shows the tab over the pane surface and hides on workspace/agent/tab focus without stopping the terminal",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Fork tests: pin works at >=112 columns and is refused below",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Fork test: narrow header row 2 renders the projection summary",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Fork tests: existing edge placements unchanged",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "Fork gate passes; report names the built binary",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T18:04:42.556Z",
+      "updated_at": "2026-11-27T18:05:01.476Z"
+    },
+    {
+      "number": 6,
+      "title": "HUD pages open in the center tab by default: /hud, prefix+d and the launcher",
+      "status": "ready-for-agent",
+      "role": "imp",
+      "owner_try": true,
+      "live_try": "Owner: from any client open the HUD with /hud or the launcher, click a run step into Execution, click a workspace in the sidebar and see the tab hide; fold the sidebar to rail and minimal.",
+      "approved_removals": [],
+      "blocked_by": [
+        "unified-left/04",
+        "unified-left/05"
+      ],
+      "objective": "interaction",
+      "what": "D-2026-11-27-05. Settings → Panel → Pages: center tab (default) or docked edge (today's side/mode settings). `/hud` in every client, `prefix+d` and launcher clicks show the center tab at the page; `q` hides and returns focus, never quits; the tab label follows the open page. Dock shown/hidden state is event-driven from dock.updated and focus events: delete the 250 ms dock.status poll in src/panel/scheduler.ts and stop all timers while hidden. While Project or Execution is open, focusing a workspace selects its project. Update docs/reference.md.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Tests: each entry point opens the center tab at the right page; q hides without exiting",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: no dock.status polling; hidden panel runs no timers",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: workspace focus selects the project on Project and Execution",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Live try by main in Claude Code, Codex, pi and a shell pane, then the owner tries it",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T18:04:42.556Z",
+      "updated_at": "2026-11-27T18:04:42.556Z"
+    }
+  ]
+}

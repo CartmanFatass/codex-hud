@@ -89,6 +89,9 @@ test('losing the dispatching pane and MCP does not stop admissions; the next pro
   const unrelated = join(f.root, 'other'); fs.mkdirSync(unrelated);
   const stranger = await nextMain(unrelated)();
   assert.equal(stranger.code, 'flow_not_found'); assert.ok(!stranger.changes?.includes(line)); assert.ok(!fs.existsSync(marker));
+  fs.writeFileSync(join(f.env.HOME, 'pane-list.json'), JSON.stringify({ result: { panes: [
+    { pane_id: 'w4E:p8', agent: 'claude', cwd: f.root },
+  ] } }));
   const read = nextMain(f.root), first = await read();
   assert.equal(first.totals.done, 2); assert.deepEqual(first.changes.filter(l => l === line), [line]);
   assert.ok(fs.existsSync(marker)); assert.ok(!(await read()).changes?.includes(line));

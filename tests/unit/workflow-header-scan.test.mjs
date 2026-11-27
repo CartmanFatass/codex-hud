@@ -19,11 +19,15 @@ test('quiet passes reuse parsed headers, but not delivery claims; a replaced or 
   assert.equal(first, scan(home).header(file));
   assert.equal(firstGraph, scan(home).header(graph));
   const claim = noticeEvents(home, first)[0]; assert.deepEqual(noticeEvents(home, first), []);
-  fs.unlinkSync(claim.marker); assert.deepEqual(noticeEvents(home, first), [claim]);
+  fs.unlinkSync(claim.marker);
+  const [retry] = noticeEvents(home, first);
+  assert.deepEqual([retry.marker, retry.epoch, retry.line], [claim.marker, claim.epoch, claim.line]);
+  assert.equal(retry.current(), true);
   fs.writeFileSync(path+'.tmp', JSON.stringify({ ...row, state: 'paused' })); fs.renameSync(path+'.tmp',path);
   assert.equal(scan(home).header(file).state, 'paused');
   fs.unlinkSync(path); const pass = scan(home);
   assert.ok(!pass.files.includes(file)); assert.equal(pass.header(file), null);
+  assert.equal(retry.current(), false);
   fs.unlinkSync(join(dir, 'graph.json'));
   assert.equal(scan(home).header(graph), null);
 });

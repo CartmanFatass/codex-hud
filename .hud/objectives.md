@@ -59,7 +59,7 @@
 ## interaction: 单项目执行页、选中文字直达 job、通用状态栏和精细交互
 
 **State:** active
-**Features:** exec-page, select-send, universal-bar, fine-interact, home-tidy, nav-redesign
+**Features:** exec-page, select-send, universal-bar, fine-interact, home-tidy, nav-redesign, unified-left
 
 ## ticket-store: 工单成为 MCP 自有的数据结构：编辑即时生效不等 land，面板直接读结构化事实
 **Features:** ticket-store
