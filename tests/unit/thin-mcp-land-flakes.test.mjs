@@ -18,6 +18,7 @@ import { installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.
 import { landNotice } from '../../dist/mcp/land-state.js';
 import { ensureJobWatcher } from '../../dist/mcp/watch-pid.js';
 import { taskNoticeSource, workflowEvents } from '../../dist/workflows/events.js';
+import { markDeliveryAccepted, markDeliverySending, markDeliveryUnknown, readDeliveryRecord } from '../../dist/utils/delivery-record.js';
 import { clearExhausted, markExhausted } from '../../dist/roles/exhausted.js';
 import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { runUnattendedScanStep } from '../../dist/unattended/service.js';
@@ -1928,15 +1929,28 @@ test('a quiet task notice drain neither lists nor stats job directories, and pru
   const retry = drain();
   assert.equal(retry.length, 1);
   assert.equal(retry[0].marker, first[0].marker);
+  assert.equal(readDeliveryRecord(retry[0].marker).state, 'claimed');
 
-  // Next tick observes the retained .noticed marker and prunes noticedId, leaving only foreignId.
+  // While a claim is in flight (claimed or sending), or unknown, noticedId MUST NOT be pruned.
+  assert.deepEqual(drain(), []);
+  assert.deepEqual(readFlakeBlockJobs(home), [foreignId, noticedId]);
+  assert.equal(markDeliverySending(retry[0].marker), true);
+  assert.deepEqual(drain(), []);
+  assert.deepEqual(readFlakeBlockJobs(home), [foreignId, noticedId]);
+
+  // Once accepted, the next tick prunes noticedId immediately without any timer.
+  assert.equal(markDeliveryAccepted(retry[0].marker, 'herdr-prompt'), true);
   assert.deepEqual(drain(), []);
   assert.deepEqual(readFlakeBlockJobs(home), [foreignId]);
 
-  // Once the foreign pane notices and prunes its entry, a quiet drain touches neither jobs/ nor any job dir/file.
+  // A foreign claim stays indexed while in flight, and prunes immediately (even from a non-owner drain) once accepted.
   const foreignDrain = taskNoticeSource(home, 'w1:p9', home);
-  assert.equal(foreignDrain().length, 1);
-  assert.deepEqual(foreignDrain(), []);
+  const foreignEvents = foreignDrain();
+  assert.equal(foreignEvents.length, 1);
+  assert.deepEqual(drain(), []);
+  assert.deepEqual(readFlakeBlockJobs(home), [foreignId]);
+  assert.equal(markDeliveryAccepted(foreignEvents[0].marker, 'herdr-prompt'), true);
+  assert.deepEqual(drain(), []);
   assert.deepEqual(readFlakeBlockJobs(home), []);
 
   const accesses = [];

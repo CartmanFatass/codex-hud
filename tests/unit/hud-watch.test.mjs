@@ -867,7 +867,7 @@ test('CLI and pi question pushes use only watch while live, and fall back with m
   });
   const bin = join(home, 'bin'), log = join(home, 'pushes');
   fs.mkdirSync(bin);
-  fs.writeFileSync(join(bin, 'herdr'), `#!${process.execPath}\nimport fs from 'node:fs'; if (process.argv[2] === 'agent') fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`, { mode: 0o700 });
+  fs.writeFileSync(join(bin, 'herdr'), `#!${process.execPath}\nimport fs from 'node:fs'; if (process.argv[2] === 'pane' && process.argv[3] === 'list') console.log(JSON.stringify({ result: { panes: [{ pane_id: 'w4E:p1', agent: 'claude', cwd: ${JSON.stringify(home)} }] } })); else if (process.argv[2] === 'agent') fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');\n`, { mode: 0o700 });
   const env = { ...process.env, HOME: home, HUD_HOME: home, HERDR_PANE_ID: 'w4E:p1', PATH: `${bin}:${process.env.PATH}` };
   await promptFork({ home, env, onCleanup: fn => { closeFork = fn; } }, () => legacyPong);
   const id = 'j0000000000000001';
@@ -913,13 +913,15 @@ function queueFixture(t, agent = 'codex', thread = '00000000-0000-4000-8000-0000
   const fake = `#!${process.execPath}
 import fs from 'node:fs';
 const args = process.argv.slice(2);
-if (args[0] === 'pane' && args[1] === 'get') {
+if (args[0] === 'pane' && args[1] === 'list') {
+  console.log(JSON.stringify({ result: { panes: [{ pane_id: 'w4E:p1', agent: fs.readFileSync(${JSON.stringify(agentFile)}, 'utf8'), cwd: ${JSON.stringify(home)} }] } }));
+} else if (args[0] === 'pane' && args[1] === 'get') {
   console.log(JSON.stringify({ result: { pane: { agent: fs.readFileSync(${JSON.stringify(agentFile)}, 'utf8'), agent_status: fs.readFileSync(${JSON.stringify(statusFile)}, 'utf8'), agent_session: { value: ${JSON.stringify(thread)} } } } }));
 } else if (args[0] === 'pane' && args[1] === 'process-info') {
   console.log(JSON.stringify({ result: { process_info: { foreground_processes: [{ name: 'codex', pid: ${process.pid} }] } } }));
 } else {
   fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, home: process.env.CODEX_HOME }) + '\\n');
-  if (args[0] === 'queue' && ${fail}) { console.error('no rollout found'); process.exit(1); }
+  if (args[0] === 'queue' && ${fail}) { console.log(JSON.stringify({ error: { code: 'no_rollout' } })); process.exit(1); }
 }
 `;
   for (const name of ['herdr', 'codex']) fs.writeFileSync(join(bin, name), fake, { mode: 0o700 });
@@ -1529,6 +1531,7 @@ test('resident question sender coalesces notices while a guarded refusal is pend
   const prompts = [];
   await promptFork(f, (method, params, socket) => {
     if (method === 'ping') return guardedPong;
+    if (method === 'pane.list') return { result: { panes: [{ pane_id: pane, agent: 'pi', cwd: f.home }] } };
     if (method === 'events.subscribe') { subscription = socket; return { result: { type: 'subscription_started' } }; }
     assert.equal(method, 'agent.prompt');
     assert.equal(params.guarded, true);
@@ -1604,6 +1607,42 @@ test('agy watcher types when idle, injects while working, and flushes pending on
   ac.abort();
   assert.equal(await running, 0);
   assert.deepEqual(stderr, []);
+});
+
+test('stopping an Antigravity queue watch after mailbox accepts an item keeps it accepted and releases only unaccepted ones', async (t) => {
+  const { readDeliveryRecord } = await import('../../dist/utils/delivery-record.js');
+  const f = queueFixture(t, 'agy'), pane = f.env.HERDR_PANE_ID;
+  const ac = new AbortController();
+  t.after(() => ac.abort());
+  let abortedOnPrompt = false;
+  await promptFork(f, (method, _params, socket) => {
+    if (method === 'ping') return guardedPong;
+    if (method === 'agent.prompt') {
+      // pushAgyEvents has already persisted accepted items to .agy-pending before invoking type().
+      abortedOnPrompt = true;
+      ac.abort();
+      socket.end();
+      return null;
+    }
+    return {};
+  });
+  const flowId = 'w00000000000000a1';
+  const flowDir = join(f.home, 'flows', flowId);
+  fs.mkdirSync(flowDir, { recursive: true });
+  const big = 'x'.repeat(10_000);
+  writeFixtureFile(join(f.home, 'flows', `${flowId}.json`), JSON.stringify({
+    flow: flowId, template: 'composed', pane, project_root: f.home, state: 'paused', epoch: 0, steps: {},
+    notices: { 'pause-0': `first-item ${big}`, 'pause-1': `second-item ${big}` },
+  }));
+  const running = watchCommand(['--queue'], { env: f.env, stdout: () => {}, stderr: () => {} }, { signal: ac.signal, rescanMs: 80 });
+  assert.equal(await running, 0);
+  assert.equal(abortedOnPrompt, true);
+  const m0 = join(flowDir, 'pause-0.noticed');
+  const m1 = join(flowDir, 'pause-1.noticed');
+  const r0 = readDeliveryRecord(m0);
+  assert.equal(r0.state, 'accepted', 'accepted mailbox item must remain accepted after stop');
+  assert.equal(r0.record?.via, 'agy-mailbox');
+  assert.equal(fs.existsSync(m1), false, 'unaccepted overflow item must be released back to pending on stop');
 });
 
 test('agy hook processes and the watcher racing an idle flush deliver each event once', async (t) => {

@@ -14,6 +14,7 @@ import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { excerptTargetSupported, jobProjectRoot } from './selection-excerpts.js';
 import { herdrEndpoint, request as herdrRequest, watchHerdrPane, type HerdrReply } from '../runtime/herdr-socket.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
+import { isProcAlive } from '../utils/proc.js';
 import { herdrId, herdrResult, isRecord, runCommand, runHerdr } from './herdr-run.js';
 import { getJobIndexCache } from './job-index-cache.js';
 import { jobCallerPane } from './job-pane.js';
@@ -976,4 +977,109 @@ export async function retrySelectionAction(hudHome: string, env: NodeJS.ProcessE
   if (!draft) return { opened: false, reason: 'empty_selection' };
   const opened = await openComposerPopup(draft, env);
   return { opened: opened.ok, reason: opened.error };
+}
+
+export interface LivePaneSnapshot {
+  panes: LivePane[] | null;
+  workerPanes: ReadonlySet<string>;
+}
+
+export type RecipientResolution =
+  | { kind: 'pane'; pane: string; originLive: boolean; watching: boolean }
+  | { kind: 'none'; originLive: false }
+  | { kind: 'unknown' };
+
+export function liveWorkerPanes(home: string, panes: readonly LivePane[], env: NodeJS.ProcessEnv = process.env): Set<string> {
+  const paneById = new Map(panes.map((p) => [p.pane_id, p]));
+  const currentSocket = herdrEndpoint(env);
+  const cache = getJobIndexCache(home);
+  const workers = new Set<string>();
+  for (const { id } of cache.listJobDirsByMtime().dirs.slice(0, MAX_JOBS_SCAN)) {
+    const receipt = cache.readJob<Job>(id);
+    if (receipt.status !== 'ok' || receipt.value.job !== id) continue;
+    const fields = cache.readSession(id)?.fields;
+    if (!fields) continue;
+    const reaped = Boolean(receipt.value.reaped_at);
+    for (const wp of [fields.left, fields.right]) {
+      if (wp && herdrId(wp) && paneMatchesSession(wp, paneById.get(wp), fields, currentSocket, reaped)) workers.add(wp);
+    }
+  }
+  return workers;
+}
+
+export async function loadLivePanes(home: string, env: NodeJS.ProcessEnv = process.env): Promise<LivePaneSnapshot> {
+  const panes = await listLivePanes(env);
+  return { panes, workerPanes: panes ? liveWorkerPanes(home, panes, env) : new Set() };
+}
+
+const isMainAgentPane = (p: LivePane, workerPanes: ReadonlySet<string>) =>
+  !!p.agent && MAIN_AGENTS.has(p.agent) && p.label !== 'hud panel' && !workerPanes.has(p.pane_id);
+
+export function isOriginPaneLive(
+  home: string,
+  originPane: string | null | undefined,
+  panes: readonly LivePane[] | null,
+  workerPanes?: ReadonlySet<string>,
+  originMcp?: { pid: number; start: string } | null,
+): boolean | null {
+  if (originMcp && !isProcAlive(originMcp.pid, originMcp.start)) return false;
+  const origin = originPane && herdrId(originPane) ? originPane : null;
+  if (!origin) return false;
+  if (!panes) return null;
+  const workers = workerPanes ?? liveWorkerPanes(home, panes);
+  const found = panes.find((p) => p.pane_id === origin);
+  return !!found && isMainAgentPane(found, workers);
+}
+
+/** Call-time recipient lookup for pushers: live origin pane, else best live main in project_root. */
+export function resolveRecipient(input: {
+  home: string;
+  originPane?: string | null;
+  originMcp?: { pid: number; start: string } | null;
+  projectRoot?: string | null;
+  workspaceId?: string | null;
+  panes: readonly LivePane[] | null;
+  workerPanes?: ReadonlySet<string>;
+}): RecipientResolution {
+  if (!input.panes) return { kind: 'unknown' };
+  const workers = input.workerPanes ?? liveWorkerPanes(input.home, input.panes);
+  const originLive = isOriginPaneLive(input.home, input.originPane, input.panes, workers, input.originMcp);
+  if (originLive === true) {
+    const pane = input.originPane!;
+    return { kind: 'pane', pane, originLive: true, watching: watching(pane, input.home) };
+  }
+  if (!input.projectRoot) return { kind: 'none', originLive: false };
+  const root = sharedRoot(input.projectRoot);
+  const rootCache = new Map<string, string>();
+  const rootOf = (cwd?: string) => {
+    if (!cwd) return null;
+    if (!rootCache.has(cwd)) rootCache.set(cwd, sharedRoot(cwd));
+    return rootCache.get(cwd)!;
+  };
+  const candidates = input.panes.filter((p) => isMainAgentPane(p, workers) && rootOf(p.foreground_cwd ?? p.cwd) === root);
+  if (!candidates.length) return { kind: 'none', originLive: false };
+  const score = (p: LivePane) =>
+    (watching(p.pane_id, input.home) ? 4 : 0) + (input.workspaceId && p.workspace_id === input.workspaceId ? 2 : 0);
+  const best = [...candidates].sort((a, b) => score(b) - score(a) || a.pane_id.localeCompare(b.pane_id))[0]!;
+  return { kind: 'pane', pane: best.pane_id, originLive: false, watching: watching(best.pane_id, input.home) };
+}
+
+/** Call-time eligibility for pull readers: fast-path own pane, else project fallback only when origin is gone/empty. */
+export function isPullRecipientEligible(input: {
+  home: string;
+  callerPane: string | null;
+  cwd: string;
+  originPane?: string | null;
+  originMcp?: { pid: number; start: string } | null;
+  projectRoot?: string | null;
+  panes?: readonly LivePane[] | null;
+  workerPanes?: ReadonlySet<string>;
+}): boolean {
+  const origin = input.originPane && herdrId(input.originPane) ? input.originPane : null;
+  const originMcpAlive = !input.originMcp || isProcAlive(input.originMcp.pid, input.originMcp.start);
+  if (origin && origin === input.callerPane && originMcpAlive) return true;
+  if (!input.projectRoot) return false;
+  if (input.projectRoot !== input.cwd && input.projectRoot !== sharedRoot(input.cwd)) return false;
+  if (!origin || !originMcpAlive) return true;
+  return isOriginPaneLive(input.home, origin, input.panes ?? null, input.workerPanes, input.originMcp) === false;
 }

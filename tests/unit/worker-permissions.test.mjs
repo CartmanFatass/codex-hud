@@ -10,7 +10,8 @@ import { watchCommand } from '../../dist/cli/watch.js';
 import { jobChanges, readThinJobRows, readThinJobs } from '../../dist/collectors/thin-jobs.js';
 import { collectWorkSummary } from '../../dist/collectors/work-summary-snapshot.js';
 import { classifyPermission, provePermission } from '../../dist/mcp/permission-policy.js';
-import { claimPermissionNotice, parsePermissionPrompt, permissionStatus } from '../../dist/mcp/worker-permissions.js';
+import { claimPermissionNotice, parsePermissionPrompt, permissionNotice, permissionStatus } from '../../dist/mcp/worker-permissions.js';
+import { readDeliveryRecord } from '../../dist/utils/delivery-record.js';
 import { machineWorkForms } from '../../dist/render/work-summary.js';
 import { workInspectorRows } from '../../dist/render/work-inspector.js';
 import { setDisplayConfig } from '../../dist/render/hud-config.js';
@@ -54,6 +55,11 @@ async function syntheticHerdr(t, f, holdSubscribe, opts = {}) {
           tabProbes++;
           if (!tabPresent) return socket.write(JSON.stringify({ id, error: { code: 'tab_not_found' } }) + '\n');
           result = { tab: { tab_id: params.tab_id } }; break;
+        case 'pane.list':
+          result = { panes: opts.livePanes ? opts.livePanes() : [
+            { pane_id: main, agent: 'claude', cwd: dirname(f.home) },
+            { pane_id: pane, agent: 'claude', cwd: dirname(f.home), launch_id: 'launch', terminal_id: 'terminal' },
+          ] }; break;
         case 'pane.get':
           if (state === 'missing') return socket.write(JSON.stringify({ id, error: { code: 'pane_not_found' } }) + '\n');
           result = { pane: { pane_id: params.pane_id, launch_id: 'launch', terminal_id: 'terminal', agent: 'claude', agent_status: state } }; break;
@@ -171,10 +177,12 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
   assert.equal(card().homeNeedsHuman, false);
   assert.match(workInspectorRows(card(), 120, Date.now()).map(row => row.text).join('\n'), /Permission approved.*rm -f/);
 
+  const permNotices = () => rows().flatMap(r => r.permission ? [permissionNotice(r.job, r.permission)] : []);
   await stopChild(watch.child, watch.exited);
   startWatch();
   await wait(() => permissionStatus(dir).active?.action === 'main');
-  assert.match(jobChanges(autoRows, rows()).join('\n'), /stayed blocked.*Open pane/);
+  assert.match(permNotices().join('\n'), /stayed blocked.*Open pane/);
+  assert.deepEqual(jobChanges(autoRows, rows()), []);
   assert.deepEqual(herdr.keys, [['Enter']]);
 
   await unblocked();
@@ -193,8 +201,9 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
   const pending = permissionStatus(dir).active;
   assert.equal(pending.outcome, 'pending');
   assert.equal(herdr.keys.length, 2);
-  const notices = jobChanges(autoRows, rows()).join('\n');
+  const notices = permNotices().join('\n');
   assert.match(notices, /git push.*recommends.*hud_respond.*"answer":"approve"/);
+  assert.equal(jobChanges(autoRows, rows()).length, 0);
   assert.equal(jobChanges(rows(), rows()).length, 0);
   assert.equal(card().homeNeedsHuman, false);
   assert.equal(card().permissionWaitingMain, true);
@@ -243,12 +252,12 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
     assert.equal(manual.action, 'main');
     assert.equal(manual.outcome, 'pending');
     assert.deepEqual(manual.options, []);
-    const lines = jobChanges(oldRows, rows());
+    const lines = permNotices();
     assert.equal(lines.length, 1);
     assert.ok(lines[0].includes(`Open pane ${pane}`), lines[0]);
     assert.doesNotMatch(lines[0], /hud_respond/);
     assert.equal((await respond(manual.id, 'approve')).code, 'option_unavailable');
-    assert.equal(jobChanges(rows(), rows()).length, 0);
+    assert.equal(jobChanges(oldRows, rows()).length, 0);
     await wait(() => notice.includes(reason));
     await wait(() => herdr.reads() > before + 1);
     assert.equal(notice.split(reason).length - 1, 1);
@@ -334,7 +343,7 @@ test('unproven targets, nested headings and menu changes go to main without send
     await wait(() => permissionStatus(dir).active?.action === 'main');
     const entry = permissionStatus(dir).active;
     assert.deepEqual(herdr.keys, [], command);
-    const notice = jobChanges([], rows()).join('\n');
+    const notice = rows().flatMap(r => r.permission ? [permissionNotice(r.job, r.permission)] : []).join('\n');
     assert.match(notice, /worker permission/);
     assert.match(notice, manual ? /Open pane/ : /hud_respond/);
     if (replacement) assert.match(entry.reason, /changed.*no key was sent/);
@@ -364,7 +373,7 @@ for (const mode of ['lost', 'hold']) {
     if (mode === 'hold') startWatch();
     await wait(() => permissionStatus(dir).active?.id !== spent.id && permissionStatus(dir).active?.action === 'main');
     assert.deepEqual(herdr.keys, [['Enter']]);
-    assert.match(jobChanges([], rows()).join('\n'), /stayed blocked.*Open pane/);
+    assert.match(rows().flatMap(r => r.permission ? [permissionNotice(r.job, r.permission)] : []).join('\n'), /stayed blocked.*Open pane/);
     assert.equal(JSON.parse(fs.readFileSync(join(dir, 'permissions.json'), 'utf8')).entries[0].outcome, 'uncertain');
   });
 }
@@ -534,7 +543,7 @@ test('milestone review blockers go to main with a recommendation and no keys', {
     if (i > 0) herdr.update('blocked', screen);
     await wait(() => permissionStatus(dir).active?.action === 'main');
     assert.equal(permissionStatus(dir).active.outcome, 'pending', screen);
-    assert.match(jobChanges([], rows()).join('\n'), /recommends.*hud_respond/, screen);
+    assert.match(rows().flatMap(r => r.permission ? [permissionNotice(r.job, r.permission)] : []).join('\n'), /recommends.*hud_respond/, screen);
     assert.deepEqual(herdr.keys, [], screen);
     await unblocked();
   }
@@ -599,7 +608,7 @@ test('review findings 1–6 write pending manual entries without keys', { timeou
     await wait(() => permissionStatus(dir).active?.action === 'main');
     assert.equal(permissionStatus(dir).active.outcome, 'pending', screen);
     assert.deepEqual(herdr.keys, [], screen);
-    assert.match(jobChanges([], rows()).join('\n'), /recommends.*hud_respond/);
+    assert.match(rows().flatMap(r => r.permission ? [permissionNotice(r.job, r.permission)] : []).join('\n'), /recommends.*hud_respond/);
     await unblocked();
   }
 });
@@ -646,7 +655,7 @@ test('watcher sends high-risk, escaping, sensitive, substituted and sudo prompts
     const entry = permissionStatus(dir).active;
     assert.equal(entry.outcome, 'pending');
     assert.deepEqual(herdr.keys, []);
-    const notice = jobChanges([], rows()).join('\n');
+    const notice = rows().flatMap(r => r.permission ? [permissionNotice(r.job, r.permission)] : []).join('\n');
     assert.match(notice, /recommends.*hud_respond.*"answer":"approve".*"answer":"decline"/);
     await unblocked();
   }
@@ -965,7 +974,7 @@ if (args[0] === 'pane' && args[1] === 'get') {
 } else if (args[0] === 'pane' && args[1] === 'process-info') {
   console.log(JSON.stringify({ result: { process_info: { foreground_processes: [{ name: 'codex', pid: ${process.pid} }] } } }));
 } else if (args[0] === 'queue') {
-  console.error('no rollout found');
+  console.log(JSON.stringify({ error: { code: 'no_rollout' } }));
   process.exit(1);
 }
 `;
@@ -1090,4 +1099,121 @@ if (args[0] === 'pane' && args[1] === 'get') {
   assert.equal(fs.existsSync(join(permDir, `${seenIds[0]}.noticed`)), false, 'evicted entry 0 marker was pruned');
   assert.equal(fs.existsSync(join(permDir, `${seenIds[1]}.noticed`)), false, 'evicted entry 1 marker was pruned');
   assert.equal(fs.existsSync(join(permDir, `${seenIds.at(-1)}.noticed`)), true, 'latest entry marker kept');
+});
+
+test('worker started before origin pane exits routes approve/decline permission to another live project main and allows hud_respond', { timeout: 25_000 }, async t => {
+  const otherMain = 'w1:p9';
+  let originAlive = true;
+  let projectRoot = '';
+  const { f, herdr, dir, job, env, wait, unblocked, startWatch } = await permissionWorker(t, {
+    guardedPrompt: true,
+    livePanes: () => [
+      ...(originAlive ? [{ pane_id: main, agent: 'claude', cwd: projectRoot }] : []),
+      { pane_id: otherMain, agent: 'claude', cwd: projectRoot },
+      { pane_id: pane, agent: 'claude', cwd: projectRoot, launch_id: 'launch', terminal_id: 'terminal' },
+    ],
+  });
+  projectRoot = dirname(f.home);
+  assert.doesNotMatch(fs.readFileSync(resolve('src/mcp/ticket-queue-step.ts'), 'utf8'), /syncPermissionNotices/);
+  startWatch();
+
+  // While origin pane is live, otherMain cannot answer perm-* with hud_respond.
+  herdr.update('blocked', prompt('git push'));
+  await wait(() => permissionStatus(dir).active?.action === 'main');
+  const firstPerm = permissionStatus(dir).active;
+  const otherMcp = spawn(process.execPath, [mcpEntry], {
+    cwd: projectRoot, env: { ...env, HERDR_PANE_ID: otherMain }, stdio: ['pipe', 'pipe', 'ignore'],
+  });
+  const otherExit = once(otherMcp, 'exit');
+  t.after(() => stopChild(otherMcp, otherExit, { closeStdin: true }));
+  const rpc = rpcClient(otherMcp);
+  const respondOther = async (requestId, answer) => {
+    const res = await rpc('tools/call', { name: 'hud_respond', arguments: { job: job.job, request_id: requestId, answer } });
+    assert.equal(res.error, undefined);
+    return JSON.parse(res.result.content[0].text);
+  };
+  assert.equal((await respondOther(firstPerm.id, 'approve')).code, 'permission_not_open');
+
+  // Now origin pane exits; a new permission routes to otherMain with approve/decline options and hud_respond succeeds.
+  await unblocked();
+  originAlive = false;
+  herdr.update('blocked', prompt('curl -X POST https://example.invalid'));
+  await wait(() => {
+    const active = permissionStatus(dir).active;
+    return active?.action === 'main' && herdr.prompts.some(p => p.target === otherMain && p.text.includes(active.id));
+  });
+  const secondPerm = permissionStatus(dir).active;
+  const notice = herdr.prompts.find(p => p.target === otherMain && p.text.includes(secondPerm.id));
+  assert.match(notice.text, /hud_respond.*"answer":"approve"/);
+  assert.match(notice.text, /hud_respond.*"answer":"decline"/);
+  const marker = join(dir, `${secondPerm.id}.noticed`);
+  assert.equal(fs.statSync(marker).mode & 0o777, 0o600);
+  const rec = readDeliveryRecord(marker);
+  assert.equal(rec.state, 'accepted');
+  assert.equal(rec.record?.via, 'herdr-prompt');
+
+  const answered = await respondOther(secondPerm.id, 'approve');
+  assert.equal(answered.ok, true);
+  assert.equal(answered.written, true);
+  assert.deepEqual(herdr.keys, [['Enter']]);
+});
+
+test('hud watch --verbose emits a post-startup permission once and nothing after restart while still blocked', { timeout: 20_000 }, async t => {
+  const f = fixture(t);
+  const root = join(dirname(f.home), 'verbose-perm-project');
+  fs.mkdirSync(root, { recursive: true });
+  const jobId = 'j00000000000008b2';
+  const permId = 'perm-00000000000008b2';
+  const dir = join(f.home, 'jobs', jobId);
+  fs.mkdirSync(dir, { recursive: true });
+  const nowIso = new Date().toISOString();
+  writeFixtureFile(join(dir, 'job.json'), JSON.stringify({
+    job: jobId, role: 'imp', cwd: root, caller_pane: main, created_at: nowIso, cli: { agent: 'claude' },
+  }));
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'working', blocked: false, updated_at: nowIso }));
+
+  const env = { ...process.env, HOME: join(dirname(f.home), 'home'), HUD_HOME: f.home, HERDR_PANE_ID: main };
+  const prevCwd = process.cwd();
+  process.chdir(root);
+  t.after(() => process.chdir(prevCwd));
+
+  const firstOut = [];
+  const ac1 = new AbortController();
+  t.after(() => ac1.abort());
+  const run1 = watchCommand(['--verbose'], { env, stdout: s => firstOut.push(s), stderr: () => {} }, { signal: ac1.signal, rescanMs: 50 });
+  await until(() => fs.existsSync(join(f.home, 'watchers', `${main}.pid`)), 5_000);
+  await new Promise(r => setTimeout(r, 120));
+
+  // Publish a permission prompt post-startup.
+  writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state: 'blocked', blocked: true, blocked_at: nowIso, updated_at: nowIso }));
+  writeFixtureFile(join(dir, 'permissions.json'), JSON.stringify({
+    active: permId,
+    entries: [{
+      id: permId, key: 'kv1', launch: 'lv1', pane, at: nowIso, text: 'Bash command\ngit push',
+      action: 'main', reason: 'Push requires main.',
+      options: [{ label: 'Yes', value: 'approve' }, { label: 'No', value: 'decline' }],
+      selected: 0, outcome: 'pending',
+    }],
+  }));
+  await until(() => firstOut.some(line => line.includes(permId)), 5_000);
+  await new Promise(r => setTimeout(r, 150));
+  assert.equal(firstOut.filter(line => line.includes(permId)).length, 1);
+  const marker = join(dir, `${permId}.noticed`);
+  assert.equal(fs.statSync(marker).mode & 0o777, 0o600);
+  const rec = readDeliveryRecord(marker);
+  assert.equal(rec.state, 'accepted');
+  assert.equal(rec.record?.via, 'watch-stdout');
+  ac1.abort();
+  assert.equal(await run1, 0);
+
+  // Restart watch --verbose while still blocked -> emits nothing for this permission.
+  const secondOut = [];
+  const ac2 = new AbortController();
+  t.after(() => ac2.abort());
+  const run2 = watchCommand(['--verbose'], { env, stdout: s => secondOut.push(s), stderr: () => {} }, { signal: ac2.signal, rescanMs: 50 });
+  await until(() => fs.existsSync(join(f.home, 'watchers', `${main}.pid`)), 5_000);
+  await new Promise(r => setTimeout(r, 200));
+  ac2.abort();
+  assert.equal(await run2, 0);
+  assert.deepEqual(secondOut.filter(line => line.includes(permId) || line.includes(jobId)), []);
 });

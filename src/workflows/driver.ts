@@ -1,12 +1,13 @@
-import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { notify, notifyOutcome, watching } from '../roles/notify.js';
+import { loadLivePanes, resolveRecipient } from '../roles/select-send.js';
+import { isDeliveryClaimable, markDeliveryAccepted, markDeliverySending, markDeliveryUnknown, releaseDelivery } from '../utils/delivery-record.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
 import { procStat } from '../utils/proc.js';
 import { advance, pauseRun, type Run, type Tick } from './engine.js';
 import type { Graph, Step } from './graph.js';
 import { directRecipient, type RunScope } from './scope.js';
-import { driverLock, noticeEvents, runLock } from './store.js';
+import { driverLock, isNoticeKey, noticeEvents, runDir, runLock } from './store.js';
 
 type Plan = Pick<Graph, 'steps' | 'policy'>;
 export interface DriverProfile<S> {
@@ -53,14 +54,27 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
         });
         if (!turn) return { done: true, value: undefined };
         const { run, active, effect, recheckMs } = turn;
-        // If the original main exited, leave the outbox unclaimed for the next project
-        // reader. Its PID/pane never determine whether this or any subsequent step runs.
-        if (!profile.readerNotices && Object.keys(run.notices).length && directRecipient(run) && !watching(run.pane, home)) for (const { line, marker } of noticeEvents(home, run)) {
-          try {
-            const sent = await notify(run.pane, line, home);
-            if (notifyOutcome(sent) !== 'refused') continue;
-          } catch { /* The watcher/MCP can still deliver this notice. */ }
-          fs.rmSync(marker, { force: true });
+        const hasClaimable = !profile.readerNotices && Object.keys(run.notices).some(key =>
+          isNoticeKey(key) && isDeliveryClaimable(join(runDir(home, run.flow), `${key}.noticed`)));
+        if (hasClaimable && !(run.pane && directRecipient(run) && watching(run.pane, home))) {
+          const { panes, workerPanes } = await loadLivePanes(home);
+          const resolved = resolveRecipient({
+            home, originPane: run.pane, originMcp: run.origin_mcp, projectRoot: run.project_root, panes, workerPanes,
+          });
+          if (resolved.kind === 'pane' && !resolved.watching) {
+            for (const { line, marker } of noticeEvents(home, run)) {
+              if (!markDeliverySending(marker)) continue;
+              try {
+                const sent = await notify(resolved.pane, line, home);
+                const outcome = notifyOutcome(sent);
+                if (outcome === 'sent') markDeliveryAccepted(marker, sent.via ?? 'herdr-prompt');
+                else if (outcome === 'refused') releaseDelivery(marker);
+                else markDeliveryUnknown(marker, sent.detail || sent.error?.message || 'indeterminate');
+              } catch (err) {
+                markDeliveryUnknown(marker, String(err));
+              }
+            }
+          }
         }
         if (effect) return { done: false, recheckMs: await effect() };
         return active ? { done: false, ...(recheckMs !== undefined && { recheckMs }) } : { done: true, value: undefined };

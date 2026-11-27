@@ -49,6 +49,10 @@ async function syntheticPromptHerdr(t, dir, { initialFail = true } = {}) {
         socket.write(JSON.stringify({ id, result: { type: 'pong', version: '1.0-hud', capabilities: { guarded_prompt: true } } }) + '\n');
         return;
       }
+      if (method === 'pane.list') {
+        socket.write(JSON.stringify({ id, result: { panes: [{ pane_id: MAIN_PANE, agent: 'claude', cwd: join(dir, 'project') }] } }) + '\n');
+        return;
+      }
       if (method === 'agent.prompt') {
         attempts++;
         if (failPrompts) {
@@ -393,7 +397,7 @@ if (args[0] === 'pane' && args[1] === 'get') {
 } else if (args[0] === 'pane' && args[1] === 'process-info') {
   console.log(JSON.stringify({ result: { process_info: { foreground_processes: [{ name: 'codex', pid: ${process.pid} }] } } }));
 } else if (args[0] === 'queue') {
-  console.error('no rollout found');
+  console.log(JSON.stringify({ error: { code: 'no_rollout' } }));
   process.exit(1);
 }
 `;
@@ -754,7 +758,7 @@ if (args[0] === 'pane' && args[1] === 'get') {
 } else if (args[0] === 'pane' && args[1] === 'process-info') {
   console.log(JSON.stringify({ result: { process_info: { foreground_processes: [{ name: 'codex', pid: ${process.pid} }] } } }));
 } else if (args[0] === 'queue') {
-  console.error('no rollout found');
+  console.log(JSON.stringify({ error: { code: 'no_rollout' } }));
   process.exit(1);
 } else if (args[0] === 'agent' && args[1] === 'prompt') {
   const mode = fs.readFileSync(${JSON.stringify(modeFile)}, 'utf8').trim();
@@ -873,7 +877,10 @@ test('indeterminate codex queue outcome propagates without falling back to typin
   // Pure classification checks across HerdrOutcome reasons, including timeout and lost.
   assert.equal(classifyCodexQueueOutcome({ ok: true, reason: 'ok', stdout: '', stderr: '', exitCode: 0 }).kind, 'sent');
   assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'unavailable', stdout: '', stderr: 'ENOENT', exitCode: null }).kind, 'refused');
-  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'failed', stdout: '', stderr: 'no rollout found', exitCode: 1 }).kind, 'refused');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'failed', stdout: JSON.stringify({ error: { code: 'no_rollout' } }), stderr: '', exitCode: 1 }).kind, 'refused');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'failed', stdout: '', stderr: 'no rollout found', exitCode: 1 }).kind, 'indeterminate');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'failed', stdout: '', stderr: 'permission denied', exitCode: 1 }).kind, 'indeterminate');
+  assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'failed', stdout: '', stderr: 'no such file or directory', exitCode: 1 }).kind, 'indeterminate');
   assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'failed', stdout: '', stderr: "error: unrecognized subcommand 'queue'", exitCode: 2 }).kind, 'refused');
   assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'timeout', stdout: '', stderr: '', exitCode: null }).kind, 'indeterminate');
   assert.equal(classifyCodexQueueOutcome({ ok: false, reason: 'lost', stdout: '', stderr: '', exitCode: null }).kind, 'indeterminate');
@@ -899,7 +906,9 @@ if (args[0] === 'pane' && args[1] === 'get') {
   const mode = fs.readFileSync(${JSON.stringify(codexModeFile)}, 'utf8').trim();
   if (mode === 'lost') process.kill(process.pid, 'SIGKILL');
   if (mode === 'unknown_fail') { console.error('connection reset while reading reply'); process.exit(1); }
-  if (mode === 'refused') { console.error('no rollout found'); process.exit(1); }
+  if (mode === 'perm_denied') { console.error('permission denied'); process.exit(1); }
+  if (mode === 'no_such_file') { console.error('no such file or directory'); process.exit(1); }
+  if (mode === 'refused') { console.log(JSON.stringify({ error: { code: 'no_rollout' } })); process.exit(1); }
 } else if (args[0] === 'agent' && args[1] === 'prompt') {
   fs.appendFileSync(${JSON.stringify(typedLog)}, args[3] + '\\n');
 }
@@ -928,7 +937,7 @@ if (args[0] === 'pane' && args[1] === 'get') {
   };
   const readTyped = () => fs.existsSync(typedLog) ? fs.readFileSync(typedLog, 'utf8').trim().split('\n').filter(Boolean) : [];
 
-  for (const mode of ['lost', 'unknown_fail']) {
+  for (const mode of ['lost', 'unknown_fail', 'perm_denied', 'no_such_file']) {
     fs.writeFileSync(codexModeFile, mode);
     const res = await notify(MAIN_PANE, `indeterminate ${mode}`, f.home, { queue: true, env });
     assert.equal(res.outcome, 'indeterminate', mode);

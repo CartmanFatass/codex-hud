@@ -280,7 +280,7 @@ for (const mode of ['ordinary', 'unattended']) {
     assert.deepEqual(readJson(join(dir, 'permissions.json')).entries, [entry]);
     assert.deepEqual(keys(), []);
     if (u) {
-      await until(() => f.flow(flow).notices[`handback-${entry.id}`], 6000);
+      assert.equal(f.flow(flow).notices?.[`handback-${entry.id}`], undefined);
       assert.deepEqual(workflowEvents(f.home, null, false, tmpdir()).lines, []);
       const notices = taskNoticeSource(f.home, f.env.HERDR_PANE_ID, f.root)();
       assert.equal(notices.length, 1);
@@ -417,14 +417,15 @@ for (const mode of ['bound', 'paneless']) {
     await until(() => landState().step === `repair 1: waiting for main (${entry.id})`, 6_000);
     assert.equal(landState().state, 'running');
     if (mode === 'paneless') {
-      await until(() => f.flow(flow).notices[`handback-${entry.id}`], 6_000);
-      const notice = f.flow(flow).notices[`handback-${entry.id}`];
-      assert.ok(notice.includes(repairId), `expected repair job ID ${repairId} in notice: ${notice}`);
+      assert.equal(f.flow(flow).notices?.[`handback-${entry.id}`], undefined);
       const delivered = taskNoticeSource(f.home, f.env.HERDR_PANE_ID, f.root)();
       assert.equal(delivered.length, 1);
       assert.ok(delivered[0].line.includes(repairId));
       assert.ok(delivered[0].line.includes(`Open pane ${entry.pane}`));
     } else {
+      writeFixtureFile(join(f.env.HOME, 'pane-list.json'), JSON.stringify({
+        result: { panes: [{ pane_id: f.env.HERDR_PANE_ID, agent: 'claude', cwd: f.root }] },
+      }));
       await until(() => fs.existsSync(join(repairDir, `${entry.id}.noticed`)), 6_000);
     }
 
@@ -1363,13 +1364,12 @@ test('pane-less successor after dead origin still publishes permission hand-off 
     }],
   }));
 
-  await until(() => Boolean(f.flow(flow).notices?.[`handback-${permId}`]), 15_000);
-  const notice = f.flow(flow).notices[`handback-${permId}`];
-  assert.match(notice, new RegExp(`${job2}.*Open pane w1:p9`));
+  assert.equal(f.flow(flow).notices?.[`handback-${permId}`], undefined);
 
-  // Project main (different pane in the same project) claims the permission hand-off once.
+  // Project main (different pane in the same project) claims the permission hand-off once from job-level perm-<id>.noticed with approve/decline preserved.
   const otherEvents = workflowEvents(f.home, 'w9:p9', false, f.root);
-  assert.ok(otherEvents.lines.some(line => line.includes(job2) && line.includes('Open pane w1:p9')));
+  assert.ok(otherEvents.lines.some(line => line.includes(job2) && line.includes('hud_respond') && line.includes('"answer":"approve"')));
+  assert.ok(fs.existsSync(join(f.dir(job2), `${permId}.noticed`)));
   assert.deepEqual(workflowEvents(f.home, 'w9:p9', false, f.root).lines, []);
 });
 

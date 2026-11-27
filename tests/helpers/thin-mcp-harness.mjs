@@ -269,6 +269,10 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
             agent_status: blocked ? 'blocked' : state, interactive_ready: !blocked, agent_session } });
           target.ready = true;
           if (sub) fs.writeFileSync(join(env.HOME, 'socket-got-session'), '');
+        } else if (req.method === 'pane.list') {
+          const file = join(env.HOME, 'pane-list.json');
+          if (fs.existsSync(file)) reply(JSON.parse(fs.readFileSync(file, 'utf8')).result);
+          else error('pane_not_found', 'pane-list.json not configured');
         } else if (req.method === 'pane.get' || req.method === 'tab.get') {
           const id = req.params.tab_id ?? req.params.pane_id.replace(/:p/, ':t');
           if (vanishedTabs.has(id)) socket.write(JSON.stringify({ id: req.id, error: { code: req.method === 'pane.get' ? 'pane_not_found' : 'tab_not_found' } }) + '\n');
@@ -653,7 +657,7 @@ export function waitFixtureJob(f, n, state = 'working', herdr_pane = 'w4E:p1', c
 
 export const ownerOf = ({ dir }) => JSON.parse(fs.readFileSync(join(dir, 'job.json'))).herdr_pane;
 export const paneList = (f, ...ids) => writeFixtureFile(join(f.env.HOME, 'pane-list.json'), JSON.stringify({
-  result: { panes: ids.map((pane_id) => ({ pane_id })) },
+  result: { panes: ids.map((pane_id) => ({ pane_id, agent: 'claude', ...(f.root ? { cwd: f.root } : {}) })) },
 }));
 
 export const progressRecord = (text) => ({ at: '2026-11-18T12:00:00.000Z', text });

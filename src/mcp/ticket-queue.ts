@@ -7,6 +7,7 @@ import { registeredProject, sharedRoot } from '../roles/projects.js';
 import { roleRegistry } from '../roles/roster.js';
 import { readObjectives } from '../collectors/objectives.js';
 import { readJsonFile } from '../utils/atomic-fs.js';
+import { markDeliveryAccepted } from '../utils/delivery-record.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
 import { procStat } from '../utils/proc.js';
@@ -694,8 +695,11 @@ export function ticketQueueTask(home: string, q: TicketQueue, cancel = false) {
   const noticeKey = q.state === 'paused' ? `pause-${epoch}` : `end-${epoch}`;
   const noticeText = q.state !== 'working' ? q.notices?.[noticeKey] : undefined;
   if (noticeText) {
-    try { noticeEvents(home, { flow: q.flow, notices: { [noticeKey]: noticeText } }, false, landFile(home, q.flow)); }
-    catch { /* Best-effort claim so a later mode switch or task expiry does not duplicate the notice. */ }
+    try {
+      for (const { marker } of noticeEvents(home, { flow: q.flow, epoch, notices: { [noticeKey]: noticeText } }, false, landFile(home, q.flow))) {
+        markDeliveryAccepted(marker, 'mcp-task');
+      }
+    } catch { /* Best-effort claim so a later mode switch or task expiry does not duplicate the notice. */ }
   }
   const text = q.state === 'working'
     ? `${q.flow} (ticket queue ${q.feature}) — ${ticketQueueView(q).reason ?? 'working'}`

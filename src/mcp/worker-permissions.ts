@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, openSync, rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { hasLocalHerdrTarget, request } from '../runtime/herdr-socket.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readDirSafe, readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
+import { claimDelivery, releaseDelivery } from '../utils/delivery-record.js';
 import { isProcAlive, readProcCwd, readProcEnviron } from '../utils/proc.js';
 import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.js';
 import type { Job, JobStatus } from './job-contracts.js';
@@ -326,16 +327,26 @@ export const permissionNoticeMarker = (dir: string, id: string, all = false) =>
 export function claimPermissionNotice(dir: string, entry: PermissionEntry, all = false): string | null {
   if (!permissionNoticeable(entry)) return null;
   const marker = permissionNoticeMarker(dir, entry.id, all);
-  if (existsSync(marker)) return null;
-  try { closeSync(openSync(marker, 'wx', 0o600)); return marker; }
-  catch (e) {
-    if (['EEXIST', 'ENOENT'].includes((e as NodeJS.ErrnoException).code ?? '')) return null;
-    throw e;
-  }
+  return claimDelivery(marker, entry.id) ? marker : null;
 }
 
 export function releasePermissionNotice(marker: string) {
-  rmSync(marker, { force: true });
+  releaseDelivery(marker);
+}
+
+export function permissionNoticeEvents(
+  home: string,
+  rows: readonly { job: string; permission?: PermissionEntry }[],
+  all = false,
+): { line: string; marker: string }[] {
+  const claimed: { line: string; marker: string }[] = [];
+  for (const row of rows) {
+    if (!row.permission) continue;
+    const marker = claimPermissionNotice(join(home, 'jobs', row.job), row.permission, all);
+    if (!marker) continue;
+    claimed.push({ line: permissionNotice(row.job, row.permission).replace(/[\x00-\x1f\x7f-\x9f]/g, ' '), marker });
+  }
+  return claimed;
 }
 
 export function permissionNotice(job: string, entry: PermissionEntry) {

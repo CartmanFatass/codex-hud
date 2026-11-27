@@ -6,6 +6,8 @@ import { jobFiles } from '../mcp/paths.js';
 import { recordQuestionTimeout } from '../roles/job-archive.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { notify, recordPromptExpiry, taskDelivery, watching, PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, type NotifyResult } from '../roles/notify.js';
+import { loadLivePanes, resolveRecipient } from '../roles/select-send.js';
+import { jobProjectRoot } from '../roles/selection-excerpts.js';
 import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
@@ -168,12 +170,21 @@ export async function notifyQuestion(
   let pushed = 'not pushed (no --notify / --orchestrator)';
   // SESSION.txt describes the launch. The receipt can name a new main session after a handoff.
   const receipt = readReceipt(dir, job);
-  const orch = jobCallerPane(receipt) || orchestratorPane(dir);
+  const origin = jobCallerPane(receipt) || orchestratorPane(dir);
+  const home = dirname(dirname(resolve(dir)));
+  const projectRoot = jobProjectRoot(receipt);
   if (receipt.scout_only === true) pushed = 'handled by scouted dispatch';
   else if (receipt.ticket_queue) pushed = 'handled by the ticket queue';
-  else if (taskDelivery(dir, orch)) pushed = 'delivered by MCP task';
-  else if (typeof orch === 'string' && orch && !/[\u0000-\u001f\u007f-\u009f]/.test(orch)) {
-    const home = dirname(dirname(resolve(dir)));
+  else if (origin && taskDelivery(dir, origin)) pushed = 'delivered by MCP task';
+  else if (origin && watching(origin, home)) pushed = 'delivered by hud watch';
+  else if ((origin && !/[\u0000-\u001f\u007f-\u009f]/.test(origin)) || projectRoot) {
+    const { panes, workerPanes } = await loadLivePanes(home);
+    signal?.throwIfAborted();
+    const resolved = resolveRecipient({ home, originPane: origin, projectRoot, panes, workerPanes });
+    if (resolved.kind === 'unknown') return 'not pushed (pane availability unknown)';
+    if (resolved.kind === 'none') return 'not pushed (no live main pane)';
+    if (resolved.watching) return 'delivered by hud watch';
+    const orch = resolved.pane;
     const notice = { text: questionLine(published, job), needed: () => fs.existsSync(published.qfile) &&
       readQuestionAnswer(published) === undefined && !taskDelivery(dir, orch) };
     const pending = resident && pendingQuestions.get(orch);

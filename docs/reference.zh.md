@@ -583,7 +583,8 @@ pi 工作者不会启动此监听。
 调用者有窗格时，`hud_roster` 和 `hud_create` 返回 `watcher_alive`；
 监听有效时不会直接向其他客户端的窗格输入，也不会显示 Monitor 提示。
 未启用监听时，问题仍可通过 Codex 队列发送；
-若无法排队或没有队列，则回退为直接输入。
+仅在缺少线程 ID 或明确发送前拒绝（结构化错误码、`ENOENT` 或退出码 `2` 用法错误）时才回退为直接输入；不确定结果记为 `unknown` 且不重复输入。
+通知与权限交接统一使用原子 `0600` JSON 投递状态记录（`.noticed`/`.observed`，包含 `pending`/`claimed`/`sending`/`accepted`/`unknown`/`abandoned`，兼容旧 0 字节文件为 `accepted`），并在调用时按存活窗格解析接收者（原窗格存活则发给原窗格，否则发给同项目根下存活的主会话，且允许该主会话通过 `hud_respond` 回答 `perm-…`）。
 
 任务是 `$HUD_HOME/jobs/<job>/` 中的普通文件。
 标签页中的 pi 历史保存在 `${PI_CODING_AGENT_DIR:-~/.pi/agent}/sessions/<cwd-dir>/`，任务的 `sessions/` 链接到主代理／助手文件。无界面 pi 的原生会话文件保存在任务目录中。

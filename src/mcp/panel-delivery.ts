@@ -6,7 +6,9 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { panelActionLine, PANEL_ACTIONS_FILE } from '../collectors/panel-actions.js';
 import { liveTryLine, TRIES_FILE } from '../collectors/try-records.js';
+import type { NotifyOutcome } from '../roles/notify.js';
 import { writePrivateFile } from '../utils/atomic-fs.js';
+import { markDeliveryAccepted, markDeliverySending, markDeliveryUnknown, releaseDelivery, type DeliveryVia } from '../utils/delivery-record.js';
 
 const files = [TRIES_FILE, PANEL_ACTIONS_FILE] as const;
 const maxBytes = 256 * 1024;
@@ -16,8 +18,9 @@ const size = (file: string) => {
 };
 
 type Notice = { line: string; marker: string };
+type PushResult = boolean | { outcome: NotifyOutcome; via?: DeliveryVia; reason?: string };
 export function panelDelivery(home: string, pane: string | null, cwd: string, owns: (id: string) => boolean,
-  push: (text: string) => Promise<boolean>, extraEvents?: () => Notice[]) {
+  push: (text: string) => Promise<PushResult>, extraEvents?: () => Notice[] | Promise<Notice[]>) {
   const logs = files.map(name => join(home, name));
   const scope = createHash('sha256').update(JSON.stringify([pane, cwd, process.env.CLAUDE_CODE_SESSION_ID])).digest('hex');
   const dir = join(home, 'panel-cursors', scope), cursor = join(dir, 'offsets.json');
@@ -35,7 +38,7 @@ export function panelDelivery(home: string, pane: string | null, cwd: string, ow
     let extra: Notice[] = [];
     try {
       if (sending || stopped) return [];
-      extra = extraEvents?.() ?? [];
+      extra = await extraEvents?.() ?? [];
       const hasLogs = logs.some((file, i) => size(file) !== offsets[i]);
       if (!hasLogs && !extra.length) return [];
       // Reconnects (and hot reloads) can overlap. Lock the stable directory, not the replaced cursor.
@@ -66,8 +69,21 @@ export function panelDelivery(home: string, pane: string | null, cwd: string, ow
         } finally { fs.closeSync(fd); }
       }
       lines.push(...extra.map(e => e.line));
-      if (lines.length && notify && !await push(lines.join('\n'))) return [];
-      extra = []; // Leave successful notice claims in place, even if updating the log cursor fails.
+      if (lines.length && notify) {
+        for (const { marker } of extra) markDeliverySending(marker);
+        const res = await push(lines.join('\n'));
+        const outcome: NotifyOutcome = typeof res === 'boolean' ? (res ? 'sent' : 'refused') : res.outcome;
+        if (outcome === 'refused') return [];
+        const via: DeliveryVia = typeof res === 'boolean' ? 'herdr-prompt' : (res.via ?? 'herdr-prompt');
+        const reason = typeof res === 'boolean' ? 'indeterminate' : (res.reason ?? 'indeterminate');
+        for (const { marker } of extra) {
+          if (outcome === 'sent') markDeliveryAccepted(marker, via);
+          else markDeliveryUnknown(marker, reason);
+        }
+      } else if (extra.length) {
+        for (const { marker } of extra) markDeliveryAccepted(marker, 'mcp-changes');
+      }
+      extra = []; // Leave committed notice records in place, even if updating the log cursor fails.
       if (after.some((at, i) => at !== offsets[i])) {
         if (pane) writePrivateFile(cursor, JSON.stringify(after));
         offsets = after;
@@ -75,9 +91,7 @@ export function panelDelivery(home: string, pane: string | null, cwd: string, ow
       return lines;
     } catch { return []; } // A failed read or push leaves the previous cursor for the next call/tick.
     finally {
-      for (const { marker } of extra) {
-        try { fs.unlinkSync(marker); } catch { /* Receipt already gone. */ }
-      }
+      for (const { marker } of extra) releaseDelivery(marker);
       if (lock !== undefined) fs.closeSync(lock);
     }
   }

@@ -1,5 +1,6 @@
 /** Shared question/event delivery: watch, Codex queue, Antigravity mailbox, or typing. */
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
+import type { DeliveryVia } from '../utils/delivery-record.js';
 import { isProcAlive, isValidPid, procStat, readProcCmdline, readProcEnviron } from '../utils/proc.js';
 import { runHerdr, runCommand, type HerdrOutcome } from './herdr-run.js';
 import type { McpTaskMarker } from '../mcp/job-contracts.js';
@@ -21,6 +22,7 @@ export type NotifyResult = Delivery & {
   retryPrompt?: (text: string, signal?: AbortSignal) => Promise<NotifyResult>;
   uncertain?: true;
   outcome?: NotifyOutcome;
+  via?: DeliveryVia;
 };
 
 export function notifyOutcome(
@@ -110,7 +112,6 @@ const agyIdle = (info: Pane | null) => info?.agent === 'agy' && (info.agent_stat
 const guardRefusals = new Set(['not_ready', 'scrolled_back', 'recent_input', 'draft_present', 'prompt_unknown']);
 const nonSendRefusals = new Set(['agent_not_ready', 'agent_not_found', 'pane_not_found', ...guardRefusals]);
 const codexQueueRefusalCodes = new Set(['not_found', 'thread_not_found', 'session_not_found', 'no_rollout', 'rollout_not_found', 'unavailable', 'invalid_argument', 'queue_full']);
-const codexQueueRefusalText = /\b(?:no rollout found|rollout not found|thread not found|session not found|no running\b|not running\b|unrecognized subcommand|unknown subcommand|unknown command|unexpected argument|invalid value|invalid thread|no such file|connection refused|cannot connect|failed to connect|queue (?:is )?full|permission denied)\b|^usage:/im;
 
 export function classifyCodexQueueOutcome(outcome: HerdrOutcome): { kind: NotifyOutcome; reason: string } {
   if (outcome.ok) return { kind: 'sent', reason: '' };
@@ -120,7 +121,7 @@ export function classifyCodexQueueOutcome(outcome: HerdrOutcome): { kind: Notify
   let code: string | undefined;
   try { code = JSON.parse(outcome.stdout)?.error?.code; } catch { /* Plain stderr diagnostic. */ }
   const refused = (typeof code === 'string' && codexQueueRefusalCodes.has(code)) ||
-    codexQueueRefusalText.test(outcome.stderr) || codexQueueRefusalText.test(outcome.stdout);
+    (outcome.exitCode === 2 && /^error: unrecognized subcommand\b/i.test(outcome.stderr.trim()));
   return { kind: refused ? 'refused' : 'indeterminate', reason };
 }
 export const PROMPT_QUIET_MS = 3000; // Also the fork's default input_quiet_ms.
@@ -144,7 +145,7 @@ async function typeMainNotice(pane: string | null, text: string, env: NodeJS.Pro
     if (reply?.error && nonSendRefusals.has(reply.error.code)) {
       return { status: 1, retry: true, stderr: reply.error.message || reply.error.code, outcome: 'refused' };
     }
-    if (!reply?.error && reply?.result?.type === 'agent_prompted') return { status: 0, outcome: 'sent' };
+    if (!reply?.error && reply?.result?.type === 'agent_prompted') return { status: 0, outcome: 'sent', via: 'herdr-prompt' };
     // A lost/failed reply after submission does not prove that zero bytes were written.
     return { status: 1, uncertain: true, outcome: 'indeterminate' };
   };
@@ -157,6 +158,7 @@ async function typeMainNotice(pane: string | null, text: string, env: NodeJS.Pro
   const sent = deliveryResult(outcome);
   if (sent.status === 0) {
     sent.outcome = 'sent';
+    sent.via = 'herdr-prompt';
     return sent;
   }
   // Only positive non-send evidence justifies retry; timeouts and unknown failures are indeterminate.
@@ -193,7 +195,7 @@ export async function notify(pane: string | null, message: string, home?: string
     const sent = await notifyAgy(pane!, [message], home ?? (env.HUD_HOME || join(env.HOME || homedir(), '.hud')), env, info, { signal });
     if (!sent.accepted) return { status: 1, outcome: 'refused', error: sent.error ?? new Error('Antigravity mailbox busy or full') };
     // Once persisted the event can still be delivered after a rejected prompt.
-    return { status: 0, outcome: 'sent', detail: sent.detail ?? (sent.status === 0 ? 'typed into Antigravity' : 'pending for Antigravity delivery') };
+    return { status: 0, outcome: 'sent', via: 'agy-mailbox', detail: sent.detail ?? (sent.status === 0 ? 'typed into Antigravity' : 'pending for Antigravity delivery') };
   }
 
   let detail = '';
@@ -214,7 +216,7 @@ export async function notify(pane: string | null, message: string, home?: string
         { ...env, CODEX_HOME }, { budgetMs: 20_000, killGraceMs: 250, signal });
       const sent = deliveryResult(outcome);
       const classified = classifyCodexQueueOutcome(outcome);
-      if (classified.kind === 'sent') return { ...sent, outcome: 'sent', detail: 'pushed via codex queue' };
+      if (classified.kind === 'sent') return { ...sent, outcome: 'sent', via: 'codex-queue', detail: 'pushed via codex queue' };
       if (signal?.aborted) return { ...aborted(), uncertain: true, outcome: 'indeterminate' };
       if (classified.kind === 'indeterminate') {
         return {

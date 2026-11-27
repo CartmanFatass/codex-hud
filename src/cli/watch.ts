@@ -15,7 +15,8 @@ import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { reportMainPaneGroup } from '../runtime/pane-group.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
-import { claimPermissionNotice, permissionNotice, permissionNoticeable, permissionNoticeMarker } from '../mcp/worker-permissions.js';
+import { permissionNoticeable, permissionNoticeEvents, permissionNoticeMarker } from '../mcp/worker-permissions.js';
+import { isDeliveryActive, markDeliveryAccepted, markDeliverySending, markDeliveryUnknown, releaseDelivery, revertDeliveryClaim, type DeliveryVia } from '../utils/delivery-record.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 import { bandReader } from './watch-band.js';
@@ -55,19 +56,10 @@ const isBrokenPipe = (error: unknown): boolean => {
 };
 
 const settled = (row: JobRow) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(row.state ?? '');
-function permissionNoticeEvents(home: string, rows: readonly WatchJobRow[], all = false): { line: string; marker: string }[] {
-  const claimed: { line: string; marker: string }[] = [];
-  for (const row of rows) {
-    if (!row.permission) continue;
-    const marker = claimPermissionNotice(join(home, 'jobs', row.job), row.permission, all);
-    if (!marker) continue;
-    claimed.push({ line: permissionNotice(row.job, row.permission).replace(/[\x00-\x1f\x7f-\x9f]/g, ' '), marker });
-  }
-  return claimed;
-}
-function hasUnclaimedPermissionNotice(home: string, rows: readonly WatchJobRow[], all = false): boolean {
+type BatchItem = { line: string; claims: string[] };
+function hasActivePermissionNotice(home: string, rows: readonly WatchJobRow[], all = false): boolean {
   return rows.some((row) => permissionNoticeable(row.permission) &&
-    !fs.existsSync(permissionNoticeMarker(join(home, 'jobs', row.job), row.permission.id, all)));
+    isDeliveryActive(permissionNoticeMarker(join(home, 'jobs', row.job), row.permission.id, all)));
 }
 // A numeric catch-up value is the Claude mod's cutoff for individual report notices.
 function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: WatchJobRow[], catchup: boolean | number = false, lastScanAt = -Infinity): Notice[] {
@@ -167,22 +159,25 @@ function settlementNotices(windowMs: number) {
   return {
     get pending() { return held.length > 0; },
     get delay() { return Math.max(0, Math.ceil(deadline - performance.now())); },
-    collect(events: Notice[], other: string[]): string[] {
-      const ready: string[] = [], now = performance.now();
-      const flush = (lines: string[] = []) => {
-        ready.push(held.concat(lines).join('\n'));
+    collect(events: Notice[], other: readonly BatchItem[]): BatchItem[] {
+      const ready: BatchItem[] = [], now = performance.now();
+      const flush = (items: readonly BatchItem[] = []) => {
+        ready.push({
+          line: held.concat(items.map((item) => item.line)).join('\n'),
+          claims: items.flatMap((item) => item.claims),
+        });
         held = [];
         deadline = Infinity;
       };
       if (now >= deadline) flush();
-      const lines = events.map((event) => event.line).concat(other);
-      if (!lines.length) return ready;
+      const items: BatchItem[] = [...events.map((event) => ({ line: event.line, claims: [] })), ...other];
+      if (!items.length) return ready;
       if (other.length || events.some((event) => !event.defer)) {
-        if (held.length || events.some((event) => event.defer)) flush(lines);
-        else ready.push(...lines);
+        if (held.length || events.some((event) => event.defer)) flush(items);
+        else ready.push(...items);
       } else {
         if (!held.length) deadline = now + windowMs;
-        held.push(...lines);
+        held.push(...items.map((item) => item.line));
       }
       return ready;
     },
@@ -270,15 +265,26 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     const flows = workflowEvents(home, pane, false, cwd);
     const perms = permissionNoticeEvents(home, rows, false);
     const { events, progress } = notices.select(home, prev, rows, first, lastScanAt);
-    const lines = notices.collect(events, [...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd, pane), ...flows.lines, ...perms.map((e) => e.line), ...progress]);
+    const other: BatchItem[] = [
+      ...tries.changes(cwd).map((line) => ({ line, claims: [] })),
+      ...answers.changes(new Set(rows.map((row) => row.job)), cwd, pane).map((line) => ({ line, claims: [] })),
+      ...flows.events.map(({ line, marker }) => ({ line, claims: [marker] })),
+      ...perms.map(({ line, marker }) => ({ line, claims: [marker] })),
+      ...progress.map((line) => ({ line, claims: [] })),
+    ];
+    const items = notices.collect(events, other);
+    const lines = items.map((item) => item.line);
+    const markers = [...flows.events, ...perms].map((e) => e.marker);
     first = false;
     lastScanAt = scanAt;
     prev = new Map(rows.map((row) => [row.job, row]));
     schedule(dirty ? DEBOUNCE_MS : DEFAULT_RESCAN_MS);
     if (lines.length) {
-      try { deliver(lines); }
-      catch (error) {
-        for (const { marker } of [...flows.events, ...perms]) fs.rmSync(marker, { force: true });
+      try {
+        deliver(lines);
+        for (const marker of markers) markDeliveryAccepted(marker, 'pi-steer');
+      } catch (error) {
+        for (const marker of markers) releaseDelivery(marker);
         throw error;
       }
     }
@@ -430,37 +436,30 @@ export async function watchCommand(
     let prev = new Map<string, JobRow>();
     let first = true, lastScanAt = -Infinity;
     let queueAgent: 'codex' | 'agy' | undefined;
-    const agyBacklog: string[] = [];
+    const agyBacklog: BatchItem[] = [];
     let agyGuardUntil: number | undefined;
-    let typedPending: { retry: NonNullable<NotifyResult['retryPrompt']>; text: string; until: number; markers: string[] } | undefined;
-    const flowMarkers = new Map<string, string[]>();
-    const trackFlowEvents = (items: readonly { line: string; marker: string }[]) => {
-      for (const { line, marker } of items) {
-        const list = flowMarkers.get(line);
-        if (list) list.push(marker);
-        else flowMarkers.set(line, [marker]);
-      }
+    let typedPending: { retry: NonNullable<NotifyResult['retryPrompt']>; text: string; until: number; claims: string[] } | undefined;
+    const releaseClaims = (claims: readonly string[]) => {
+      for (const marker of claims) releaseDelivery(marker);
     };
-    const takeMarkers = (text: string): string[] => {
-      const taken: string[] = [];
-      for (const part of text.split('\n')) {
-        const list = flowMarkers.get(part);
-        if (!list?.length) continue;
-        taken.push(list.shift()!);
-        if (!list.length) flowMarkers.delete(part);
-      }
-      return taken;
+    const commitAccepted = (claims: readonly string[], via: DeliveryVia) => {
+      for (const marker of claims) markDeliveryAccepted(marker, via);
     };
-    const releaseMarkers = (markers: readonly string[]) => {
-      for (const marker of markers) fs.rmSync(marker, { force: true });
+    const commitUnknown = (claims: readonly string[], reason: string) => {
+      for (const marker of claims) markDeliveryUnknown(marker, reason);
     };
-    const releaseAllFlowMarkers = () => {
+    const markSending = (claims: readonly string[]) => {
+      for (const marker of claims) markDeliverySending(marker);
+    };
+    const revertClaims = (claims: readonly string[]) => {
+      for (const marker of claims) revertDeliveryClaim(marker);
+    };
+    const releaseAllClaims = () => {
       if (typedPending) {
-        releaseMarkers(typedPending.markers);
+        releaseClaims(typedPending.claims);
         typedPending = undefined;
       }
-      for (const list of flowMarkers.values()) releaseMarkers(list);
-      flowMarkers.clear();
+      for (const item of agyBacklog.splice(0)) releaseClaims(item.claims);
     };
     try {
     while (!stopped) {
@@ -482,20 +481,24 @@ export async function watchCommand(
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const modCatchup = first && freshMod;
       const flows = workflowEvents(home, callerPane, all, process.cwd(), modCatchup);
-      const perms = verbose && !first ? [] : permissionNoticeEvents(home, rows, all);
-      trackFlowEvents(flows.events);
-      trackFlowEvents(perms);
+      const perms = permissionNoticeEvents(home, rows, all);
       const trySize = modHandshake ? fs.lstatSync(join(home, TRIES_FILE), { throwIfNoEntry: false })?.size ?? 0 : 0;
       const modCutoff = Number.isSafeInteger(lastDelivery) && lastDelivery > 0 && lastDelivery <= scanAt
         ? lastDelivery : scanAt - MOD_REPORT_LOOKBACK_MS;
       const { events, progress } = notices.select(home, prev, rows, first && mod ? modCutoff : first, lastScanAt, verbose);
-      const tryLines = [...tries.changes(queue || mod ? process.cwd() : undefined), ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd(), callerPane ?? undefined), ...flows.lines, ...perms.map((e) => e.line), ...(modCatchup ? [] : progress)];
+      const otherItems: BatchItem[] = [
+        ...tries.changes(queue || mod ? process.cwd() : undefined).map((line) => ({ line, claims: [] })),
+        ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd(), callerPane ?? undefined).map((line) => ({ line, claims: [] })),
+        ...flows.events.map(({ line, marker }) => ({ line, claims: [marker] })),
+        ...perms.map(({ line, marker }) => ({ line, claims: [marker] })),
+        ...(modCatchup ? [] : progress.map((line) => ({ line, claims: [] }))),
+      ];
       // Release the mod's first HUD call only after capturing its pre-call baseline.
       if (first && modHandshake) await io.stdout('{"type":"ready"}\n');
       const band = readBand && await readBand(scanAt);
       if (band) await io.stdout(JSON.stringify(band) + '\n');
       if (queue || mod) {
-        const pending = (mod && events.length > 0) || flows.pending || hasUnclaimedPermissionNotice(home, rows, all) || agyPending || agyBacklog.length > 0 || typedPending !== undefined || Number.isFinite(flowRetryAt) || notices.pending || tryLines.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread && (!row.auto_land || Boolean(row.auto_land_blocked))) || row.checks?.state === 'running')))) ||
+        const pending = (mod && events.length > 0) || flows.pending || hasActivePermissionNotice(home, rows, all) || agyPending || agyBacklog.length > 0 || typedPending !== undefined || Number.isFinite(flowRetryAt) || notices.pending || otherItems.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread && (!row.auto_land || Boolean(row.auto_land_blocked))) || row.checks?.state === 'running')))) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {
@@ -506,14 +509,17 @@ export async function watchCommand(
           }
         }
       }
-      const lines = verbose
-        ? (first ? events.map((event) => event.line) : jobChanges(prev, rows)).concat(tryLines)
-        : notices.collect(events, tryLines);
+      const lines: BatchItem[] = verbose
+        ? [...(first ? events.map((event): BatchItem => ({ line: event.line, claims: [] })) : jobChanges(prev, rows).map((line): BatchItem => ({ line, claims: [] }))), ...otherItems]
+        : notices.collect(events, otherItems);
       first = false;
       lastScanAt = scanAt;
       prev = new Map(rows.map((row) => [row.job, row]));
       if (queueAgent === 'agy') {
-        for (const batch of lines) for (const line of batch.split('\n')) agyBacklog.push(line);
+        for (const batch of lines) {
+          if (batch.claims.length) agyBacklog.push(batch);
+          else for (const line of batch.line.split('\n')) agyBacklog.push({ line, claims: [] });
+        }
         // A regular filesystem wake or safety rescan also flushes old events
         // when the caller returns to its prompt without any new job events.
         if (!agyPending) agyGuardUntil = undefined;
@@ -523,10 +529,10 @@ export async function watchCommand(
         }
         if (!stopped && (agyBacklog.length || agyPending)) {
           // After expiry the ordinary PreInvocation hook can still claim the mailbox.
-          const sent = await delivery!.notifyAgy(callerPane, agyBacklog, home, io.env, agyGuardUntil === 0 ? null : pane, { signal });
-          if (stopped) { releaseAllFlowMarkers(); break; }
+          const sent = await delivery!.notifyAgy(callerPane, agyBacklog.map((item) => item.line), home, io.env, agyGuardUntil === 0 ? null : pane, { signal });
           const accepted = agyBacklog.splice(0, sent.accepted);
-          for (const item of accepted) takeMarkers(item);
+          for (const item of accepted) commitAccepted(item.claims, 'agy-mailbox');
+          if (stopped) { releaseAllClaims(); break; }
           if (sent.guardPending) {
             agyGuardUntil ??= performance.now() + PROMPT_RETRY_TTL_MS;
             waitForPrompt();
@@ -539,8 +545,8 @@ export async function watchCommand(
       if (typedPending) {
         if (performance.now() >= typedPending.until) {
           recordPromptExpiry(home);
-          const released = typedPending.markers;
-          releaseMarkers(released);
+          const released = typedPending.claims;
+          releaseClaims(released);
           if (released.length) {
             idleSince = null;
             flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
@@ -548,85 +554,103 @@ export async function watchCommand(
           typedPending = undefined;
           noPendingPrompt();
         } else {
-          const incoming = lines.join('\n');
+          const incoming = lines.map((item) => item.line).join('\n');
           if (incoming) {
-            const incomingMarkers = takeMarkers(incoming);
+            const incomingClaims = lines.flatMap((item) => item.claims);
             const joined = joinPendingNotices(typedPending.text, incoming);
             if (!joined.keptPending) {
-              releaseMarkers(typedPending.markers);
-              typedPending.markers = incomingMarkers;
+              releaseClaims(typedPending.claims);
+              typedPending.claims = incomingClaims;
             } else {
-              typedPending.markers.push(...incomingMarkers);
+              typedPending.claims.push(...incomingClaims);
             }
             typedPending.text = joined.text;
           }
+          markSending(typedPending.claims);
           const sent = await typedPending.retry(typedPending.text, signal);
+          const outcome = notifyOutcome(sent);
           if (stopped) {
-            if (notifyOutcome(sent) === 'refused') releaseMarkers(typedPending.markers);
+            if (outcome === 'sent') commitAccepted(typedPending.claims, sent.via ?? 'herdr-prompt');
+            else if (outcome === 'refused') releaseClaims(typedPending.claims);
+            else commitUnknown(typedPending.claims, sent.detail || sent.error?.message || 'indeterminate');
             typedPending = undefined;
             noPendingPrompt();
             break;
           }
           if (sent.retryPrompt) {
+            revertClaims(typedPending.claims);
             typedPending.retry = sent.retryPrompt;
             waitForPrompt();
           } else {
-            if (notifyOutcome(sent) === 'refused') {
-              releaseMarkers(typedPending.markers);
-              if (typedPending.markers.length) {
+            if (outcome === 'sent') commitAccepted(typedPending.claims, sent.via ?? 'herdr-prompt');
+            else if (outcome === 'refused') {
+              releaseClaims(typedPending.claims);
+              if (typedPending.claims.length) {
                 idleSince = null;
                 flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
               }
-            }
+            } else commitUnknown(typedPending.claims, sent.detail || sent.error?.message || 'indeterminate');
             typedPending = undefined;
             noPendingPrompt();
           }
           continue;
         }
       }
-      const batches = first && mod && lines.length ? [lines.join('\n')] : lines;
-      for (const [i, line] of batches.entries()) {
+      const batches: BatchItem[] = first && mod && lines.length
+        ? [{ line: lines.map((item) => item.line).join('\n'), claims: lines.flatMap((item) => item.claims) }]
+        : lines;
+      for (const [i, batch] of batches.entries()) {
         if (stopped) {
-          for (const rest of batches.slice(i)) releaseMarkers(takeMarkers(rest));
+          for (const rest of batches.slice(i)) releaseClaims(rest.claims);
           break;
         }
-        const claimed = takeMarkers(line);
+        const { line, claims } = batch;
         try {
           if (queue) {
+            markSending(claims);
             const sent = await delivery!.notify(callerPane, line, home, { queue: true, env: io.env, signal });
             const outcome = notifyOutcome(sent);
             if (stopped) {
-              if (outcome === 'refused') releaseMarkers(claimed);
-              for (const rest of batches.slice(i + 1)) releaseMarkers(takeMarkers(rest));
+              if (outcome === 'sent') commitAccepted(claims, sent.via ?? 'codex-queue');
+              else if (outcome === 'refused') releaseClaims(claims);
+              else commitUnknown(claims, sent.detail || sent.error?.message || 'indeterminate');
+              for (const rest of batches.slice(i + 1)) releaseClaims(rest.claims);
               break;
             }
             if (sent.retryPrompt) {
-              const rest = batches.slice(i + 1).join('\n');
-              const restMarkers = rest ? takeMarkers(rest) : [];
+              revertClaims(claims);
+              const restItems = batches.slice(i + 1);
+              const rest = restItems.map((item) => item.line).join('\n');
+              const restClaims = restItems.flatMap((item) => item.claims);
               const joined = rest ? joinPendingNotices(line, rest) : { text: line, keptPending: true };
-              if (!joined.keptPending) releaseMarkers(claimed);
-              const markers = joined.keptPending ? [...claimed, ...restMarkers] : restMarkers;
-              typedPending = { retry: sent.retryPrompt, text: joined.text, until: performance.now() + PROMPT_RETRY_TTL_MS, markers };
+              if (!joined.keptPending) releaseClaims(claims);
+              const keptClaims = joined.keptPending ? [...claims, ...restClaims] : restClaims;
+              typedPending = { retry: sent.retryPrompt, text: joined.text, until: performance.now() + PROMPT_RETRY_TTL_MS, claims: keptClaims };
               waitForPrompt();
               break;
             }
-            if (outcome === 'refused') {
-              releaseMarkers(claimed);
-              if (claimed.length) {
+            if (outcome === 'sent') commitAccepted(claims, sent.via ?? 'codex-queue');
+            else if (outcome === 'refused') {
+              releaseClaims(claims);
+              if (claims.length) {
                 idleSince = null;
                 flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
               }
-            }
+            } else commitUnknown(claims, sent.detail || sent.error?.message || 'indeterminate');
             if (sent.detail?.includes('failed') || sent.status !== 0) io.stderr(`${sent.detail || 'event delivery failed'}\n`);
           } else if (mod) {
             // Checkpoint only after the whole scan's batch, and leave changes racing the scan eligible on reload.
             const at = i === batches.length - 1 && !notices.pending ? scanAt : undefined;
             const wakeLines = line.startsWith('[HUD selection]\n') ? [line] : line.split('\n');
             await io.stdout(JSON.stringify({ type: 'wake', lines: wakeLines, at }) + '\n');
-          } else await io.stdout(`${line}\n`);
+            commitAccepted(claims, 'claude-mod');
+          } else {
+            await io.stdout(`${line}\n`);
+            commitAccepted(claims, 'watch-stdout');
+          }
         } catch (error) {
-          releaseMarkers(claimed);
-          for (const rest of batches.slice(i + 1)) releaseMarkers(takeMarkers(rest));
+          releaseClaims(claims);
+          for (const rest of batches.slice(i + 1)) releaseClaims(rest.claims);
           if (isBrokenPipe(error)) {
             stop();
             break;
@@ -636,7 +660,7 @@ export async function watchCommand(
       }
     }
     } finally {
-      releaseAllFlowMarkers();
+      releaseAllClaims();
     }
     return 0;
   } catch (error) {

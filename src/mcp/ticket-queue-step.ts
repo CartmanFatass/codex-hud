@@ -6,7 +6,6 @@ import { dirname, join } from 'node:path';
 import { readObjectives } from '../collectors/objectives.js';
 import { failedAttempt } from '../collectors/thin-jobs.js';
 import { readDone, readTurn, receiptForTurn } from '../roles/cli-turn.js';
-import { jobCallerPane } from '../roles/job-pane.js';
 import { checkBinding, CHECK_TIMEOUT_MS, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
 import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
 import { roleRegistry } from '../roles/roster.js';
@@ -42,7 +41,7 @@ import {
   extractRemovalsDeclaration, extractReportNotes, MAX_ANSWER_RETRIES, parseLeadReport,
   recordDecision, WORKFLOW_WORKER_RULE, WORKFLOW_WORKER_RULE_NO_ASK,
 } from './workflow-lead.js';
-import { permissionNotice, permissionRecheckMs as workerPermissionRecheckMs, permissionStatus, PERMISSION_ID } from './worker-permissions.js';
+import { permissionRecheckMs as workerPermissionRecheckMs } from './worker-permissions.js';
 
 const cleanStates = ['idle_grace', 'done', 'closed'];
 const LAUNCH_GRACE_MS = 120_000, LAUNCH_RECHECK_MS = 5_000, ANSWER_RETRY_MS = 1_000;
@@ -69,38 +68,6 @@ function activeLandRepairJob(item: TicketQueueItem): string | undefined {
   if (!item.job || item.landed || item.failed) return undefined;
   const land = item.land ? readLand(hudHome, item.land) : landAttempt(hudHome, item.job).prior;
   return land?.job === item.job && activeLand(land) ? land.repairs?.at(-1)?.job : undefined;
-}
-
-// Runs without a live direct recipient use their project-scoped, once-claimed outbox.
-function syncPermissionNotices(q: TicketQueue) {
-  if (livePane(q)) return false;
-  const current = new Map<string, string>();
-  const ids = new Set<string>();
-  for (const item of q.tickets) {
-    if (item.landed || item.failed) continue;
-    if (item.job) ids.add(item.job);
-    if (item.repair_job) ids.add(item.repair_job);
-    const activeRepair = activeLandRepairJob(item);
-    if (activeRepair) ids.add(activeRepair);
-  }
-  if (q.review_job) ids.add(q.review_job);
-  if (q.active_lead?.job) ids.add(q.active_lead.job);
-  for (const id of ids) {
-    const job = id && findJob(id);
-    if (!job || jobCallerPane(job)) continue;
-    const status = jobCache.readStatus<JobStatus>(job.job);
-    if (status.status !== 'ok' || !['working', 'waiting_orchestrator', 'blocked'].includes(status.value.state)) continue;
-    const entry = permissionStatus(directory(job.job), jobCache).active;
-    if (entry && PERMISSION_ID.test(entry.id) && (entry.outcome === 'uncertain' || (entry.action === 'main' && entry.outcome === 'pending')))
-      current.set(`handback-${entry.id}`, permissionNotice(job.job, { ...entry, options: [] })); // No caller owns hud_respond.
-  }
-  const notices = q.notices ??= {};
-  let changed = false;
-  for (const key of Object.keys(notices)) if (key.startsWith('handback-') && PERMISSION_ID.test(key.slice('handback-'.length)) && !current.has(key)) {
-    delete notices[key]; changed = true;
-  }
-  for (const [key, line] of current) if (notices[key] !== line) { notices[key] = line; changed = true; }
-  return changed;
 }
 
 function ticketHeader(path: string) {
@@ -1937,12 +1904,11 @@ export async function driveTicketQueue(id: string) {
         return graph;
       },
       tick: (q, key, step, plan) => {
-        const changed = syncPermissionNotices(q);
         const turn = step.kind === 'batch' ? tickTicketQueue(q, step, state)
           : step.kind === 'job' ? tickJobStep(q, key, step, state)
           : step.kind === 'handback' ? tickHandbackStep(q, key, step, plan, state) : null;
         if (!turn) throw Error(`unsupported ticket-queue step ${step.kind}`);
-        return changed ? { ...turn, changed: true } : turn;
+        return turn;
       },
       active: q => q.state === 'working',
       watches: q => [

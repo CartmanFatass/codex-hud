@@ -340,6 +340,7 @@ test('terminal pane-less queues archive their whole run and only unlink after th
   const key = 'handback-perm-0000000000000001';
   const run = { flow: flowId, notices: { [key]: 'Synthetic permission notice' } };
   const permissionMarkers = [false, true].map(all => noticeEvents(home, run, all)[0].marker);
+  const permissionMarkerBytes = permissionMarkers.map(file => [basename(file), fs.readFileSync(file)]);
   const marker = put(join(flows, `${flowId}.json.archived`), '');
   const events = join(home, 'events', '2030-02.jsonl');
   const member = join(home, 'archive', 'cold', '2030-02', `${flowId}.text.tar.zst`);
@@ -371,7 +372,10 @@ test('terminal pane-less queues archive their whole run and only unlink after th
   assert.ok(entries.get(`${flowId}/graph.json`)?.equals(graphBytes));
   assert.ok(entries.get(`${flowId}/end-1.noticed`)?.equals(noticeBytes));
   assert.ok(entries.get(`${flowId}.json.noticed`)?.equals(sidecarBytes));
-  for (const file of permissionMarkers) assert.deepEqual(entries.get(`${flowId}/${basename(file)}`), Buffer.alloc(0));
+  for (const [name, bytes] of permissionMarkerBytes) {
+    assert.ok(entries.get(`${flowId}/${name}`)?.equals(bytes));
+    assert.equal(JSON.parse(bytes.toString('utf8')).state, 'claimed');
+  }
   assert.equal(entries.has(`${flowId}.json.archived`), false);
 
   fs.chmodSync(home, 0o700);

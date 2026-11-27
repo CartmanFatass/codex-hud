@@ -6,14 +6,15 @@ import { agyTranscriptPath } from '../harness/agy/transcript.js';
 import type { Job, JobRoute, JobStatus } from '../mcp/job-contracts.js';
 import { isAutoLandFlakeJob } from '../mcp/flake-admission.js';
 import { jobFiles } from '../mcp/paths.js';
-import { permissionBlockAt, permissionNotice, permissionPredatesBlock, permissionStatus, type PermissionEntry } from '../mcp/worker-permissions.js';
+import { permissionBlockAt, permissionNoticeable, permissionPredatesBlock, permissionStatus, type PermissionEntry } from '../mcp/worker-permissions.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { fileStampOf, filterTimedOutQuestions, getJobIndexCache, statsMtimeMs, type JobDirMeta, type JobIndexCache, type PersistedFactRow } from '../roles/job-index-cache.js';
 import { jobChecks, sameChecks, type CheckSummary } from '../roles/job-checks.js';
 import { previewNotice, readReportMeta, type ReportMeta, type ReportMetaFields } from '../roles/report-meta.js';
 import { reportReadHint } from '../utils/report-summary.js';
-import { adoptProjectJobs } from '../roles/job-project.js';
+import { adoptProjectJobs, projectJobFilter } from '../roles/job-project.js';
+import { isOriginPaneLive, loadLivePanes } from '../roles/select-send.js';
 import { supersession, taskTarget, type Receipt } from './job-supersession.js';
 import { ticketTitleReader } from './ticket-title.js';
 import { objectiveLink } from './objectives.js';
@@ -523,10 +524,7 @@ export function jobChanges(prev: ReadonlyMap<string, JobRow> | readonly JobRow[]
   const lines: string[] = [];
   for (const row of rows) {
     const old = prior.get(row.job);
-    if (row.permission && (row.permission.id !== old?.permission?.id || row.permission.outcome !== old.permission.outcome)) {
-      lines.push(permissionNotice(row.job, row.permission));
-      continue;
-    }
+    if (row.permission) continue;
     if ((row.workflow || row.batch_flow) && !row.question_ids.some(id => !old?.question_ids.includes(id)) && !(row.blocked && !old?.blocked)) continue;
     if (row.ticket_queue || (row.land_turn && !row.question_ids.some(id => !old?.question_ids.includes(id)))) continue;
     if (row.auto_land && !row.auto_land_blocked &&
@@ -566,12 +564,18 @@ function watchReceipts(cache: JobIndexCache) {
   });
 }
 
-function watchRows(cache: JobIndexCache, pane: string | null, receipts: ReturnType<typeof watchReceipts>, adopted?: ReadonlySet<string>): WatchJobRow[] {
+function watchRows(
+  cache: JobIndexCache,
+  pane: string | null,
+  receipts: ReturnType<typeof watchReceipts>,
+  adopted?: ReadonlySet<string>,
+  admittedPermissions?: ReadonlySet<string>,
+): WatchJobRow[] {
   const rows: WatchJobRow[] = [];
   const statuses = new Map<string, Partial<JobStatus> | null>();
   for (const { id, dir, job, receiptAt } of receipts) {
     if (rows.length === 200) break;
-    if (job.scout_only === true || job.council || (pane !== null && jobCallerPane(job) !== pane)) continue;
+    if (job.scout_only === true || job.council || (pane !== null && jobCallerPane(job) !== pane && !admittedPermissions?.has(id))) continue;
     const statusRes = cache.readStatus<JobStatus>(id);
     const status = statusRes.status === 'ok' ? statusRes.value : null;
     statuses.set(id, status);
@@ -625,11 +629,28 @@ export function readThinJobRows(home: string, scope: { pane?: string | null }): 
 export async function readSessionJobRows(home: string, pane: string, cwd: string, env: NodeJS.ProcessEnv) {
   const cache = getJobIndexCache(home);
   const receipts = watchReceipts(cache);
+  const matches = projectJobFilter(cwd);
+  const admittedPermissions = new Set<string>();
+  const foreignPermCandidates: { id: string; origin: string }[] = [];
+  for (const { id, dir, job } of receipts) {
+    if (job.scout_only === true || job.council || job.headless || job.bro || job.jev || job.reaped_at) continue;
+    const origin = jobCallerPane(job);
+    if (origin === pane || !matches(job)) continue;
+    if (!permissionNoticeable(permissionStatus(dir, cache).active)) continue;
+    if (!origin) admittedPermissions.add(id);
+    else foreignPermCandidates.push({ id, origin });
+  }
+  if (foreignPermCandidates.length) {
+    const { panes, workerPanes } = await loadLivePanes(home, env);
+    for (const { id, origin } of foreignPermCandidates) {
+      if (isOriginPaneLive(home, origin, panes, workerPanes) === false) admittedPermissions.add(id);
+    }
+  }
   // Capture the initial pane state before yielding, so writes just after watch starts are changes, not catch-up.
-  const rows = watchRows(cache, pane, receipts);
+  const rows = watchRows(cache, pane, receipts, undefined, admittedPermissions.size ? admittedPermissions : undefined);
   const jobs = receipts.map(({ job }) => job), adopted = new Set<string>();
   if (await adoptProjectJobs(home, pane, cwd, jobs, env, adoptionAttention(home, jobs, cwd, cache), cache, (id) => adopted.add(id))) {
-    return watchRows(cache, pane, watchReceipts(cache), adopted);
+    return watchRows(cache, pane, watchReceipts(cache), adopted, admittedPermissions.size ? admittedPermissions : undefined);
   }
   return rows;
 }
