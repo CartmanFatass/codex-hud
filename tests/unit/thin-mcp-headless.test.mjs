@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { fixture, rolePlacesFixture, cliState, resultValue, taskCall, taskJob, taskRpc, until, workerFor } from '../helpers/thin-mcp-harness.mjs';
 import { writeFixtureFile as write } from '../helpers/thin-mcp-files.mjs';
+import { checkout, job as sourceJob, jobDir, repair } from '../helpers/thin-mcp-land.mjs';
 import { isProcAlive } from '../../dist/utils/proc.js';
 import { readContract } from '../../dist/harness/pi/worker/contract.js';
 import { readSelectionExcerpts } from '../../dist/roles/selection-excerpts.js';
@@ -287,6 +288,31 @@ test('selection advisor popup hides and reopens one native conversation, with in
     const [failed] = excerpts();
     assert.equal(cliState(join(home, 'jobs', failed.target)).state, 'failed');
   });
+});
+
+test('a land waits for a headless repair to resume after its answer', async t => {
+  const f = await checkout(t, ['grep fixed tracked']);
+  f.overrideBin('pi', fakePi);
+  write(join(f.env.HOME, 'ask'), '');
+  write(join(f.env.HOME, 'hold-next'), '');
+  const source = join(jobDir(f, sourceJob), 'job.json');
+  write(source, JSON.stringify({ ...read(source), create_options: { mode: 'headless' } }));
+  const { flow } = await f.call('hud_land', { job: sourceJob });
+  const id = await repair(f, flow, 0), dir = jobDir(f, id);
+  await until(() => f.flowState(flow).step === 'repair 1: waiting for main (q1)', t.signal);
+  await until(() => cliState(dir)?.state === 'waiting_orchestrator', t.signal);
+  const answer = await f.call('hud_respond', { job: id, request_id: 'q1', answer: 'Choose B.' });
+  assert.equal(answer.continuation, 'resumed');
+  assert.equal(read(join(dir, 'job.json')).land_turn, `land:${flow}:1`);
+  fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
+  f.git(f.worktree, 'commit', '-qam', 'headless repair');
+  write(join(f.env.HOME, 'release-next'), '');
+  await until(() => ['completed', 'failed'].includes(f.flowState(flow).state), 15000);
+  const done = f.flowState(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.repairs.length, 1);
+  assert.equal(done.repairs[0].outcome, 'gate passed');
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
 });
 
 test('resumed Pi rejects a replacement session ID or file before delivering the answer', async t => {

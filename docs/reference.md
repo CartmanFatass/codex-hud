@@ -406,7 +406,8 @@ Watcher flow retention keeps a land flow receipt and its gate log(s) while `flak
 On a persistent red gate or a cherry-pick conflict, HUD sends the failing step and up to 40 lines (8 KiB) of its failure output to the source worker with instructions to rebase onto the current base, fix and commit.
 It uses the same native-resume window as `hud_send`; if it cannot continue the source worker, it creates a local job of the same role with `retry_of`, in the source checkout.
 The checkout lease is released during repair.
-A fresh settlement starts a fresh integration and gate; a worker question goes to the main session and ends the flow.
+A repair worker's question goes to the main session; the same flow stays active at `repair 1: waiting for main (q1)` without holding the checkout lease.
+An answer lets the repair continue, and a fresh settlement starts a fresh integration and gate. The flow fails if the worker fails or closes without completing the repair, or if the question goes unanswered past the normal question timeout (20 minutes by default).
 There are at most two worker repairs.
 
 Each failing gate run (first run or immediate rerun) keeps a private excerpt of up to 8 KiB beside the flow receipt: blank lines and HUD panel frames are removed, and the first recognized Node.js test assertion or error from each failing file takes priority over stack traces or other output.

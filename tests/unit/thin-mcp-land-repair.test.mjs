@@ -7,6 +7,7 @@ import { setImmediate as immediate } from 'node:timers/promises';
 import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
 import { withDistLock } from '../../scripts/dist-lock.mjs';
 import { installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.js';
+import { DEFAULT_ASK_TIMEOUT_S } from '../../dist/worker/qa.js';
 import { waitSonic } from '../../dist/worker/tools.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -53,13 +54,13 @@ exit 1
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
 });
 
-for (const ask of [false, true]) test(`a CLI land repair ignores pre-turn attention and ${ask ? 'hands back its new question' : 'lands its fresh report'}`, async t => {
+test('a CLI land repair ignores pre-turn attention, waits for its answer, then lands the same flow', async t => {
   const preload = `
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 const stat = fs.statSync;
 fs.statSync = (path, ...args) => {
-  if (String(path).endsWith('/${job}/STATUS.json') && new Error().stack.includes('at repairSettled ')) {
+  if (String(path).endsWith('/${job}/STATUS.json') && new Error().stack.includes('at repairProgress ')) {
     fs.appendFileSync(process.env.HOME + '/repair-polls', 'poll\\n');
   }
   return stat(path, ...args);
@@ -94,22 +95,23 @@ exec node "$FAKE_BIN" herdr "$@"
   // Two polls prove the first one already ignored the unchanged pre-turn row.
   await until(() => fs.existsSync(polls) && fs.readFileSync(polls, 'utf8').startsWith('poll\npoll\n'), t.signal);
   assert.equal(f.flowState(flow).state, 'running', JSON.stringify(f.flowState(flow)));
-  if (ask) {
-    fs.mkdirSync(join(dir, 'qa'));
-    writeFixtureFile(join(dir, 'qa/q1.md'), 'Which synthetic version?');
-  } else {
-    fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
-    f.git(f.worktree, 'commit', '-qam', 'repair'); settle(f, job, 'Fixed.');
-  }
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+  writeFixtureFile(join(dir, 'qa/q1.md'), 'Which synthetic version?');
+  writeFixtureFile(statusFile, JSON.stringify({ state: 'waiting_orchestrator', blocked: true }));
+  await until(() => f.flowState(flow).step === 'repair 1: waiting for main (q1)', t.signal);
+  assert.equal((await f.call('hud_read', { job: flow })).state, 'running');
+  assert.equal((await f.call('hud_respond', { job, request_id: 'q1', answer: 'Keep both.' })).written, true);
+  // The worker can still be publishing its transition out of attention after the answer.
+  await until(() => f.flowState(flow).step === 'repair 1', t.signal);
+  assert.equal(f.flowState(flow).state, 'running');
+  fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
+  f.git(f.worktree, 'commit', '-qam', 'repair'); settle(f, job, 'Fixed.');
   await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
   const done = f.flowState(flow);
-  if (ask) {
-    assert.equal(done.state, 'failed');
-    assert.equal(done.error, `${job} needs the main session: q1`);
-  } else {
-    assert.equal(done.state, 'completed', JSON.stringify(done));
-    assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
-  }
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.repairs.length, 1);
+  assert.equal(done.repairs[0].outcome, 'gate passed');
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
 });
 
 async function isolatedLand(t, gate) {
@@ -238,17 +240,46 @@ test('a persistently red gate creates same-role repairs and hands back once afte
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
 });
 
-test('cherry-pick conflict goes to the repair worker; even a quickly answered question stops the land', async t => {
-  const f = await checkout(t, ['true']);
+test('a cherry-pick repair lands even if the question is already answered when observed', async t => {
+  const f = await checkout(t, ['grep fixed tracked']);
   fs.writeFileSync(join(f.main, 'tracked'), 'conflict\n'); f.git(f.main, 'commit', '-qam', 'conflict');
   const { flow } = await f.call('hud_land', { job });
   const id = await repair(f, flow, 0), dir = jobDir(f, id);
   assert.match(fs.readFileSync(join(dir, 'brief.md'), 'utf8'), /cherry-pick[\s\S]*CONFLICT/);
   fs.mkdirSync(join(dir, 'qa'), { recursive: true });
   fs.writeFileSync(join(dir, 'qa/q1.md'), 'Which version?'); fs.writeFileSync(join(dir, 'qa/q1.answer.md'), 'Keep both.');
-  settle(f, id, 'Answered.');
+  f.git(f.worktree, 'rebase', '-X', 'theirs', 'base');
+  fs.appendFileSync(join(f.worktree, 'tracked'), 'fixed\n');
+  f.git(f.worktree, 'commit', '-qam', 'repair'); settle(f, id, 'Answered and fixed.');
+  await until(() => ['failed', 'completed'].includes(f.flowState(flow).state), 15000);
+  const done = f.flowState(flow);
+  assert.equal(done.state, 'completed', JSON.stringify(done));
+  assert.equal(done.repairs.length, 1);
+  assert.equal(done.repairs[0].outcome, 'gate passed');
+  assert.equal(f.git(f.remote, 'rev-parse', 'base'), done.landed_sha);
+});
+
+for (const state of ['closed', 'failed', 'timeout']) test(`land reports ${state} while waiting for a repair answer`, async t => {
+  const f = await checkout(t, ['false'], { probe: 'delete process.env.HUD_ASK_TIMEOUT;' });
+  const { flow } = await f.call('hud_land', { job });
+  const id = await repair(f, flow, 0), dir = jobDir(f, id);
+  const question = join(dir, 'qa/q1.md');
+  fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+  writeFixtureFile(question, 'Which synthetic version?');
+  await until(() => f.flowState(flow).step === 'repair 1: waiting for main (q1)', t.signal);
+  const reason = state === 'timeout' ? 'question q1 timed out' : `synthetic ${state} reason`;
+  if (state === 'timeout') {
+    const expired = new Date(Date.now() - (DEFAULT_ASK_TIMEOUT_S + 1) * 1000);
+    fs.utimesSync(question, expired, expired);
+  } else {
+    writeFixtureFile(join(dir, 'STATUS.json'), JSON.stringify({ state, exit_reason: reason }));
+  }
   await until(() => f.flowState(flow).state === 'failed', 15000);
-  const done = f.flowState(flow); assert.match(done.error, /needs the main session: q1/); assert.equal(done.repairs.length, 1);
+  const done = f.flowState(flow);
+  assert.equal(done.step, 'repair 1');
+  assert.equal(done.error, `${id}: ${reason}`);
+  assert.equal(done.repairs.length, 1);
+  assert.equal(done.repairs[0].outcome, done.error);
   assert.equal(f.git(f.remote, 'rev-parse', 'base'), f.base_head);
 });
 

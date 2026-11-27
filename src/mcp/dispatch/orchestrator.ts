@@ -1492,8 +1492,10 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const outcome = { key, ...(explicitKey === undefined ? { derived_key: matchKey } : {}),
     recorded_at: new Date().toISOString(), exit_code: null as number | null, stderr_tail: '', resumed: true as const };
   const delivered = pending.map(({ text: _, ...receipt }) => ({ ...receipt, resumed: true as const }));
-  const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : undefined,
-    ticket_queue: land || automatic ? current.ticket_queue : undefined,
+  // Answering a headless land repair resumes that repair, not a new independent job turn.
+  const answeringLand = answerRequest && current.land_turn?.startsWith('land:');
+  const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : answeringLand ? current.land_turn : undefined,
+    ticket_queue: land || automatic || answeringLand ? current.ticket_queue : undefined,
     workflow: automatic || answerRequest || (land && isComposedId(current.workflow)) ? current.workflow : undefined,
     batch_flow: automatic || answerRequest ? current.batch_flow : undefined,
     headless_task_fence: automatic ? taskFence(current) : undefined,

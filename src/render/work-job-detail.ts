@@ -88,8 +88,8 @@ export function flowStepDetail(step: string, waitsOn?: string): string {
   if (gate) return `${t('gate')}[${gate[1]}]: ${gate[2]}`;
   const after = /^after\[(\d+)\]:\s*(.*)$/.exec(safe);
   if (after) return `${t('after')}[${after[1]}]: ${after[2]}`;
-  const repair = /^repair (\d+)$/.exec(safe);
-  if (repair) return `${t('repair')} ${repair[1]}`;
+  const repair = /^repair (\d+)(?:: waiting for main \((q\d+)\))?$/.exec(safe);
+  if (repair) return `${t('repair')} ${repair[1]}${repair[2] ? `: ${t('waiting for main')} (${repair[2]})` : ''}`;
   return safe;
 }
 function flowOutcome(flow: WorkFlow): string {
