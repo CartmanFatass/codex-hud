@@ -5,7 +5,7 @@
 **State:** done
 **Result:** M1–M3 accepted; the M3 Try passed (paused project and ticketless result found on Home, evidence opened, request resolved and cleared)
 **Evidence:** docs/spec.md, 9342cacd
-**Features:** pivot-m1, pivot-m2, pivot-m3
+**Features:** pivot-m1, pivot-m2, pivot-m3, imp-daily-facts, cold-archive
 
 ## glance: Home shows every project's progress at a glance; Project carries the depth without repeating it
 **Result:** Home shows today's projects with per-Objective ticket bars, folds the rest behind one key, and ends with Today and Schedule cards.
@@ -40,8 +40,8 @@
 
 ## advisor: Advisor 影子模式：推荐技能、指出违反的规则，只展示不注入
 
-**State:** active
-**Next:** 等你试用影子模式（2 张待你试的工单），之后再定注入范围（advisor/03）
+**State:** paused
+**Next:** Paused by the owner 2026-11-26 (D-2026-11-26-07); tries 01-02 and injection question 03 wait.
 **Features:** advisor
 
 ## herdr-fork: HUD 运行在自己维护的 herdr fork 上，进程身份、tab 身份和关闭由 herdr 直接提供
