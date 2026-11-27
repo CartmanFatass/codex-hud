@@ -123,7 +123,7 @@ function verifiedSourceHead(job: Job) {
 }
 
 function milestoneReviewRange(q: TicketQueue): Job['reviewed'] {
-  if (!q.start_head || !commitSha.test(q.start_head)) return;
+  if (!q.start_head || !commitSha.test(q.start_head) || !q.tickets.some(t => t.landed && (!t.repo || t.repo === q.root))) return;
   const base = resolveCommit(q.root, q.start_head);
   const head = base && resolveCommit(q.root, 'HEAD');
   if (base && head) return { base, head };
@@ -193,11 +193,12 @@ function checkUnattendedGates(
   if (!head) {
     return { kind: 'fail', problemKind: 'worker', reason: 'Verified worker commit unavailable' };
   }
+  const repo = job.worktree!.main_root;
   let base: string;
-  try { base = validLandConfig(hudHome, q.root).base; }
+  try { base = validLandConfig(hudHome, repo).base; }
   catch (error) { return { kind: 'fail', problemKind: 'land', reason: errorLine(error) }; }
   const specDiff = spawnSync('git', [...SAFE_GIT_ARGS, 'diff', '--name-only', '--no-renames', `refs/heads/${base}...${head}`, '--', 'docs/spec.md'], {
-    cwd: q.root, env: safeGitEnv(process.env), encoding: 'utf8', timeout: 5000,
+    cwd: repo, env: safeGitEnv(process.env), encoding: 'utf8', timeout: 5000,
   });
   if (specDiff.status !== 0) {
     return { kind: 'fail', problemKind: 'land', reason: 'Cannot verify docs/spec.md diff before landing' };
@@ -1334,15 +1335,17 @@ function tickTicketQueue(
   let item = q.tickets.find(entry => !entry.job && !entry.held && !entry.failed);
   const recovered = item && eligible.find(t => t.ticket === item?.ticket);
   if (item && !recovered) {
+    const reason = blocked.find(t => t.ticket === item!.ticket)?.blockers.join(', ') ?? 'no longer ready after recovery';
     if (q.unattended) {
-      failItem(item, `${item.ticket}: no longer ready after recovery`, 'queue');
+      failItem(item, `${item.ticket}: ${reason}`, 'queue');
       return { state: 'running', changed: true };
     }
-    state.problem = { kind: 'queue', ticket: item.ticket, reason: `${item.ticket}: no longer ready after recovery` };
+    state.problem = { kind: 'queue', ticket: item.ticket, reason: `${item.ticket}: ${reason}` };
     return { state: 'failed', reason: state.problem.reason, changed: true };
   }
-  if (item && recovered && item.path !== recovered.path) {
+  if (item && recovered && (item.path !== recovered.path || item.repo !== recovered.repo)) {
     item.path = recovered.path;
+    item.repo = recovered.repo;
     changed = true;
   }
   const freshCandidates = item ? [] : eligible.filter(t => !q.tickets.some(own => own.ticket === t.ticket));
@@ -1352,7 +1355,7 @@ function tickTicketQueue(
     next = freshCandidates.filter(t => !invalid.has(t.ticket));
   }
   if (next.length) {
-    const { ticket, path, role, blockers, repairs } = next[0];
+    const { ticket, path, role, blockers, repairs, repo } = next[0];
     const round = q.repair_rounds ?? 0;
     if (next.some((entry, i) => i > 0 && entry.ticket === ticket)) {
       if (q.unattended) {
@@ -1365,7 +1368,7 @@ function tickTicketQueue(
       state.problem = { kind: 'queue', ticket, reason: `${ticket}: ambiguous ticket number` };
       return { state: 'failed', reason: state.problem.reason, changed: true };
     }
-    item = { ticket, path, role, round, ...(repairs?.length && { repairs: [...repairs] }), blockers: blockers ? [...blockers] : [] };
+    item = { ticket, path, role, round, ...(repo && { repo }), ...(repairs?.length && { repairs: [...repairs] }), blockers: blockers ? [...blockers] : [] };
     q.tickets.push(item); // Intent committed by the driver before dispatch so the request key is recoverable.
     q.future = future.filter(t => t.ticket !== ticket);
     changed = true;
@@ -1400,10 +1403,11 @@ function tickTicketQueue(
       return cur?.state === 'working' && !stopRequested(hudHome, flowId);
     };
     try {
+      const cwd = launching.repo ?? root;
       const result = await dispatchTicketJob(
-        { role: launching.role, cwd: root, ticket: launching.ticket, brief_file: launching.path, request_key: reqKey },
+        { role: launching.role, cwd, ticket: launching.ticket, request_key: reqKey },
         pane,
-        { queue: { id: queueId, canAdmit }, dispatcher, workspace, runNote },
+        { queue: { id: queueId, canAdmit }, dispatcher, workspace, runNote, ...(cwd !== root && { ticketRoot: root }) },
       );
       if ('job' in result && typeof result.job === 'string') job = result.job;
       if (!job || ('ok' in result && result.ok === false)) {

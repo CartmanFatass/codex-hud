@@ -558,6 +558,44 @@ test('ready mixes JSON and legacy; hud_create renders a ticket-only brief and ig
   }
 });
 
+test('hud_create renders a cross-repo ticket from the caller tracker, not the target with the same ref', async t => {
+  const f = await fixture(t), cwd = initRepo(f.root);
+  fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: f.root }, { root: cwd }] }));
+  const draft = { title: 'Tracker ticket', blocked_by: [], acceptance: ['Checked'], what: 'Tracker goal.', repo: cwd };
+  await f.call('hud_tickets', { op: 'add', feature: 'sample', tickets: [draft] });
+  await f.call('hud_tickets', { op: 'add', feature: 'sample', cwd, tickets: [{ ...draft, what: 'Target decoy.', repo: undefined }] });
+  const job = await f.call('hud_create', { role: 'general', ticket: 'sample/01', cwd });
+  const brief = fs.readFileSync(join(job.task_dir, 'brief.md'), 'utf8');
+  assert.match(brief, /\*\*Repo:\*\*/);
+  assert.match(brief, /Tracker goal\./);
+  assert.doesNotMatch(brief, /Target decoy\./);
+  const receipt = JSON.parse(fs.readFileSync(join(job.task_dir, 'job.json'), 'utf8'));
+  assert.equal(receipt.cwd, cwd);
+  assert.equal(receipt.ticket_root, f.root);
+  const outside = join(f.root, 'custom.md');
+  fs.writeFileSync(outside, 'Not a ticket.');
+  const refused = await f.call('hud_create', { role: 'general', ticket: 'sample/01', cwd, brief_file: outside });
+  assert.match(refused.error, /must resolve to a readable UTF-8 text file inside/);
+});
+
+test('ready names an unregistered ticket repo for JSON and legacy Markdown tickets', async t => {
+  const f = await fixture(t), repo = initRepo(f.root);
+  const draft = { title: 'Tracker ticket', blocked_by: [], acceptance: ['Checked'], what: 'Tracker goal.', repo };
+  await f.call('hud_tickets', { op: 'add', feature: 'json', tickets: [draft] });
+  const issues = join(f.root, '.scratch/legacy/issues');
+  fs.mkdirSync(issues, { recursive: true });
+  fs.writeFileSync(join(issues, '01-sample.md'), '# 01: Legacy sample\n**Status:** ready-for-agent\n**Blocked by:** none\n');
+  await f.call('hud_tickets', { op: 'update', feature: 'legacy', ticket: 1, repo });
+  const ready = () => f.call('hud_tickets', { op: 'ready' });
+  const blocked = await ready();
+  assert.deepEqual(blocked.tickets, []);
+  assert.deepEqual(blocked.blocked, ['json/01', 'legacy/01'].map(ticket => ({
+    ticket, blockers: [`repo ${JSON.stringify(repo)} is not a registered project root`],
+  })));
+  fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: f.root }, { root: repo }] }));
+  assert.deepEqual((await ready()).tickets.map(t => [t.ticket, t.repo]), [['json/01', repo], ['legacy/01', repo]]);
+});
+
 test('thin roles MCP main path over stdio', { timeout: 15000 }, async (t) => {
   const f = await fixture(t, true, watchStatsProbe);
   const initialized = await f.rpc('initialize', { protocolVersion: '2024-11-05' });

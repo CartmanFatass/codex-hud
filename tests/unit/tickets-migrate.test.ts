@@ -94,6 +94,7 @@ function seedComprehensiveFixture(project: string) {
       '**Objective:** alpha-obj',
       '',
       '**What to build:** Build the synthetic standard path with deterministic output.',
+      '**Repo:** /synthetic/example-in-prose',
       '',
       '- [x] Renders cleanly',
       '- [x] Wrapped acceptance item',
@@ -120,7 +121,7 @@ function seedComprehensiveFixture(project: string) {
       '',
       '**What:** Extract shared formatter into a pure helper.',
       '',
-      '**Who:** frontend-implementer · **Size:** ~80 lines · **Blocked by:** 01, FEAT-FLAKES 01 (same lane) · **Status:** resolved (90ef78cd, stopgap)',
+      '**Who:** frontend-implementer · **Repo:** /synthetic/code-repo · **Size:** ~80 lines · **Blocked by:** 01, FEAT-FLAKES 01 (same lane) · **Status:** resolved (90ef78cd, stopgap)',
       '**Main review:** yes',
       '**Objective:** beta-obj',
       '',
@@ -219,6 +220,8 @@ test('hud tickets migrate converts all header/section variants losslessly, keeps
   assert.deepEqual(t1.approved_removals, ['old bar', 'legacy hook']);
   assert.deepEqual(t1.blocked_by, []);
   assert.deepEqual(t1.repairs, ['feat-flakes/01']);
+  assert.equal(t1.repo, undefined);
+  assert.match(t1.what, /\*\*Repo:\*\* \/synthetic\/example-in-prose/);
   assert.match(t1.what, /Legacy Blocked by: none \(can start immediately\)/);
   assert.equal(t1.objective, undefined); // inherits feature objective 'alpha-obj'
   assert.equal(t1.acceptance.length, 2);
@@ -232,6 +235,8 @@ test('hud tickets migrate converts all header/section variants losslessly, keeps
 
   assert.equal(t2.status, 'done'); // resolved -> done
   assert.equal(t2.role, 'frontend-imp');
+  assert.equal(t2.repo, '/synthetic/code-repo');
+  assert.doesNotMatch(t2.what, /\*\*Repo:\*\*/);
   assert.equal(t2.main_review, true);
   assert.equal(t2.objective, 'beta-obj'); // overrides feature objective
   assert.deepEqual(t2.blocked_by, ['feat-alpha/01', 'feat-flakes/01']);

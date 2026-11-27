@@ -311,8 +311,12 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
     cleanup.length = 0;
     f.base_sha = (await git(main, ['rev-parse', '--verify', `${ref}^{commit}`])).trim();
     await checkMain(f.base_sha);
-    const prepareFilters = await neutralizeFilters(git, main);
-    await checkLandingRecords(main, home, prepareLandRecords(home, [f]), f.base_sha, c.gate.length, prepareFilters, new Date().toISOString());
+    const groups = prepareLandRecords(main, home, [f]);
+    for (const [tracker, entries] of groups) {
+      if (!entries.length) continue;
+      const filters = await neutralizeFilters(git, tracker);
+      await checkLandingRecords(tracker, home, entries, f.base_sha, c.gate.length, filters, new Date().toISOString());
+    }
     const ff = (await git(main, ['merge-base', f.base_sha, f.source_sha])).trim() === f.base_sha;
     const picks = await picksFor(f.base_sha, f.source_sha);
     if (!picks.length) throw Error('Source has no commits to land');
@@ -403,10 +407,20 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       current = await mainTip();
       if (current === target) break;
     }
+    const mainRoot = fs.realpathSync(main);
+    const groups = prepareLandRecords(mainRoot, home, members);
+    const trackerFilters = new Map([[mainRoot, filters]]);
+    for (const [tracker] of groups) if (tracker !== mainRoot) trackerFilters.set(tracker, await neutralizeFilters(git, tracker));
     const at = new Date().toISOString();
-    await withTicketStoreLock(fs.realpathSync(main), async () => {
-      const recordEntries = prepareLandRecords(home, members);
-      await checkLandingRecords(main, home, recordEntries, target, c.gate.length, filters, at, { locked: true });
+    // Opposite-direction lands may need the same ticket locks, even though their checkout leases differ.
+    const roots = [...groups.keys()].sort();
+    const withRecordLocks = (run: () => Promise<void>, i = 0): Promise<void> =>
+      i < roots.length ? withTicketStoreLock(roots[i], () => withRecordLocks(run, i + 1)) : run();
+    await withRecordLocks(async () => {
+      for (const [tracker, entries] of groups) {
+        const records = tracker === mainRoot ? entries : entries.map(entry => ({ ...entry, commit: trainTips?.get(entry.row) ?? landed }));
+        await checkLandingRecords(tracker, home, records, target, c.gate.length, trackerFilters.get(tracker)!, at, { locked: true });
+      }
       publishing = true;
       for (const row of members) { row.publish_pending = landed; writeLand(home, row); }
       try {
@@ -428,13 +442,20 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
       const preAmend = landed;
       let amended: string | undefined;
       try {
-        amended = await recordLanding(main, home, recordEntries, target, c.gate.length, who, filters, at, { locked: true, expectedTip: preAmend });
+        amended = await recordLanding(mainRoot, home, groups.get(mainRoot)!, target, c.gate.length, who, filters, at, { locked: true, expectedTip: preAmend });
+        for (const [tracker, entries] of groups) if (tracker !== mainRoot) {
+          const records = entries.map(entry => {
+            const tip = trainTips?.get(entry.row);
+            return { ...entry, commit: !tip || tip === preAmend ? amended ?? preAmend : tip };
+          });
+          await recordLanding(tracker, home, records, target, c.gate.length, who, trackerFilters.get(tracker)!, at, { locked: true, sweep: false });
+        }
       } catch (error) {
         for (const row of members) {
           if (target !== base) row.replayed_onto = target;
-          if (trainTips) row.published_sha = preAmend;
+          if (trainTips) row.published_sha = amended ?? preAmend;
           const tip = trainTips?.get(row);
-          row.landed_sha = !tip || tip === preAmend ? preAmend : tip;
+          row.landed_sha = !tip || tip === preAmend ? amended ?? preAmend : tip;
           row.landed_at = at;
           delete row.publish_pending;
           writeLand(home, row);

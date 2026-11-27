@@ -50,6 +50,7 @@ export interface ReviewRecord {
 }
 export interface TicketQueueItem {
   ticket: string; path: string; role: 'imp' | 'frontend-imp'; job?: string; land?: string; landed?: true; base_moves?: number;
+  repo?: string; // Registered target main checkout; root remains the tracker.
   /** Repair round at admission (0 for the initial round; absent on legacy records). */
   round?: number;
   /** Canonical <feature>/<NN> slice refs fixed by this repair ticket (recorded at admission). */

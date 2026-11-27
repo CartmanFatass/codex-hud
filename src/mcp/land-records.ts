@@ -13,7 +13,7 @@ import {
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import type { Job } from './job-contracts.js';
 import type { LandFlow } from './land-state.js';
-import { landedTicket, unfinishedAcceptance } from './local-tickets.js';
+import { landedTicket, registeredTicketRepo, unfinishedAcceptance, unregisteredRepoReason } from './local-tickets.js';
 import { jobFiles } from './paths.js';
 import { readTicketQueue } from './ticket-queue-state.js';
 
@@ -64,30 +64,44 @@ function leadNotes(home: string, flow: LandFlow, job: Job, ticket: string): stri
   });
 }
 
-type LandRecordEntry = { row: LandFlow; ref: NonNullable<ReturnType<typeof parseTicketRef>>; notes: string[] };
+type LandRecordEntry = { row: LandFlow; ref: NonNullable<ReturnType<typeof parseTicketRef>>; notes: string[]; commit?: string };
 
-/** Read report evidence before fast-forward; resolve the checklist against the current ticket file. */
-export function prepareLandRecords(home: string, members: readonly LandFlow[]): LandRecordEntry[] {
-  return members.flatMap(row => {
+/** Read report evidence before fast-forward. Always sweep target writes, but group records by tracker. */
+export function prepareLandRecords(mainRoot: string, home: string, members: readonly LandFlow[]) {
+  const main = fs.realpathSync(mainRoot);
+  const groups = new Map<string, LandRecordEntry[]>([[main, []]]);
+  for (const row of members) {
     const dir = join(home, 'jobs', row.job);
     let job: Job;
-    try { job = readJsonFile(join(dir, jobFiles.job)) as Job; } catch { return []; }
-    if (!job.ticket) return [];
+    try { job = readJsonFile(join(dir, jobFiles.job)) as Job; } catch { continue; }
+    if (!job.ticket) continue;
     const ref = parseTicketRef(job.ticket);
-    return ref ? [{ row, ref, notes: [...notDoneNotes(dir), ...leadNotes(home, row, job, job.ticket)] }] : [];
-  });
+    if (!ref) continue;
+    const tracker = job.ticket_root ?? main;
+    let group = groups.get(tracker);
+    if (!group) {
+      if (registeredTicketRepo(home, tracker) !== tracker) throw Error(unregisteredRepoReason(tracker));
+      groups.set(tracker, group = []);
+    }
+    group.push({ row, ref, notes: [...notDoneNotes(dir), ...leadNotes(home, row, job, job.ticket)] });
+  }
+  return groups;
 }
 
 export interface LandRecordsOptions {
   locked?: boolean;
   expectedTip?: string;
+  sweep?: false;
 }
 
 function handEditError(rel: string) {
   return new Error(`Cannot record landing in ${rel}: uncommitted hand edit present; commit or revert it and retry hud_land`);
 }
 
-function applyJsonLanding(doc: TicketFeatureDoc, { row, ref, notes }: LandRecordEntry, replayBase: string, gates: number, at: string) {
+const landingComment = (entry: LandRecordEntry, replayBase: string, gates: number) =>
+  `Landed in ${entry.commit ?? 'this commit'} (replay base ${replayBase}); gate ${gates}/${gates} passed.`;
+
+function applyJsonLanding(doc: TicketFeatureDoc, { row, ref, notes, commit }: LandRecordEntry, replayBase: string, gates: number, at: string) {
   const ticket = doc.tickets.find(t => t.number === ref.number);
   if (!ticket) return;
   const unfinished = unfinishedAcceptance(ticket.acceptance, notes);
@@ -95,7 +109,7 @@ function applyJsonLanding(doc: TicketFeatureDoc, { row, ref, notes }: LandRecord
   ticket.status = ticket.owner_try ? 'ready-for-human' : unfinished.length ? 'ready-for-agent' : 'done';
   delete ticket.claimed_at;
   for (const item of ticket.acceptance) if (!skip.has(item.id)) item.done = true;
-  ticket.landing = { at, job: row.job, flow: row.flow, replay_base: replayBase, gates };
+  ticket.landing = { at, job: row.job, flow: row.flow, replay_base: replayBase, gates, ...(commit && { commit }) };
   ticket.updated_at = at;
   return unfinished;
 }
@@ -165,7 +179,7 @@ export async function checkLandingRecords(
       }
       try {
         const original = fs.readFileSync(legacyFull, 'utf8');
-        landedTicket(original, ref.number, `Landed in this commit (replay base ${replayBase}); gate ${gates}/${gates} passed.`, notes);
+        landedTicket(original, ref.number, landingComment(entry, replayBase, gates), notes);
       } catch (error) {
         throw new Error(`Cannot record landing in ${legacyRel}: ${(error as Error).message}`, { cause: error });
       }
@@ -176,10 +190,9 @@ export async function checkLandingRecords(
 }
 
 /**
- * Caller already holds `main-checkout` lease and just fast-forwarded `main` to the landed commit.
- * Takes `withTicketStoreLock(mainRoot)` (unless `opts.locked`), writes landing records into the
- * newest main-checkout ticket files (refusing on hand edits or unreadable JSON), and amends the
- * landed commit with only swept HUD-written files whose hash matches `ticket-writes.json`.
+ * Write landing records after fast-forward. For the target checkout (under its `main-checkout`
+ * lease), amend the landed commit with digest-matched HUD writes. External tracker writes are
+ * staged in the ticket store only: no Git ref in that checkout is moved.
  */
 export async function recordLanding(
   mainRoot: string,
@@ -240,17 +253,17 @@ export async function recordLanding(
         throw handEditError(legacyRel);
       }
       const original = fs.readFileSync(legacyFull, 'utf8');
-      const { body, unfinished } = landedTicket(original, ref.number,
-        `Landed in this commit (replay base ${replayBase}); gate ${gates}/${gates} passed.`, notes);
+      const { body, unfinished } = landedTicket(original, ref.number, landingComment(entry, replayBase, gates), notes);
       if (original === body) continue;
       writeLegacyTicket(realMain, home, legacyRel, body, legacySt.mode & 0o777);
       writes[legacyRel] = sha256Bytes(body);
       if (unfinished.length) pending.push({ row, path: legacyRel, items: unfinished });
     }
 
-    const swept = await sweepTicketWrites(realMain, home, git, { mode: 'amend', identity, expectedTip: opts?.expectedTip });
-    for (const { row, path, items } of pending) if (swept.paths.includes(path)) row.unfinished_acceptance = items;
-    return swept.committed ? swept.sha : undefined;
+    const swept = opts?.sweep === false ? undefined
+      : await sweepTicketWrites(realMain, home, git, { mode: 'amend', identity, expectedTip: opts?.expectedTip });
+    for (const { row, path, items } of pending) if (!swept || swept.paths.includes(path)) row.unfinished_acceptance = items;
+    return swept?.committed ? swept.sha : undefined;
   };
   return opts?.locked ? run() : withTicketStoreLock(realMain, run);
 }

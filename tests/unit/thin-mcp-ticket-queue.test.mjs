@@ -145,6 +145,54 @@ test('ticket queue lands two ready tickets, resumes after a runner crash, and re
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
 });
 
+test('ticket queue lands in the registered target and records the landing only in its tracker', { timeout: 45_000 }, async t => {
+  const f = await project(t);
+  const repo = join(f.root, 'target');
+  fs.mkdirSync(repo);
+  f.git(repo, 'init', '-qb', 'target-base');
+  f.git(repo, 'config', 'user.name', 'Synthetic');
+  f.git(repo, 'config', 'user.email', 'synthetic@example.invalid');
+  fs.mkdirSync(join(repo, '.hud'));
+  const config = { base: 'target-base', gate: ['test -f cross-01.txt'], after: [], push: false };
+  fs.writeFileSync(join(repo, '.hud/project.json'), JSON.stringify({ land: config }));
+  fs.writeFileSync(join(f.root, '.hud/project.json'), '{}'); // Only the target needs a land block.
+  f.git(f.root, 'commit', '-qm', 'Tracker without land config', '--', '.hud/project.json');
+  fs.writeFileSync(join(f.env.HUD_HOME, 'projects.json'), JSON.stringify({ version: 1, projects: [{ root: f.root }, { root: repo }] }));
+  const draft = { title: 'Tracker ticket', what: 'Write the sample in the target.', blocked_by: [], acceptance: ['File exists.'] };
+  const add = (cwd, ticket) => f.call('hud_tickets', { op: 'add', feature: 'cross', cwd, tickets: [ticket] });
+  const { tickets: [{ path }] } = await add(f.root, { ...draft, repo });
+  const { tickets: [{ path: decoy }] } = await add(repo, { ...draft, title: 'Unrelated same-ref ticket' });
+  f.git(repo, 'add', '.hud');
+  f.git(repo, 'commit', '-qm', 'Synthetic target');
+  const trackerHead = f.git(f.root, 'rev-parse', 'HEAD');
+  const { flow } = await f.start(1, 'cross');
+  const [id] = await f.jobs(flow, 1);
+  const job = f.job(id);
+  assert.equal(job.worktree.main_root, repo);
+  assert.equal(job.cwd, job.worktree.root);
+  assert.equal(job.project_root, repo);
+  assert.equal(job.ticket_root, f.root);
+  assert.ok(f.git(repo, 'worktree', 'list', '--porcelain').includes(`worktree ${job.cwd}\n`));
+  assert.match(fs.readFileSync(join(f.dir(id), 'brief.md'), 'utf8'), /Write the sample in the target/);
+  const ready = await f.call('hud_tickets', { op: 'ready', cwd: f.root });
+  assert.ok(!ready.tickets.some(t => t.ticket === 'cross/01'));
+
+  await f.settle(id);
+  const run = await f.end(flow);
+  assert.equal(run.state, 'completed', JSON.stringify(run));
+  const [item] = run.tickets;
+  assert.equal(item.landed, true);
+  const land = f.flow(item.land);
+  assert.deepEqual(land.config, config);
+  assert.equal(f.git(repo, 'show', 'target-base:cross-01.txt'), 'Synthetic implementation.');
+  const [ticket] = read(path).tickets;
+  assert.equal(ticket.status, 'done');
+  assert.equal(ticket.acceptance[0].done, true);
+  assert.deepEqual(ticket.landing, { at: land.landed_at, job: id, flow: item.land, replay_base: land.base_sha, gates: 1, commit: land.landed_sha });
+  assert.equal(read(decoy).tickets[0].status, 'ready-for-agent');
+  assert.equal(f.git(f.root, 'rev-parse', 'HEAD'), trackerHead);
+});
+
 test('Execution collects a future same-feature dependency and keeps repair rounds after its blocker lands', { timeout: 45_000 }, async t => {
   const f = await setupWorkflowProject(t);
   const config = '.hud/project.json';

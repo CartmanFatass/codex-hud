@@ -17,7 +17,7 @@ import { wakeWorkflow } from '../workflows/wake.js';
 import { ESCALATION_RULE, isOpenTicketRun, ticketClosed } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
 import { activeLand, landAttempt, readLand } from './land-state.js';
-import { checkFeatureTickets, checkTicketPaths, declaredReadyTickets, ticketObjectiveOwner, ticketReadiness } from './local-tickets.js';
+import { checkFeatureTickets, checkTicketPaths, declaredReadyTickets, registeredTicketRepo, ticketObjectiveOwner, ticketReadiness } from './local-tickets.js';
 import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
 import { BUNDLED_ROOT, jobFiles } from './paths.js';
 import { jobCache } from './store/job-store.js';
@@ -43,8 +43,21 @@ export function requireTicketQueueRoles(
     const selected = new Set(objectives.filter(o => o.state === 'active' && workset.objectives.includes(o.id)).map(o => o.id));
     tickets = tickets.filter(t => selected.has(ticketObjectiveOwner(objectives, t.ticket, t.objective) ?? ''));
   }
-  const needed = new Set(['imp', ...tickets.map(t => t.role), 'reviewer']);
+  const needed = new Set(['imp', 'reviewer']);
   if (!featureRun || workset.handbackTo !== 'main') needed.add('lead');
+  const targets = new Map<string, Set<string>>([[root, needed]]);
+  for (const ticket of tickets) {
+    const repo = ticket.repo === undefined ? root : registeredTicketRepo(home, ticket.repo);
+    if (!repo) continue; // Not ready; do not require a worker role for this item.
+    if (!targets.has(repo)) targets.set(repo, new Set());
+    targets.get(repo)!.add(ticket.role);
+  }
+  const enabled = requireRoles(home, root, needed, env, featureRun);
+  for (const [repo, roles] of targets) if (repo !== root) requireRoles(home, repo, roles, env, false);
+  return enabled;
+}
+
+function requireRoles(home: string, root: string, needed: Set<string>, env: NodeJS.ProcessEnv, featureRun: boolean) {
   const registry = roleRegistry(home, root, env, undefined, undefined, BUNDLED_ROOT);
   const enabled = registry.roles();
   const withOff = registry.roles(true);
@@ -213,7 +226,9 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       return null;
     }
     if (!registeredProject(home, root).registered) throw Error('hud_tickets run requires a registered project');
-    validLandConfig(home, root);
+    if (unattended || declaredReadyTickets(root, target).some(t => t.repo === undefined || registeredTicketRepo(home, t.repo) === root)) {
+      validLandConfig(home, root);
+    }
     const latestRun = queues.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.updated_at.localeCompare(a.updated_at))[0];
     const latest = unattended ? undefined : latestRun;
     const resumed = latest && !latest.superseded_by && (latest.state === 'failed' || latest.state === 'paused') ? latest : undefined;

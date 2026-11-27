@@ -10,7 +10,7 @@ import {
   TICKET_STATUSES, withTicketStoreLock, writeLegacyTicket, writeTicketFeature, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { linkFeature } from './local-objectives.js';
-import { editLocalTickets, extractWhatAndLiveTry, unlinkedWarning, type TicketEdit } from './local-tickets.js';
+import { editLocalTickets, extractWhatAndLiveTry, repoFieldValue, unlinkedWarning, type TicketEdit } from './local-tickets.js';
 
 function invalid(field: string): never { throw new Error(`invalid_arguments: ${field}`); }
 const text = (value: unknown, field: string) => typeof value === 'string' && value.trim() ? normalizeHomePaths(value.trim()) : invalid(field);
@@ -25,7 +25,7 @@ function choice<T extends string>(choices: readonly T[], value: unknown, field: 
   return choices.find(option => option === value) ?? invalid(field);
 }
 const specFields = ['title', 'what', 'live_try', 'approved_removals', 'kind', 'role', 'main_review', 'acceptance', 'comment'];
-const editFields = ['status', 'tick', 'blocked_by', 'repairs', 'owner_try', 'objective', ...specFields];
+const editFields = ['status', 'tick', 'blocked_by', 'repairs', 'owner_try', 'objective', 'repo', ...specFields];
 const has = (args: Record<string, unknown>, fields: string[]) => fields.some(field => args[field] !== undefined);
 
 export function getTickets(cwd: string, args: Record<string, unknown>) {
@@ -117,6 +117,7 @@ export async function editTickets(cwd: string, args: Record<string, unknown>, ho
     }
     if (input.kind !== undefined) ticket.kind = choice(TICKET_KINDS, input.kind, 'kind');
     if (input.role !== undefined) ticket.role = choice(TICKET_ROLES, input.role, 'role');
+    if (input.repo !== undefined) ticket.repo = repoFieldValue(input.repo);
     if (input.main_review !== undefined) ticket.main_review = flag(input.main_review, 'main_review');
     if (input.owner_try !== undefined) ticket.owner_try = flag(input.owner_try, 'owner_try');
     if (input.status !== undefined) {

@@ -670,7 +670,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
           return { ok: false, code: 'invalid_arguments', error: 'invalid_arguments: jobs' };
         }
         try {
-          return await dispatchJob(raw as Args, process.env.HERDR_PANE_ID, { batch: true, slotGate: { wait, release }, dispatcher });
+          return await dispatchJob(raw as Args, process.env.HERDR_PANE_ID, { batch: true, slotGate: { wait, release }, dispatcher, callerCwd: process.cwd() });
         } catch (error) {
           return itemError(error);
         } finally {
@@ -682,7 +682,7 @@ export async function call(name: string, args: Args, scan: JobScan, by?: Request
       const watcherAlive = !session.taskClient && !!callerPane && watching(callerPane, hudHome);
       return { jobs: results, hint: deliveryHint(watcherAlive) };
     }
-    const result = await dispatchJob(args, process.env.HERDR_PANE_ID, { dispatcher });
+    const result = await dispatchJob(args, process.env.HERDR_PANE_ID, { dispatcher, callerCwd: process.cwd() });
     if (session.sentCreateHint) return result;
     session.sentCreateHint = true;
     if (isTaskReply(result)) return { ...result, statusMessage: `${result.statusMessage} — ${deliveryHint(false)}` };

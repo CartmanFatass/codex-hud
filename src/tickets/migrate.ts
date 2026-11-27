@@ -9,7 +9,7 @@ import { localProjectRoots } from '../roles/projects.js';
 import { readFileBounded } from '../utils/atomic-fs.js';
 import { isRunningListTicket, parseFlakeCaseLine, parseFlakeCases } from './flake-cases.js';
 import {
-  MAX_TICKET_BYTES, TICKET_FEATURE, TICKET_KINDS, TICKET_STATUSES, readJsonTicketFeature,
+  legacyTicketRepo, LEGACY_TICKET_HEADER_END, MAX_TICKET_BYTES, TICKET_FEATURE, TICKET_KINDS, TICKET_STATUSES, readJsonTicketFeature,
   renderTicketBrief, serializeTicketFeature, splitRemovals, ticketNumber, ticketRef, validateTicketFeature,
   withTicketStoreLock, writeTicketFeature,
   type AcceptanceItem, type AcceptanceReceipt, type FlakeCaseRecord, type LandingRecord,
@@ -25,7 +25,7 @@ const CASES_HEADING = /^###[ \t]+Cases[ \t]*$/i;
 const TRY_HEADING = /^##[ \t]+(?:Live try|How to try|Try)[ \t]*:?\s*$/i;
 const COMMENTS_HEADING = /^##[ \t]+Comments?(?:[ \t]*\(([^)\r\n]+)\))?[ \t]*$/im;
 const META = /^[ \t]*\*\*([^*]+):\*\*[ \t]*(.*)$/;
-const SOURCE_FIELDS = new Set(['status', 'kind', 'role', 'who', 'main review', 'owner try', 'live try', 'how to try', 'try',
+const SOURCE_FIELDS = new Set(['status', 'kind', 'role', 'who', 'repo', 'main review', 'owner try', 'live try', 'how to try', 'try',
   'approved removals', 'blocked by', 'repairs', 'objective', 'spec']);
 
 function normalizeRefs(raw: string, feature: string) {
@@ -134,9 +134,12 @@ function extractBody(body: string) {
   const prose: string[] = [], cases: string[] = [], tryLines: string[] = [];
   const acceptance: AcceptanceItem[] = [];
   let headingSkipped = false;
+  let inHeader = true;
+  const sourceField = (key: string) => SOURCE_FIELDS.has(key) && (key !== 'repo' || inHeader);
   let section: string[] | undefined;
   let item: AcceptanceItem | undefined;
   for (const line of body.split('\n')) {
+    if (inHeader && LEGACY_TICKET_HEADER_END.test(line)) inHeader = false;
     if (!headingSkipped && /^# \d+:[ \t]*\S/.test(line)) { headingSkipped = true; continue; }
     const box = CHECKBOX.exec(line);
     if (box || /^#{1,3}[ \t]+/.test(line)) section = undefined;
@@ -155,11 +158,11 @@ function extractBody(body: string) {
     item = undefined;
     const segments = line.split(/[ \t]*·[ \t]*(?=\*\*[^*]+:\*\*)/);
     const meta = META.exec(segments[0]);
-    if (meta && SOURCE_FIELDS.has(meta[1].toLowerCase())) {
+    if (meta && sourceField(meta[1].toLowerCase())) {
       for (const segment of segments) {
         const match = META.exec(segment);
         const key = match?.[1].toLowerCase();
-        if (key && SOURCE_FIELDS.has(key) && !fields.has(key)) fields.set(key, match![2].trim());
+        if (key && sourceField(key) && !fields.has(key)) fields.set(key, match![2].trim());
         else prose.push(segment);
       }
       continue;
@@ -174,7 +177,7 @@ function extractBody(body: string) {
 export function extractTicketFacts(record: TicketRecord, featureObjective?: string) {
   return {
     number: record.number, title: record.title, kind: record.kind ?? 'impl', status: record.status,
-    role: record.role ?? 'imp', main_review: record.main_review === true, owner_try: record.owner_try,
+    role: record.role ?? 'imp', repo: record.repo, main_review: record.main_review === true, owner_try: record.owner_try,
     live_try: record.live_try, approved_removals: record.approved_removals, blocked_by: record.blocked_by,
     repairs: record.repairs ?? [], objective: record.objective ?? featureObjective, what: record.what,
     cases: (record.cases ?? []).map(({ recorded_at: _at, ...fact }) => fact),
@@ -229,6 +232,7 @@ export function parseMarkdownTicket(
   if (review && !/^(yes|no)$/i.test(review)) return { error: `unknown Main review value: ${review}` };
   const rawRole = field('role', 'who');
   const role = /^(?:frontend-imp|frontend-implementer)\b/i.test(rawRole ?? '') ? 'frontend-imp' : undefined;
+  const repo = legacyTicketRepo(body);
   const notes = [
     ...(rawRole && !/^(?:frontend-imp|frontend-implementer|imp)$/i.test(rawRole) ? [`Legacy role: ${rawRole}`] : []),
     ...(blockedBy.annotation ? [`Legacy Blocked by: ${blockers}`] : []),
@@ -264,7 +268,7 @@ export function parseMarkdownTicket(
   const record: TicketRecord = {
     number, title: identity.title, status,
     ...(kind && kind !== 'impl' && { kind }), ...(status === 'claimed' && { claimed_at: fallbackIso }),
-    ...(role && { role }), ...(/^yes$/i.test(review ?? '') && { main_review: true }),
+    ...(role && { role }), ...(repo !== undefined && { repo }), ...(/^yes$/i.test(review ?? '') && { main_review: true }),
     owner_try: rawOwnerTry ? /^yes$/i.test(rawOwnerTry) : label === 'try' || !!parsed.landing,
     live_try: tryField || trySection || 'none', approved_removals: splitRemovals(field('approved removals')),
     blocked_by: blockedBy.refs, ...(repairs.refs.length > 0 && { repairs: repairs.refs }), ...(objective && { objective }),

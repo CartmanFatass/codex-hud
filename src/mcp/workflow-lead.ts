@@ -314,17 +314,20 @@ function ticketSummaryLines(q: TicketQueue, item: Pick<TicketQueue['tickets'][nu
 
 export function buildReviewBrief(q: TicketQueue, stepTask: string): string {
   const landed = q.tickets.filter(t => t.landed);
+  const crossRepo = landed.some(item => item.repo && item.repo !== q.root);
+  const local = landed.some(item => !item.repo || item.repo === q.root);
   const lines = [
     stepTask,
     '',
     `Feature: ${q.feature} (run ${q.flow}, round ${(q.repair_rounds ?? 0) + 1})`,
-    ...(q.start_head ? [`Diff range: ${q.start_head}..HEAD (inspect with \`git diff --stat ${q.start_head}..HEAD\`)`] : []),
+    ...(q.start_head && local ? [`${crossRepo ? 'Tracker diff range' : 'Diff range'}: ${q.start_head}..HEAD (inspect with \`git diff --stat ${q.start_head}..HEAD\`)`] : []),
     '',
     'Landed tickets and design intent:',
     ...landed.map(item => {
       const info = ticketSummaryLines(q, item);
       const report = item.job ? join(directory(item.job), jobFiles.report) : 'no report';
-      return `- ${item.ticket}: ${info.goal ?? item.path} | report: ${report}`;
+      const target = item.repo && item.repo !== q.root ? ` | target repo: ${item.repo} | land: ${item.land ?? 'none'}` : '';
+      return `- ${item.ticket}: ${info.goal ?? item.path}${target} | report: ${report}`;
     }),
   ];
   return lines.join('\n') + '\n';
@@ -355,6 +358,7 @@ export function buildAcceptPacket(q: TicketQueue, step: Extract<Step, { kind: 'h
       const checksRef = jobDir && fs.existsSync(join(jobDir, jobFiles.checks)) ? ` | checks: ${join(jobDir, jobFiles.checks)}` : '';
       return `- ${item.ticket}: ${info.goal ?? item.path}` +
         (info.liveTry ? ` | Live try: ${info.liveTry}` : '') +
+        (item.repo && item.repo !== q.root ? ` | target repo: ${item.repo} | land: ${item.land ?? 'none'}` : '') +
         ` | ticket: ${item.path} | report: ${reportRef}${checksRef}`;
     }) : ['- (none landed)']),
   ];

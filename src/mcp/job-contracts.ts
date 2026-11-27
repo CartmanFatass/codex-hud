@@ -82,6 +82,8 @@ export interface Job extends PiOptions {
   package?: string;
   title?: string;
   ticket?: string;
+  /** Tracker main checkout, only when different from project_root. */
+  ticket_root?: string;
   objective?: ObjectiveLink; // Ticket attribution at creation, not refreshed on continuation.
   experiment?: string;
   arm?: string;

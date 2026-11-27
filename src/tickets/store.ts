@@ -33,6 +33,7 @@ export interface TicketRecord {
   status: TicketStatus;
   claimed_at?: string;
   role?: TicketRole;
+  repo?: string;
   main_review?: boolean;
   owner_try: boolean;
   live_try: string;
@@ -135,7 +136,7 @@ const object = (fields: Record<string, Check>): Check => (x, field) => {
 const text = check(string), timestamp = check(date), positive = check(ticketNumber);
 const record = object({
   number: positive, title: text, kind: optional(choice(...TICKET_KINDS)), status: choice(...TICKET_STATUSES),
-  claimed_at: optional(timestamp), role: optional(choice(...TICKET_ROLES)), main_review: optional(check(bool)),
+  claimed_at: optional(timestamp), role: optional(choice(...TICKET_ROLES)), repo: optional(text), main_review: optional(check(bool)),
   owner_try: check(bool), live_try: text, approved_removals: array(text), blocked_by: array(check(canonicalTicketRef)),
   repairs: optional(array(check(canonicalTicketRef))),
   objective: optional(text), what: text,
@@ -337,6 +338,13 @@ export function ticketFeatureSlugs(root: string) {
   return [...slugs].filter(slug => TICKET_FEATURE.test(slug)).sort();
 }
 
+export const LEGACY_TICKET_HEADER_END = /^(?:[ \t]*\*\*What to build:\*\*|##(?:[ \t]|\r?$))/im;
+
+export function legacyTicketRepo(brief: string): string | undefined {
+  const header = brief.split(LEGACY_TICKET_HEADER_END, 1)[0];
+  return /(?:^|·)[ \t]*\*\*Repo:\*\*[ \t]*([^·\r\n]*)/im.exec(header)?.[1]?.trim();
+}
+
 export function readLegacyTicket(path: string, number: number, feature: string) {
   const { bytes, truncated, stat } = readFileBounded(path, MAX_TICKET_BYTES);
   if (truncated) return;
@@ -354,8 +362,9 @@ export function readLegacyTicket(path: string, number: number, feature: string) 
   const label = TICKET_STATUSES.find(value => value === status)
     ?? (status && Object.hasOwn(legacyStatuses, status) ? legacyStatuses[status] : 'needs-triage');
   const repairs = parseMarkdownRepairRefs(evidence.repairs, feature);
+  const repo = legacyTicketRepo(brief);
   const ticket: TicketRecord = {
-    number, title: heading.title, status: label,
+    number, title: heading.title, status: label, ...(repo !== undefined && { repo }),
     ...(/^(?:frontend-imp|frontend-implementer)\b/i.test(field('(?:Role|Who)') ?? '') && { role: 'frontend-imp' }),
     ...(/^yes$/i.test(field('Main review') ?? '') && { main_review: true }),
     owner_try: evidence.ownerTry, live_try: field('(?:Live try|How to try|Try)') || 'none',
@@ -399,6 +408,7 @@ export function renderTicketBrief(ticket: TicketRecord, feature: Pick<TicketFeat
     `**Status:** ${ticket.status}`,
     ...(ticket.kind && ticket.kind !== 'impl' ? [`**Kind:** ${ticket.kind}`] : []),
     ...(ticket.role ? [`**Role:** ${ticket.role}`] : []),
+    ...(ticket.repo ? [`**Repo:** ${ticket.repo}`] : []),
     ...(ticket.main_review ? ['**Main review:** yes'] : []),
     `**Owner try:** ${ticket.owner_try ? 'yes' : 'no'}`,
     ...(!ticket.live_try.includes('\n') ? [`**Live try:** ${ticket.live_try}`] : []),

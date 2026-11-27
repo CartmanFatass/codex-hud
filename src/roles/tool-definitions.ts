@@ -27,6 +27,7 @@ const repairs = { type: 'array', items: canonicalTicketRef };
 const ticketSpec = {
   title: text, what: text, live_try: text, approved_removals: { anyOf: [text, { type: 'array', items: text }] },
   kind: { ...text, enum: TICKET_KINDS }, role: { ...text, enum: TICKET_ROLES }, main_review: bool,
+  repo: text,
 };
 const ticketUpdate = {
   ...ticketSpec, status: ticketStatus, owner_try: bool, objective: ticketObjective, blocked_by: blockers, repairs,
@@ -70,7 +71,7 @@ export const ROLE_TOOLS = [
       retry_of: { ...text, description: 'Retry failed/stopped ID.' },
       cwd: text,
       package: { ...text, description: 'Display label.' },
-      ticket: { ...text, description: 'feature/NN ticket link; supplies the brief when no task is provided.' },
+      ticket: { ...text, description: 'feature/NN; default brief.' },
       ...experimentTags,
       slice: text,
       context_files: { type: 'array', items: text, maxItems: 32, description: 'Text paths in cwd.' },
@@ -235,7 +236,7 @@ export const ROLE_TOOLS = [
   }, ['op']),
   tool(
     'hud_tickets',
-    'Edit/get JSON tickets directly; commit HUD-written files with op: commit. Add links feature to Objective ID.',
+    'Get/edit JSON tickets; commit HUD writes. Add links feature to Objective. repo: absolute registered target root.',
     {
       op: { ...text, enum: ['guide', 'ready', 'get', 'run', 'add', 'update', 'commit', 'sync'], default: 'guide' },
       cwd: text,

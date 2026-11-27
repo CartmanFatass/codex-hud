@@ -9,11 +9,11 @@ import { SETTLED_JOB_STATES, TicketRollup, ticketJobState } from '../collectors/
 import { getHudHome } from '../hud-home.js';
 import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
-import { localProjectRoots, projectRoot, sharedRoot } from '../roles/projects.js';
+import { localProjectRoots, projectList, projectRoot, sharedRoot } from '../roles/projects.js';
 import {
-  canonicalTicketRef, normalizeHomePaths, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature, renderTicketBrief, splitRemovals,
-  storedTicket, ticketFeaturePath, ticketFeatureSlugs, TICKET_STATUSES, withTicketStoreLock, writeLegacyTicket,
-  writeTicketFeature, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
+  canonicalTicketRef, legacyTicketRepo, LEGACY_TICKET_HEADER_END, normalizeHomePaths, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature,
+  renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath, ticketFeatureSlugs, TICKET_STATUSES, withTicketStoreLock,
+  writeLegacyTicket, writeTicketFeature, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import { readOpenHolds } from '../unattended/state.js';
@@ -100,16 +100,34 @@ function namedTicketPath(root: string, ticket: unknown): string | undefined {
   if (matches.length === 1) return matches[0].path;
 }
 
-export function ticketBrief(cwd: string, ticket: unknown, legacy: boolean) {
+export function repoFieldValue(value: unknown): string {
+  if (typeof value !== 'string' || /[\0\r\n·]/.test(value) || !isAbsolute(value.trim())) return invalid('repo (expected an absolute project root)');
+  return value.trim();
+}
+
+/** Exact, available registration: neither a child directory nor a linked worktree is a target root. */
+export function registeredTicketRepo(home: string, repo: string): string | undefined {
+  if (!isAbsolute(repo)) return;
+  try {
+    const real = fs.realpathSync(repo);
+    if (localProjectRoots(real).mainRoot === real && projectList(home, real).some(p => p.root === real && !p.unavailable)) return real;
+  } catch { /* Missing or unavailable root. */ }
+}
+
+export const unregisteredRepoReason = (repo: string) => `repo ${JSON.stringify(repo)} is not a registered project root`;
+
+export function ticketBrief(cwd: string, ticket: unknown, legacy: boolean, target?: { home: string; root: string }) {
+  const matches = (repo?: string) => !target || (repo && registeredTicketRepo(target.home, repo) === target.root);
   const { mainRoot, checkout } = localProjectRoots(cwd);
   const stored = storedTicket(mainRoot, ticket);
-  if (stored) return stored.record ? renderTicketBrief(stored.record, stored.doc) : null;
+  if (stored) return stored.record ? (matches(stored.record.repo) ? renderTicketBrief(stored.record, stored.doc) : undefined) : null;
   if (!legacy) return;
   const path = namedTicketPath(checkout, ticket) ?? (checkout !== mainRoot ? namedTicketPath(mainRoot, ticket) : undefined);
   if (!path) return;
   const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
   if (truncated) throw Error('Ticket brief exceeds 64 KiB');
-  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const brief = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  return matches(target ? legacyTicketRepo(brief) : undefined) ? brief : undefined;
 }
 
 /** Outbound routing input: only the named local ticket, never the rest of the board. */
@@ -125,7 +143,7 @@ export function routingTicketText(root: string, ticket: unknown): string | undef
 // Shared metadata lines may use ·, but the ticket title and prose aren't fields.
 const objectiveField = /^([ \t]*(?:\*\*[^:\r\n]+:\*\*[^·\r\n]*·[ \t]*)*?\*\*Objective:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
 const repairsField = /^([ \t]*(?:\*\*[^:\r\n]+:\*\*[^·\r\n]*·[ \t]*)*?\*\*Repairs:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
-const ticketHeader = (text: string) => text.split(/^(?:[ \t]*\*\*What to build:\*\*|##(?:[ \t]|\r?$))/im, 1)[0];
+const ticketHeader = (text: string) => text.split(LEGACY_TICKET_HEADER_END, 1)[0];
 
 export function ticketObjectiveId(path: string) {
   const { bytes, truncated } = readFileBounded(path, STATE_BYTES);
@@ -162,10 +180,11 @@ export interface UnreadableTicketFeature {
 }
 
 export function readyTickets(cwd: string, jobs: JobIndexCache, home?: string) {
-  const { tickets, unreadable } = ticketReadiness(cwd, jobs, undefined, { home });
+  const { tickets, blocked, unreadable } = ticketReadiness(cwd, jobs, undefined, { home });
   return {
     ok: true,
-    tickets: tickets.map(({ ticket, path, title, what }) => ({ ticket, path, title, what })),
+    tickets: tickets.map(({ ticket, path, title, what, repo }) => ({ ticket, path, title, what, ...(repo && { repo }) })),
+    ...(blocked.length && { blocked }),
     ...(unreadable?.length && { partial: true as const, unreadable }),
   };
 }
@@ -306,7 +325,7 @@ export function checkTicketPaths(cwd: string, items: readonly { ticket: string; 
   return results;
 }
 
-type LocalTicket = ProjectTicket & { what: string; objective?: string; role: 'imp' | 'frontend-imp'; runningList: boolean; repairs?: string[] };
+type LocalTicket = ProjectTicket & { what: string; objective?: string; role: 'imp' | 'frontend-imp'; runningList: boolean; repairs?: string[]; repo?: string };
 const FRONTEND_ROLE_RE = /(?:^|·)[ \t]*\*\*(?:Role|Who):\*\*[ \t]*frontend-(?:imp|implementer)(?=[ \t\r\n·(]|$)/im;
 const declaredReady = (t: LocalTicket) => /^ready-for-agent$/i.test(t.status);
 const readinessRef = (slug: string, t: LocalTicket) => `${slug}/${nn(Number(t.number))}`;
@@ -331,9 +350,10 @@ function parseTicketForReadiness(path: string, num: number, slug: string): Local
       const what = body.match(/^(?:\*\*What to build:\*\*|## What to build\b)[ \t]*(?:\r?\n[ \t]*)*([^\r\n]*)/mi)?.[1]
         ?.replace(/\s+/g, ' ').trim() ?? '';
       const objective = objectiveField.exec(ticketHeader(text))?.[2]?.trim() || undefined;
+      const repo = legacyTicketRepo(text);
       const role = FRONTEND_ROLE_RE.test(body) ? 'frontend-imp' : 'imp';
       const repairs = parseMarkdownRepairRefs(rawRepairs, slug);
-      parsed = { ...heading, path, what, role, runningList: isRunningListTicket(body), ...(objective && { objective }),
+      parsed = { ...heading, path, what, role, repo, runningList: isRunningListTicket(body), ...(objective && { objective }),
         ...(repairs.length && { repairs }), status, at: 0, items, checked,
         total: items.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],
         state: landed ?? (/^ready-for-human$/i.test(status) ? 'try' : 'ready') };
@@ -350,7 +370,7 @@ function jsonReadiness(root: string, doc: TicketFeatureDoc, record: TicketRecord
   const checked = items.filter(item => item.done).length;
   const state = status === 'wontfix' ? 'dropped' : status === 'done' || record.accepted ? 'done'
     : status === 'ready-for-human' ? 'try' : 'ready';
-  return { number: nn(record.number), title, status, state, path: ticketFeaturePath(root, doc.feature), at: 0,
+  return { number: nn(record.number), title, status, state, repo: record.repo, path: ticketFeaturePath(root, doc.feature), at: 0,
     what: record.what.trimStart().split(/\r?\n/, 1)[0].replace(/\s+/g, ' ').trim(), role: record.role ?? 'imp', runningList: record.kind === 'flake-list',
     objective: record.objective ?? doc.objective, ...(record.repairs?.length && { repairs: [...record.repairs] }), items, checked, total: items.length,
     blockers: record.blocked_by.length ? [record.blocked_by.join(', ')] : [] };
@@ -378,7 +398,7 @@ function readTicketFeatures(root: string, feature?: string) {
 /** Start-time workset, before dependency and live-job rollup hides non-dispatchable tickets. */
 export function declaredReadyTickets(cwd: string, feature?: string) {
   return readTicketFeatures(cwd, feature).flatMap(({ slug, tickets }) => tickets.filter(t => t.state === 'ready' && declaredReady(t))
-    .map(t => ({ ticket: readinessRef(slug, t), role: t.role, objective: t.objective })));
+    .map(t => ({ ticket: readinessRef(slug, t), role: t.role, objective: t.objective, repo: t.repo })));
 }
 
 /** Resolve blockers across ticket features using the same TicketRollup pass as ticketReadiness. */
@@ -411,7 +431,8 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
   const rollup = new TicketRollup(features), matches = projectJobFilter(root, dir => localProjectRoots(dir).mainRoot);
   for (const id of jobs.listJobIds({ onError: error => { throw error; } })) {
     const receipt = jobs.readJob<Job>(id);
-    if (receipt.status !== 'ok' || !receipt.value.ticket || receipt.value.reaped_at || !matches(receipt.value)) continue;
+    if (receipt.status !== 'ok' || !receipt.value.ticket || receipt.value.reaped_at ||
+        !(receipt.value.ticket_root ? receipt.value.ticket_root === root : matches(receipt.value))) continue;
     const job = receipt.value, status = jobs.readStatus(id);
     const state = ticketJobState(job, status.status === 'ok' ? status.value : {});
     if (!SETTLED_JOB_STATES.has(state)) rollup.link({ ticket: job.ticket, package: job.package }, '',
@@ -428,8 +449,13 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
   const { declaredBlockers, crossBlockers, missingCrossBlockers } = rollup.derive(
     Date.now(), undefined, blockedSet.size ? blockedSet : undefined,
   );
+  const repos = new Map<string, string | undefined>();
   const candidates = features.filter(({ slug }) => feature === undefined || slug === feature).flatMap(({ slug, tickets }) =>
-    tickets.filter(declaredReady).map(t => ({ t, ticket: readinessRef(slug, t) })));
+    tickets.filter(declaredReady).map(t => {
+      if (t.repo !== undefined && !repos.has(t.repo)) repos.set(t.repo, registeredTicketRepo(home, t.repo));
+      const repo = t.repo === undefined ? undefined : repos.get(t.repo);
+      return { t, ticket: readinessRef(slug, t), repo, repoProblem: t.repo !== undefined && !repo ? unregisteredRepoReason(t.repo) : undefined };
+    }));
   if (feature !== undefined) for (const { t, ticket } of candidates) {
     const missing = missingCrossBlockers.get(t);
     if (missing) throw Error(`${ticket}: unknown blocked_by ticket: ${missing}`);
@@ -437,25 +463,29 @@ export function ticketReadiness(cwd: string, jobs: JobIndexCache, feature?: stri
   const flakeFeature = readFlakesConfig(root)?.feature;
   let flakes: ReturnType<typeof runningListAdmission> | undefined;
   return {
-    tickets: candidates.flatMap(({ t, ticket }) => {
-      if (t.state !== 'ready') return [];
+    tickets: candidates.flatMap(({ t, ticket, repo, repoProblem }) => {
+      if (t.state !== 'ready' || repoProblem) return [];
       if (flakeFeature && t.runningList && ticket.startsWith(`${flakeFeature}/`) &&
           !(flakes ??= runningListAdmission(home, root, flakeFeature, jobs)).eligible(ticket)) return [];
       const blockers = declaredBlockers.get(t) ?? [];
-      return [{ ticket, path: t.path, title: t.title, what: t.what, role: t.role, blockers,
+      return [{ ticket, path: t.path, title: t.title, what: t.what, role: t.role, blockers, ...(repo && { repo }),
         ...(t.repairs?.length && { repairs: [...t.repairs] }), ...(t.objective && { objective: t.objective }) }];
     }),
-    queued: candidates.flatMap(({ t, ticket }) => {
+    queued: candidates.flatMap(({ t, ticket, repoProblem }) => {
       const blockers = crossBlockers.get(t);
-      return t.state === 'queued' && blockers ? [{ ticket, blockers }] : [];
+      return t.state === 'queued' && blockers && !repoProblem ? [{ ticket, blockers }] : [];
     }),
-    blocked: candidates.flatMap(({ t, ticket }) =>
-      t.state === 'blocked' && t.blockers.length ? [{ ticket, blockers: t.blockers }] : []),
+    blocked: candidates.flatMap(({ t, ticket, repoProblem }) => {
+      if (!['ready', 'queued', 'blocked'].includes(t.state)) return [];
+      const blockers = repoProblem ? [repoProblem] : t.state === 'blocked' ? t.blockers : [];
+      return blockers.length ? [{ ticket, blockers }] : [];
+    }),
     // The display workset includes same-feature waits and other ready tickets that dispatch cannot take yet.
-    future: candidates.flatMap(({ t, ticket }) =>
+    future: candidates.flatMap(({ t, ticket, repoProblem }) =>
       t.state === 'ready' || t.state === 'queued' || t.state === 'blocked' ? [{
         ticket, title: t.title, role: t.role, blockers: declaredBlockers.get(t) ?? [],
-        ...(t.blockers.length && { waiting_on: t.blockers }), ...(t.objective && { objective: t.objective }),
+        ...(repoProblem ? { waiting_on: [repoProblem] } : t.blockers.length ? { waiting_on: t.blockers } : {}),
+        ...(t.objective && { objective: t.objective }),
       }] : []),
     ...(unreadable.length && { partial: true as const, unreadable }),
   };
@@ -722,6 +752,7 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
       const blocked = resolveBlockers(ticket.blocked_by, feature, known);
       const repairs = ticket.repairs === undefined ? [] : resolveRepairs(ticket.repairs, feature, known);
       const repairsLine = repairs.length ? [`**Repairs:** ${repairs.join(', ')}`] : [];
+      const repoLine = ticket.repo === undefined ? [] : [`**Repo:** ${repoFieldValue(ticket.repo)}`];
       if (!Array.isArray(ticket.acceptance)) return invalid('acceptance');
       const items = ticket.acceptance.map((item) => `- [ ] ${line(item, 'acceptance')}`);
       const objective = ticket.objective === undefined ? shared : objectiveId(ticket.objective);
@@ -734,6 +765,7 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
         ...approvedRemovalsLine,
         `**Blocked by:** ${blocked}`,
         ...repairsLine,
+        ...repoLine,
         ...(objective === undefined ? [] : [`**Objective:** ${objective}`]),
         '',
         `**What to build:** ${line(what, 'what')}`,
@@ -758,8 +790,8 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
   const updateOne = async (feat: unknown, item: Record<string, unknown>) => {
     if (typeof feat !== 'string' || !/^[a-z0-9-]+$/.test(feat)) return invalid('feature');
     if (!number(item.ticket)) return invalid('ticket');
-    if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined && item.repairs === undefined && item.owner_try === undefined && item.objective === undefined)
-      return invalid('status, tick, blocked_by, repairs, owner_try or objective');
+    if (item.status === undefined && item.tick === undefined && item.blocked_by === undefined && item.repairs === undefined && item.owner_try === undefined && item.objective === undefined && item.repo === undefined)
+      return invalid('status, tick, blocked_by, repairs, owner_try, objective or repo');
     const existing = list(join(scratch, feat));
     const known = new Set(existing.map(t => t.number));
     const matches = existing.filter(({ number }) => number === item.ticket);
@@ -791,6 +823,11 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
     }
     if (item.repairs !== undefined) body = withRepairs(body, resolveRepairs(item.repairs, feat, known), item.ticket);
     if (item.objective !== undefined) body = withObjective(body, objectiveId(item.objective), item.ticket);
+    if (item.repo !== undefined) {
+      const header = ticketHeader(body);
+      const field = /((?:^|·)[ \t]*\*\*Repo:\*\*[ \t]*)([^·\r\n]*?)([ \t]*)(?=·|\r?$)/im;
+      body = headerField(header, field, 'Repo', repoFieldValue(item.repo), item.ticket) + body.slice(header.length);
+    }
     const updated = body + (comments < 0 ? '' : original.slice(comments));
     await edits.stage({ path: ticket.path, ticket: `${feat}/${nn(ticket.number)}`, before: original, after: updated,
       mode: fs.statSync(ticket.path).mode & 0o777 });
@@ -798,7 +835,7 @@ export async function editLocalTickets(cwd: string, args: Record<string, unknown
   };
 
   if (args.updates !== undefined) {
-    if (args.ticket !== undefined || args.status !== undefined || args.tick !== undefined || args.blocked_by !== undefined || args.repairs !== undefined || args.owner_try !== undefined || args.objective !== undefined)
+    if (args.ticket !== undefined || args.status !== undefined || args.tick !== undefined || args.blocked_by !== undefined || args.repairs !== undefined || args.owner_try !== undefined || args.objective !== undefined || args.repo !== undefined)
       return invalid('updates');
     if (!Array.isArray(args.updates) || !args.updates.length) return invalid('updates');
     if (feature !== undefined && (typeof feature !== 'string' || !/^[a-z0-9-]+$/.test(feature))) return invalid('feature');

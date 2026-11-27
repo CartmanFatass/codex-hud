@@ -48,7 +48,7 @@ import type {
 } from '../job-contracts.js';
 import { launchThinking, nearestThinking } from '../launch-thinking.js';
 import { isRunningListTicket, readFlakesConfig, runningListAdmission } from '../flake-admission.js';
-import { routingTicketText, ticketBrief, ticketObjective } from '../local-tickets.js';
+import { registeredTicketRepo, routingTicketText, ticketBrief, ticketObjective, unregisteredRepoReason } from '../local-tickets.js';
 import { reusableWorktree, planWorktree, addWorktree, populateWorktree } from '../managed-worktree.js';
 import { callerPane, session, trackCreatedJob } from '../mcp/session-state.js';
 import {
@@ -208,7 +208,7 @@ export interface TicketDispatchInput {
   role: 'imp' | 'frontend-imp';
   cwd: string;
   ticket: string;
-  brief_file: string;
+  brief_file?: string;
   request_key: string;
 }
 
@@ -217,6 +217,7 @@ export interface TicketDispatchOptions {
   dispatcher?: Job['dispatcher'];
   workspace?: string;
   runNote?: string;
+  ticketRoot?: string;
 }
 
 /** Queue-capable ticket admission shared by ticket queues (`hud_tickets run`) and automated ticket dispatch. */
@@ -235,10 +236,10 @@ export async function dispatchTicketJob(
 
 type AdvisorInput = Pick<SelectionExcerpt, 'id' | 'excerpt' | 'source' | 'question'>;
 
-export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote, ticketAdmission, workflow, advisor }: {
+export async function dispatchJob(input: Args, pane: string | undefined, { parent, repair, batch, slotGate, queue, member, dispatcher, workspace, runNote, ticketAdmission, workflow, advisor, ticketRoot, callerCwd }: {
   parent?: SonicParent; repair?: { source: Job; derived: boolean }; batch?: boolean; slotGate?: SlotGate;
   queue?: { id: string; canAdmit: () => boolean }; member?: BatchMember; dispatcher?: Job['dispatcher']; workflow?: WorkflowDispatch;
-  workspace?: string; runNote?: string; ticketAdmission?: boolean; advisor?: AdvisorInput;
+  workspace?: string; runNote?: string; ticketAdmission?: boolean; advisor?: AdvisorInput; ticketRoot?: string; callerCwd?: string;
 } = {}) {
   if (parent) {
     try { input = { ...input, cwd: sonicCwd(parent, input) }; }
@@ -290,8 +291,22 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
   }
   const cwd = jobCwd(args);
   const ticketPath = typeof args.brief_file === 'string' && /\/(?:\.scratch|\.hud\/tickets)\//.test(resolve(cwd, args.brief_file));
+  if (ticketRoot && !registeredTicketRepo(hudHome, cwd)) {
+    return { ok: false, code: 'invalid_arguments', error: unregisteredRepoReason(cwd) };
+  }
   if (args.ticket !== undefined && args.task === undefined && (args.brief_file === undefined || ticketPath)) {
-    const task = ticketBrief(cwd, args.ticket, args.brief_file === undefined);
+    const target = { home: hudHome, root: sharedRoot(cwd) };
+    const callerRoot = callerCwd && sharedRoot(callerCwd);
+    let task: string | null | undefined;
+    if (ticketRoot) {
+      task = ticketBrief(ticketRoot, args.ticket, true, target);
+    } else {
+      if (callerRoot && callerRoot !== target.root && registeredTicketRepo(hudHome, callerRoot) && registeredTicketRepo(hudHome, target.root)) {
+        task = ticketBrief(callerRoot, args.ticket, true, target);
+        if (task) ticketRoot = callerRoot;
+      }
+      task ||= ticketBrief(cwd, args.ticket, args.brief_file === undefined);
+    }
     if (task) {
       const { brief_file: _unused, ...rest } = args;
       args = { ...rest, task: task.trim() };
@@ -305,6 +320,9 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
     const { brief_file: _unused, ...rest } = args;
     args = { ...rest, task: loaded.task };
   }
+  if (source?.ticket_root && args.ticket === source.ticket && sharedRoot(cwd) === source.project_root) {
+    ticketRoot ??= source.ticket_root;
+  }
   if (runNote && typeof args.task === 'string') {
     args = { ...args, task: `${args.task.trimEnd()}\n\n${runNote}\n` };
   }
@@ -317,7 +335,7 @@ export async function dispatchJob(input: Args, pane: string | undefined, { paren
   return keyLock(`request:${requestKey}`, () =>
     dispatchWithKey(args, pane, requestKey, windowedKey, parent, repairOf, retryOf ? input : undefined, {
       worktreeSource, batch, slotGate, member, sourceJob: source ?? repair?.source,
-      ticketQueue: queue?.id, ticketAdmission: Boolean(ticketAdmission || queue?.id),
+      ticketQueue: queue?.id, ticketAdmission: Boolean(ticketAdmission || queue?.id), ticketRoot,
       canAdmit: workflow?.canAdmit ?? member?.canAdmit ?? queue?.canAdmit, dispatcher, workspace, workflow, advisor,
     }));
 }
@@ -475,10 +493,10 @@ export async function dispatchCouncilSeat(parent: Job, seat: CouncilSeat, part: 
 
 async function dispatchWithKey(args: Args, pane: string | undefined, request_key: string, windowedKey: boolean,
   parent?: Pick<SonicParent, 'job' | 'objective' | 'headless'>, repairOf?: string, retryInput?: Args,
-  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, member, canAdmit, dispatcher, seat, council, memberStarted, workspace, workflow, advisor }: {
+  { scoutContextCwd, prewalkKind, landCwd, worktreeSource, batch, slotGate, sourceJob, ticketQueue, ticketAdmission, ticketRoot, member, canAdmit, dispatcher, seat, council, memberStarted, workspace, workflow, advisor }: {
     seat?: CouncilSeat; council?: Job['council']; memberStarted?: () => void; workflow?: WorkflowDispatch; advisor?: AdvisorInput;
     scoutContextCwd?: string; prewalkKind?: PrewalkScoutKind; landCwd?: string; worktreeSource?: Job; batch?: boolean; slotGate?: SlotGate; sourceJob?: Job;
-    ticketQueue?: string; ticketAdmission?: boolean; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher']; workspace?: string;
+    ticketQueue?: string; ticketAdmission?: boolean; ticketRoot?: string; member?: BatchMember; canAdmit?: () => boolean; dispatcher?: Job['dispatcher']; workspace?: string;
   } = {}) {
   const isTicketAdmission = Boolean(ticketAdmission || ticketQueue);
   const { experiment, arm, preview } = args;
@@ -633,7 +651,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
   const projectRoot = sharedRoot(cwd), parentJob = parent?.job;
   const lineage = parent ?? sourceJob;
   // Missing attribution on an existing job stays missing even if the ticket now links an Objective.
-  const objective = lineage ? objectiveLink(lineage.objective) : ticketObjective(cwd, args.ticket, projectRoot);
+  const tracker = ticketRoot ?? projectRoot;
+  const objective = lineage ? objectiveLink(lineage.objective) : ticketObjective(ticketRoot ?? cwd, args.ticket, tracker);
   const contextCwd = scoutContextCwd ?? cwd;
   let pool: Awaited<ReturnType<typeof pickRolePool>> | undefined;
   const contextFor = (targetArgs: Args, inline: boolean): ReturnType<typeof assembleContext> => advisor
@@ -679,7 +698,8 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       throw error;
     }
   }
-  if (workflow?.cheap && roleHasBrowser(chain)) return { ok: false, code: 'workflow_cost_changed', reason: `Role ${role} now has a browser place; re-plan` };
+  if ((workflow?.cheap || (ticketQueue && ticketRoot)) && roleHasBrowser(chain))
+    return { ok: false, code: 'workflow_cost_changed', reason: `Role ${role} now has a browser place; re-plan` };
   const imp = !advisor && (requestedRole === 'imp' || fromImp);
   const sonic = requestedRole === 'sonic';
   const settings = !member && (imp || sonic) && !retryInput && !fromImp ? impPlacementSettings(hudHome) : undefined;
@@ -700,7 +720,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     if ('code' in localContext) return localContext;
     const context_files = localContext.contextInputs;
     route = await pickImpRoute(hudHome, settings, chain.routing, task, mode, () => ({
-      ticket: routingTicketText(projectRoot, args.ticket), context_files,
+      ticket: routingTicketText(tracker, args.ticket), context_files,
     }));
   }
   const plan = await even?.() ?? launchPlan(found, chain, now, args, routing, onEntry, retryInput, route, !!landCwd);
@@ -750,9 +770,9 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
     if (stopped()) return { ok: false as const, code: 'queue_stopped' };
     // Readiness is a snapshot; serialize the final flake check with the on-disk slot reservation.
     if (isTicketAdmission && typeof args.ticket === 'string' && isRunningListTicket(task)) {
-      const feature = readFlakesConfig(projectRoot)?.feature;
+      const feature = readFlakesConfig(tracker)?.feature;
       if (feature && args.ticket.startsWith(`${feature}/`) &&
-          !runningListAdmission(hudHome, projectRoot, feature, jobCache).eligible(args.ticket)) {
+          !runningListAdmission(hudHome, tracker, feature, jobCache).eligible(args.ticket)) {
         return { ok: false as const, code: 'flake_ineligible' as const };
       }
     }
@@ -825,6 +845,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
         experiment, arm,
         ...(args.package === undefined ? {} : { package: args.package as string }),
         ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
+        ...(ticketRoot && { ticket_root: ticketRoot }),
         ...(objective && { objective }),
         ...(args.slice === undefined ? {} : { slice: args.slice as string }),
         ...(presetName === undefined ? {} : { preset: presetName }),
@@ -899,6 +920,7 @@ async function dispatchWithKey(args: Args, pane: string | undefined, request_key
       experiment, arm,
       ...(args.package === undefined ? {} : { package: args.package as string }),
       ...(args.ticket === undefined ? {} : { ticket: args.ticket as string }),
+      ...(ticketRoot && { ticket_root: ticketRoot }),
       ...(objective && { objective }),
       ...(args.slice === undefined ? {} : { slice: args.slice as string }),
       ...(presetName === undefined ? {} : { preset: presetName }),
@@ -1041,7 +1063,9 @@ export async function startQueuedJob(id: string, targetRole?: string, overflowed
     const chain = found.roles(true).get(launchRoleName);
     if (chain?.optionalEnabled === false) return failQueued(`Optional role ${launchRoleName} is off`);
     if (!chain) return failQueued(`Role ${launchRoleName} is not configured or is hidden in this project`);
-    if (existing.workflow_cheap && roleHasBrowser(chain)) return failQueued(`Role ${launchRoleName} now has a browser place; re-plan`);
+    const crossRepoTicket = existing.ticket_queue && existing.ticket_root;
+    if (crossRepoTicket && !registeredTicketRepo(hudHome, cwd)) return failQueued(unregisteredRepoReason(cwd), 'invalid_arguments');
+    if ((existing.workflow_cheap || crossRepoTicket) && roleHasBrowser(chain)) return failQueued(`Role ${launchRoleName} now has a browser place; re-plan`);
     // Only pre-upgrade cheap composed Sonic jobs can be here. Their charge used
     // the bare task and cannot be recovered from the queued receipt.
     if (existing.workflow_cheap && launchRoleName === 'sonic') return failQueued(SONIC_INPUT_UNKNOWN, 'workflow_cost_changed');
@@ -1830,7 +1854,7 @@ export async function dispatchLandRepair(id: string, cwd: string, task: string, 
   const workflowId = isComposedId(ticketQueue) ? ticketQueue : undefined;
   const dispatcher = workflowId ? source.dispatcher : ticketQueue ? readTicketQueue(hudHome, ticketQueue)?.dispatcher : undefined;
   const result = await keyLock(`request:${key}`, () => dispatchWithKey(args, pane ?? jobCallerPane(source), key, false,
-    undefined, undefined, { retry_of: id }, { landCwd: cwd, sourceJob: source, ticketQueue: workflowId ? undefined : ticketQueue, dispatcher,
+    undefined, undefined, { retry_of: id }, { landCwd: cwd, sourceJob: source, ticketQueue: workflowId ? undefined : ticketQueue, ticketRoot: source.ticket_root, dispatcher,
       ...(workflowId && { workspace: source.herdr_workspace, workflow: { id: workflowId, cheap: source.workflow_cheap === true, canAdmit: () => true } }) }));
   if ('job' in result && result.job && !('ok' in result && result.ok === false)) return result.job;
   throw Error(`Could not dispatch landing repair: ${'code' in result ? result.code : 'no job'}`);
