@@ -70,6 +70,14 @@ export const canonicalTicketRef = (ref: unknown): ref is string => {
   const parsed = parseTicketRef(ref);
   return !!parsed && ticketRef(parsed.feature, parsed.number) === ref;
 };
+export function parseMarkdownRepairRefs(raw: string | undefined, feature: string): string[] {
+  return (raw ?? '').split(/[,;]+/).flatMap(item => {
+    const clean = item.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+    if (!clean || clean === 'none') return [];
+    const ref = parseTicketRef(/^#?\d+$/.test(clean) ? `${feature}/${clean.replace(/^#/, '')}` : clean);
+    return ref ? [ticketRef(ref.feature, ref.number)] : [];
+  });
+}
 
 type Check = (value: unknown, field: string) => unknown;
 const invalid = (field: string): never => { throw new Error(`Invalid ticket store field: ${field}`); };
@@ -311,12 +319,7 @@ export function readLegacyTicket(path: string, number: number, feature: string) 
   const at = stat.mtime.toISOString();
   const label = TICKET_STATUSES.find(value => value === status)
     ?? (status && Object.hasOwn(legacyStatuses, status) ? legacyStatuses[status] : 'needs-triage');
-  const repairs = (evidence.repairs ?? '').split(/[,;]+/).flatMap(item => {
-    const clean = item.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
-    if (!clean || /^none\b/.test(clean)) return [];
-    const ref = parseTicketRef(/^#?\d+$/.test(clean) ? `${feature}/${clean.replace(/^#/, '')}` : clean);
-    return ref ? [ticketRef(ref.feature, ref.number)] : [];
-  });
+  const repairs = parseMarkdownRepairRefs(evidence.repairs, feature);
   const ticket: TicketRecord = {
     number, title: heading.title, status: label,
     ...(/^(?:frontend-imp|frontend-implementer)\b/i.test(field('(?:Role|Who)') ?? '') && { role: 'frontend-imp' }),

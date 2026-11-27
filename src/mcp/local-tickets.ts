@@ -11,9 +11,9 @@ import type { JobIndexCache } from '../roles/job-index-cache.js';
 import { projectJobFilter } from '../roles/job-project.js';
 import { localProjectRoots, projectRoot, sharedRoot } from '../roles/projects.js';
 import {
-  canonicalTicketRef, parseTicketRef, readJsonTicketFeature, renderTicketBrief, splitRemovals, storedTicket, ticketFeaturePath,
-  ticketFeatureSlugs, ticketRef, TICKET_STATUSES, withTicketStoreLock, writeLegacyTicket, writeTicketFeature,
-  type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
+  canonicalTicketRef, parseMarkdownRepairRefs, parseTicketRef, readJsonTicketFeature, renderTicketBrief, splitRemovals,
+  storedTicket, ticketFeaturePath, ticketFeatureSlugs, TICKET_STATUSES, withTicketStoreLock, writeLegacyTicket,
+  writeTicketFeature, type AcceptanceItem, type TicketFeatureDoc, type TicketRecord,
 } from '../tickets/store.js';
 import { commitTicketWrites } from '../tickets/commit.js';
 import { readOpenHolds } from '../unattended/state.js';
@@ -332,12 +332,7 @@ function parseTicketForReadiness(path: string, num: number, slug: string): Local
         ?.replace(/\s+/g, ' ').trim() ?? '';
       const objective = objectiveField.exec(ticketHeader(text))?.[2]?.trim() || undefined;
       const role = FRONTEND_ROLE_RE.test(body) ? 'frontend-imp' : 'imp';
-      const repairs = (rawRepairs ?? '').split(/[,;]+/).flatMap(item => {
-        const clean = item.replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
-        if (!clean || /^none\b/.test(clean)) return [];
-        const ref = parseTicketRef(/^#?\d+$/.test(clean) ? `${slug}/${clean.replace(/^#/, '')}` : clean);
-        return ref ? [ticketRef(ref.feature, ref.number)] : [];
-      });
+      const repairs = parseMarkdownRepairRefs(rawRepairs, slug);
       parsed = { ...heading, path, what, role, runningList: isRunningListTicket(body), ...(objective && { objective }),
         ...(repairs.length && { repairs }), status, at: 0, items, checked,
         total: items.length, blockers: /^none\b/i.test(blocked) ? [] : [blocked],

@@ -6,10 +6,13 @@ import test from 'node:test';
 import { main } from '../../dist/cli/hud.js';
 import { scanTicketStore } from '../../dist/collectors/ticket-store.js';
 import { collectGateFlakes } from '../../dist/mcp/land-flakes.js';
+import { ticketReadiness } from '../../dist/mcp/local-tickets.js';
+import { JobIndexCache } from '../../dist/roles/job-index-cache.js';
 import { takeLease } from '../../dist/roles/lease.js';
-import { readTicketWrites, serializeTicketFeature, ticketWritesPath, validateTicketFeature } from '../../dist/tickets/store.js';
+import { parseMarkdownRepairRefs, readTicketWrites, serializeTicketFeature, ticketWritesPath, validateTicketFeature } from '../../dist/tickets/store.js';
 import { checkout, job } from '../helpers/thin-mcp-land.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
+import { goodTicket, setupWorkflowProject } from '../helpers/workflow-ticket-project.mjs';
 
 const draft = title => ({ title, what: 'Change the sample.', acceptance: ['Check the sample.'], blocked_by: [] });
 const sha256 = text => createHash('sha256').update(text).digest('hex');
@@ -251,5 +254,62 @@ test('repairs and flake-list cases are collected in full and hud tickets show ma
     const created = await f.call('hud_create', { role: 'general', cwd: f.main, ticket, request_key: `brief-${ticket}` });
     const brief = fs.readFileSync(join(created.task_dir, 'brief.md'), 'utf8');
     assert.equal(brief, shown.out + '\nFinish with `hud_report`.\n');
+  }
+});
+
+test('parseMarkdownRepairRefs skips standalone none sentinel and keeps none-prefixed canonical refs and bare numbers', () => {
+  assert.deepEqual(parseMarkdownRepairRefs(undefined, 'sample'), []);
+  assert.deepEqual(parseMarkdownRepairRefs('', 'sample'), []);
+  assert.deepEqual(parseMarkdownRepairRefs('none', 'sample'), []);
+  assert.deepEqual(parseMarkdownRepairRefs('None (not a repair)', 'sample'), []);
+  assert.deepEqual(parseMarkdownRepairRefs('none-theme/01', 'other'), ['none-theme/01']);
+  assert.deepEqual(parseMarkdownRepairRefs('none/01', 'other'), ['none/01']);
+  assert.deepEqual(
+    parseMarkdownRepairRefs('none-theme/01 (spec finding), none, 02, #3', 'none-theme'),
+    ['none-theme/01', 'none-theme/02', 'none-theme/03'],
+  );
+});
+
+test('none-theme/01 Markdown repair ref survives add, both readers, and queue admission while Repairs: none yields no repairs', { timeout: 30_000 }, async t => {
+  const withRepairsLine = (body, value) => body.replace('**Blocked by:** none\n', `**Blocked by:** none\n**Repairs:** ${value}\n`);
+  const f = await setupWorkflowProject(t, {
+    extraFeatures: {
+      'none-theme': {
+        '01-base.md': withRepairsLine(goodTicket(1, { status: 'done', title: 'Base theme slice' }), 'none (not a repair)'),
+        '02-no-repairs.md': withRepairsLine(goodTicket(2, { status: 'ready-for-agent', title: 'Unrelated theme slice' }), 'none'),
+      },
+    },
+    objectives: '## selected: Selected\n**State:** active\n**Features:** sample, none-theme\n',
+  });
+
+  const add = await f.call('hud_tickets', {
+    op: 'add',
+    feature: 'none-theme',
+    cwd: f.root,
+    tickets: [{ ...draft('Repair none-theme 01'), live_try: 'none', repairs: ['none-theme/01'] }],
+  });
+  assert.equal(add.ok, true);
+  assert.match(fs.readFileSync(add.tickets[0].path, 'utf8'), /^\*\*Repairs:\*\* none-theme\/01$/m);
+
+  // Reader 1: src/tickets/store.ts (readLegacyTicket via hud_tickets get).
+  assert.deepEqual((await f.call('hud_tickets', { op: 'get', ticket: 'none-theme/03', cwd: f.root })).ticket.repairs, ['none-theme/01']);
+  assert.equal((await f.call('hud_tickets', { op: 'get', ticket: 'none-theme/02', cwd: f.root })).ticket.repairs, undefined);
+  assert.equal((await f.call('hud_tickets', { op: 'get', ticket: 'none-theme/01', cwd: f.root })).ticket.repairs, undefined);
+
+  // Reader 2: src/mcp/local-tickets.ts (parseTicketForReadiness via ticketReadiness).
+  const ready = ticketReadiness(f.root, new JobIndexCache(f.home), 'none-theme', { home: f.home });
+  assert.deepEqual(ready.tickets.find(item => item.ticket === 'none-theme/03')?.repairs, ['none-theme/01']);
+  assert.equal(ready.tickets.find(item => item.ticket === 'none-theme/02')?.repairs, undefined);
+
+  // Queue admission preserves repairs on q.tickets[].repairs and keeps Repairs: none empty.
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'none-theme', max_parallel: 2, cwd: f.root });
+  try {
+    await f.jobs(flow, 2);
+    const q = f.flow(flow);
+    assert.deepEqual(q.tickets.find(item => item.ticket === 'none-theme/03')?.repairs, ['none-theme/01']);
+    assert.equal(q.tickets.find(item => item.ticket === 'none-theme/02')?.repairs, undefined);
+  } finally {
+    await f.call('hud_tickets', { op: 'run', cancel: true, run: flow, cwd: f.root });
+    assert.equal((await f.end(flow)).state, 'cancelled');
   }
 });
