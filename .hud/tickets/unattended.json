@@ -539,7 +539,7 @@
     {
       "number": 34,
       "title": "One reader-eligibility rule for every notice path; settled stores cost nothing per tick",
-      "status": "ready-for-agent",
+      "status": "done",
       "role": "imp",
       "owner_try": false,
       "live_try": "none",
@@ -554,32 +554,39 @@
         {
           "id": 1,
           "text": "Tests, one per finding 1-5 of jb3f023619aa9d4e3, each failing before the change",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Grep shows one eligibility function used by adoption, question collection, permission answer and task notices",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Idle-timer test with flow history and a foreign-project pending permission does no per-tick directory enumeration",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Net line count of src and packages is negative",
-          "done": false
+          "done": true
         },
         {
           "id": 5,
           "text": "npm run gate (or the project's check) passes",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T20:45:12.283Z",
+        "job": "j6f0da7da116ad9a8",
+        "flow": "f6f0da7da116ad9a8",
+        "replay_base": "8a45647abd5d18d37aa274a5034db43aa7af4cc9",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T19:39:07.153Z",
-      "updated_at": "2026-11-27T19:39:07.153Z"
+      "updated_at": "2026-11-27T20:45:12.283Z"
     }
   ]
 }

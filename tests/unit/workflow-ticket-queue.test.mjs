@@ -711,6 +711,7 @@ for (const step of ['review', 'accept']) {
       assert.deepEqual(paused.handback.choices, []);
       assert.ok(paused.notices['pause-0'].includes(target));
       assert.ok(rejected.error.includes(target));
+      paneList(f, f.env.HERDR_PANE_ID); // The unattended run has no origin pane; a listed project main can answer.
       const response = await f.call('hud_respond', { job: reviewer, request_id: 'q1', answer: 'Use the compact layout.' });
       assert.equal(response.ok, true);
       assert.equal(response.queue_resumed, undefined);
