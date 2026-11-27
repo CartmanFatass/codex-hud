@@ -594,9 +594,13 @@ test('MCP flow-task reload preserves owned receipts and rejects missing receipts
 
   const scriptPath = join(root, 'reload-flow-tasks.mjs');
   fs.writeFileSync(scriptPath, script);
+  const childEnv = { ...process.env, HUD_HOME: hudHome, HERDR_PANE_ID: 'w4E:p1' };
+  for (const key of ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'HUD_MCP_PI_SESSION_ID', 'HUD_CLAUDE_MOD', 'HUD_JOB_DIR']) {
+    delete childEnv[key];
+  }
   const child = spawn(process.execPath, [scriptPath], {
     cwd: resolve('.'),
-    env: { ...process.env, HUD_HOME: hudHome, HERDR_PANE_ID: 'w4E:p1' },
+    env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = '';

@@ -367,7 +367,7 @@
     {
       "number": 30,
       "title": "MCP task reload keeps only receipts this process owns",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -380,17 +380,24 @@
         {
           "id": 1,
           "text": "After `snapshot()` → reload with a missing caller receipt and a foreign or absent `flows/<q>/task.json`, both `tasks/get` and `tasks/cancel` report the task unknown and nothing is cancelled.",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "A task this process owns survives a reload with the same epoch and expiry.",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T16:44:25.309Z",
+        "job": "j0643e5c7f8473e2c",
+        "flow": "f0643e5c7f8473e2c-2",
+        "replay_base": "fbdde2f4547f724d8eda554076b620aff13ca749",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T16:03:52.535Z",
-      "updated_at": "2026-11-27T16:03:52.535Z"
+      "updated_at": "2026-11-27T16:44:25.309Z"
     }
   ]
 }
