@@ -123,7 +123,7 @@
       "number": 24,
       "title": "Gate flakes collected after test-flakes/23",
       "kind": "flake-list",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -136,7 +136,7 @@
           "case_name": "hud_send: preserves the right turn on fast-ambiguous-prompt",
           "flow": "f55b22044239c5054",
           "log": "~/.hud/flows/f55b22044239c5054.json.gate-1.log",
-          "recorded_at": "2026-11-27T07:55:08.093Z"
+          "recorded_at": "2026-11-27T08:09:20.499Z"
         },
         {
           "step": "test",
@@ -144,7 +144,7 @@
           "case_name": "hud_report during a pending CLI prompt belongs to the old turn (delivered)",
           "flow": "fc93b02fed181360a-2",
           "log": "~/.hud/flows/fc93b02fed181360a-2.json.gate-1.log",
-          "recorded_at": "2026-11-27T07:55:08.093Z"
+          "recorded_at": "2026-11-27T08:09:20.499Z"
         },
         {
           "step": "test",
@@ -152,7 +152,7 @@
           "case_name": "hud_send: preserves the right turn on rejected-prompt",
           "flow": "f7481730d0a511b32",
           "log": "~/.hud/flows/f7481730d0a511b32.json.gate-1.log",
-          "recorded_at": "2026-11-27T07:55:08.093Z"
+          "recorded_at": "2026-11-27T08:09:20.499Z"
         },
         {
           "step": "test",
@@ -160,24 +160,31 @@
           "case_name": "tab_visible roles omit hidden even on a capable fork",
           "flow": "f9b9e560199e87481",
           "log": "~/.hud/flows/f9b9e560199e87481.json.gate-1.log",
-          "recorded_at": "2026-11-27T07:55:08.093Z"
+          "recorded_at": "2026-11-27T08:09:20.499Z"
         }
       ],
       "acceptance": [
         {
           "id": 1,
           "text": "Each listed case passes 20 consecutive runs under parallel load",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "No assertion or product bound weakened",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T08:09:20.499Z",
+        "job": "legacy",
+        "flow": "legacy",
+        "replay_base": "368c493845e8ed86a61b7c9fec91cfc43a178db7",
+        "gates": 5
+      },
       "comments": [],
-      "created_at": "2026-11-27T07:55:08.093Z",
-      "updated_at": "2026-11-27T07:55:08.093Z"
+      "created_at": "2026-11-27T08:09:20.499Z",
+      "updated_at": "2026-11-27T08:09:20.499Z"
     },
     {
       "number": 25,
@@ -307,7 +314,7 @@
       "number": 26,
       "title": "Gate flakes collected after test-flakes/25",
       "kind": "flake-list",
-      "status": "needs-triage",
+      "status": "ready-for-agent",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -320,7 +327,7 @@
           "case_name": "hud_create and hud_send do not wait for a slow queue-watcher lookup",
           "flow": "f1e863617831b98a0",
           "log": "~/.hud/flows/f1e863617831b98a0.json.gate-1.log",
-          "recorded_at": "2026-11-27T07:55:08.105Z"
+          "recorded_at": "2026-11-27T08:09:20.506Z"
         },
         {
           "step": "test",
@@ -328,7 +335,7 @@
           "case_name": "pi reap: --done snapshot rename ENOSPC before native shutdown",
           "flow": "f1e863617831b98a0",
           "log": "~/.hud/flows/f1e863617831b98a0.json.gate-1.log",
-          "recorded_at": "2026-11-27T07:55:08.105Z"
+          "recorded_at": "2026-11-27T08:09:20.506Z"
         },
         {
           "step": "test",
@@ -336,7 +343,23 @@
           "case_name": "batch code jobs keep per-job worktrees and report-declared files in the index",
           "flow": "f1e863617831b98a0",
           "log": "~/.hud/flows/f1e863617831b98a0.json.gate-1.log",
-          "recorded_at": "2026-11-27T07:55:08.105Z"
+          "recorded_at": "2026-11-27T08:09:20.506Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-mcp-worker-tools.test.mjs",
+          "case_name": "a blocked CLI send is not queued and the worker can still report with its original token",
+          "flow": "f19e4dd6188b00f6e-2",
+          "log": "~/.hud/flows/f19e4dd6188b00f6e-2.json.gate-2.log",
+          "recorded_at": "2026-11-27T08:09:20.506Z"
+        },
+        {
+          "step": "test",
+          "test": "tests/unit/thin-panel-jobs.test.mjs",
+          "case_name": "a queued land names the job it waits on: its ticket id, else the holder’s flow id (panel-polish/04)",
+          "flow": "f19e4dd6188b00f6e-2",
+          "log": "~/.hud/flows/f19e4dd6188b00f6e-2.json.gate-2.log",
+          "recorded_at": "2026-11-27T08:09:20.506Z"
         }
       ],
       "acceptance": [
@@ -352,8 +375,8 @@
         }
       ],
       "comments": [],
-      "created_at": "2026-11-27T07:55:08.105Z",
-      "updated_at": "2026-11-27T07:55:08.105Z"
+      "created_at": "2026-11-27T08:09:20.506Z",
+      "updated_at": "2026-11-27T08:09:20.506Z"
     }
   ]
 }
