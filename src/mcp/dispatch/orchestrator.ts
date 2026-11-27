@@ -1524,7 +1524,7 @@ async function reopenJob(current: Job, status: JobStatus, row: JobRow, message: 
   const delivered = pending.map(({ text: _, ...receipt }) => ({ ...receipt, resumed: true as const }));
   // Answering a headless land repair resumes that repair, not a new independent job turn.
   const answeringLand = answerRequest && current.land_turn?.startsWith('land:');
-  const isFlakeAuto = Boolean(current.auto_land || (typeof current.request_key === 'string' && current.request_key.startsWith('flakes:')));
+  const isFlakeAuto = current.auto_land === true;
   const next: Job = { ...current, reaped_at: undefined, land_turn: land ? key : answeringLand ? current.land_turn : undefined,
     ticket_queue: land || automatic || answeringLand ? current.ticket_queue : undefined,
     ...(isFlakeAuto ? {
@@ -1769,7 +1769,7 @@ export async function sendJob(id: string, message: string, explicitKey: string |
   // A note queued into a working turn leaves that turn with its queue; only a new turn is taken over.
   if (!land && !queued) {
     delete current.ticket_queue; delete current.batch_flow; delete current.workflow;
-    if (current.auto_land || (typeof current.request_key === 'string' && current.request_key.startsWith('flakes:'))) {
+    if (current.auto_land === true) {
       current.auto_land = false;
       delete current.auto_land_blocked;
     }

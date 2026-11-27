@@ -1529,16 +1529,19 @@ test('unattended scan error with a pending flake fallback backs off instead of r
   assert.ok(state.flakeRetryAt > performance.now(), 'stale deadline advanced past now');
 });
 
-function settleDispatchedFlakeJob(f, jobId, reportText, { state = 'idle_grace' } = {}) {
+function settleDispatchedFlakeJob(f, jobId, reportText, { state = 'idle_grace', timedOutQuestion = false } = {}) {
   const dir = join(f.home, 'jobs', jobId);
   const jobFile = join(dir, 'job.json');
   const receipt = readJson(jobFile);
   // Ensure report mtime is strictly after created_at even when written within the same ms in fast tests.
   const createdMs = Date.parse(receipt.created_at);
-  const backdated = new Date(createdMs - 5_000).toISOString();
-  if (Number.isFinite(createdMs)) {
-    fs.writeFileSync(jobFile, JSON.stringify({ ...receipt, created_at: backdated }));
+  if (Number.isFinite(createdMs)) receipt.created_at = new Date(createdMs - 5_000).toISOString();
+  if (timedOutQuestion) {
+    fs.mkdirSync(join(dir, 'qa'), { recursive: true });
+    fs.writeFileSync(join(dir, 'qa', 'q1.md'), 'Use the existing synthetic layout?\n');
+    receipt.timed_out_questions = ['q1']; // Pi records this on the job, without an answer file.
   }
+  fs.writeFileSync(jobFile, JSON.stringify(receipt));
   const reportFile = join(dir, 'report.md');
   fs.writeFileSync(reportFile, reportText);
   const reportStat = fs.statSync(reportFile);
@@ -1582,7 +1585,36 @@ function seedAutoFlakeJob(f, { id, ticket, commitFix = true }) {
   return { id, dir, jobFile: join(dir, 'job.json'), wtRoot };
 }
 
-test('promoted flake job settling with a commit and clean report lands automatically without main call or completion notice', { timeout: 45_000 }, async t => {
+test('a caller-supplied flakes request key does not auto-land a manual worktree job', { timeout: 35_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+  const base = f.git(f.main, 'rev-parse', 'HEAD');
+  const request_key = 'flakes:investigate';
+  const { job } = await f.call('hud_create', {
+    role: 'imp', cwd: f.main, isolation: 'worktree', task: 'Investigate a synthetic flake.', request_key,
+  });
+  assert.ok(job);
+  const receipt = readJson(join(f.home, 'jobs', job, 'job.json'));
+  assert.equal(receipt.request_key, request_key);
+  assert.equal(receipt.auto_land, undefined);
+  fs.appendFileSync(join(receipt.worktree.root, 'tracked'), 'manual flake fix\n');
+  f.git(receipt.worktree.root, 'commit', '-qam', 'fix synthetic flake');
+  settleDispatchedFlakeJob(f, job, 'Fixed a synthetic flake.\nBlockers: none\n', { state: 'closed' });
+
+  // Run the same settlement the watcher uses, without depending on when its scan runs.
+  assert.deepEqual(await settleAutoLandFlakeJob(f.home, job), { action: 'noop' });
+  assert.equal(fs.existsSync(join(f.home, 'flows', `f${job.slice(1)}.json`)), false);
+  assert.equal(f.git(f.main, 'rev-parse', 'HEAD'), base);
+  assert.equal(f.git(f.main, 'rev-parse', 'origin/base'), base);
+
+  const { flow } = await f.call('hud_land', { job });
+  assert.ok(flow);
+  await until(() => f.flowState(flow).state === 'completed', t.signal);
+  assert.notEqual(f.flowState(flow).auto_land, true);
+  assert.match(fs.readFileSync(join(f.main, 'tracked'), 'utf8'), /manual flake fix/);
+});
+
+test('promoted flake with a timed-out question and clean report lands automatically without a main call or completion notice', { timeout: 45_000 }, async t => {
   const f = await checkout(t, ['npm run test:sample'], { after: ['test "$WRAPPED" = yes && pwd > after-ran'] });
   setFlakesConfig(f, { feature: 'test-flakes' });
 
@@ -1619,7 +1651,7 @@ test('promoted flake job settling with a commit and clean report lands automatic
   ].join('\n'));
   f.git(dispatched.worktree.root, 'add', 'sample/alpha.test.mjs');
   f.git(dispatched.worktree.root, 'commit', '-qm', 'fix alpha flake');
-  settleDispatchedFlakeJob(f, dispatched.job, 'Fixed alpha flake.\nAssumed: kept synthetic test layout\nBlockers: none\n');
+  settleDispatchedFlakeJob(f, dispatched.job, 'Fixed alpha flake.\nAssumed: kept synthetic test layout\nBlockers: none\n', { timedOutQuestion: true });
 
   // Without any hud_land call from main, HUD starts the land flow through the project's land block.
   const autoFlow = `f${dispatched.job.slice(1)}`;
@@ -1633,8 +1665,10 @@ test('promoted flake job settling with a commit and clean report lands automatic
   assert.equal(fs.existsSync(join(f.main, 'after-ran')), true, 'project land after command ran');
   assert.equal(listFlakeRecords(f).find(r => r.number === 1)?.status, 'done');
   assert.deepEqual(workflowEvents(f.home, f.env.HERDR_PANE_ID, false, f.main).lines, [], 'no completion notice for auto-landed flake');
-  assert.equal(mainNotices.some(line => line.includes(dispatched.job) || line.includes(autoFlow)), false,
-    `expected no main notice on clean auto-land, got: ${JSON.stringify(mainNotices)}`);
+  // The question itself can be announced before it times out; the clean land is silent.
+  assert.equal(mainNotices.some(line => line.includes(autoFlow) ||
+    (line.includes(dispatched.job) && !line.includes('QUESTION q1:'))), false,
+    `expected no completion notice on clean auto-land, got: ${JSON.stringify(mainNotices)}`);
 });
 
 test('promoted flake auto-land notifies main on land failure', { timeout: 35_000 }, async t => {
@@ -1675,6 +1709,7 @@ test('flake report with a Blockers line or scope assumption does not land and no
       id: 'j0000000000000a31',
       ticket: 'test-flakes/01',
       commitFix: true,
+      timedOutQuestion: true,
       report: 'Investigated flake.\nBlockers: needs an owner decision on relaxing the timeout bound\n',
       expectedReason: /Blockers: needs an owner decision/i,
     },
@@ -1696,7 +1731,7 @@ test('flake report with a Blockers line or scope assumption does not land and no
 
   for (const item of cases) {
     const seeded = seedAutoFlakeJob(f, { id: item.id, ticket: item.ticket, commitFix: item.commitFix });
-    settleDispatchedFlakeJob(f, seeded.id, item.report);
+    settleDispatchedFlakeJob(f, seeded.id, item.report, { timedOutQuestion: item.timedOutQuestion });
     ensureJobWatcher(f.home);
 
     await until(() => Boolean(readJson(seeded.jobFile).auto_land_blocked), t.signal);

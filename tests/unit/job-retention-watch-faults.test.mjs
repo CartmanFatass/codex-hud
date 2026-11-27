@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { fixture, realSession, expired, until } from '../helpers/job-retention-fixture.mjs';
 
@@ -213,6 +214,34 @@ fs.lstatSync = (path, ...args) => {
   return lstat(path, ...args);
 };
 syncBuiltinESMExports();`;
+
+test('a settled auto-land flake with an open question waits without spinning and wakes on an answer', { timeout }, async (t) => {
+  const f = fixture(t);
+  const main_root = join(f.home, 'synthetic-repo'), root = `${main_root}-wt`;
+  const dir = f.job({ state: 'closed', output_written: true }, { auto_land: true, cwd: root, worktree: { root, main_root } });
+  writeFixtureFile(join(dir, 'report.md'), 'Blockers: owner decision needed\n');
+  fs.mkdirSync(join(dir, 'qa'));
+  writeFixtureFile(join(dir, 'qa', 'q1.md'), 'An open synthetic question.\n');
+  const jobFile = join(dir, 'job.json');
+  const blocked = () => JSON.parse(fs.readFileSync(jobFile, 'utf8')).auto_land_blocked;
+
+  // Put the bounded retry beyond the test deadline so only an event can account for the wake.
+  const { child, exited, stderr } = f.start(scanProbe + `\nprocess.env.HUD_WATCH_CLI_CHECK_MS = '60000';`);
+  const scansFile = join(f.home, 'scans');
+  await until(() => fs.existsSync(scansFile), t.signal);
+  const scans = () => fs.readFileSync(scansFile, 'utf8').trim().split('\n').length;
+  const before = scans();
+  await delay(350, undefined, { signal: t.signal });
+  const extra = scans() - before;
+  assert.ok(extra <= 2, `expected at most two extra scans in 350 ms, got ${extra}`);
+  assert.equal(child.exitCode, null, stderr());
+  assert.equal(blocked(), undefined, 'the open question defers the report decision');
+
+  writeFixtureFile(join(dir, 'qa', 'q1.answer.md'), 'Synthetic answer.\n');
+  await until(() => blocked(), t.signal);
+  assert.equal(blocked().reason, 'Blockers: owner decision needed');
+  assert.deepEqual(await exited, [0, null]);
+});
 
 test('persistent asynchronous watch errors stay at one scan per second and throttle diagnostics', { timeout }, async (t) => {
   const f = fixture(t, DEGRADED_MS), bad = f.job({ state: 'working' }), dir = f.job({ state: 'working' }, {}, true);

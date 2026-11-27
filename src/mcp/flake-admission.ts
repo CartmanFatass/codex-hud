@@ -31,10 +31,9 @@ export function flakeDispatchKey(mainRoot: string, ticket: string, attempt: numb
 }
 
 export function isAutoLandFlakeJob(
-  job: Partial<Pick<Job, 'auto_land' | 'request_key' | 'ticket_queue' | 'workflow' | 'batch_flow' | 'land_turn'>> | null | undefined,
+  job: Partial<Pick<Job, 'auto_land' | 'ticket_queue' | 'workflow' | 'batch_flow' | 'land_turn'>> | null | undefined,
 ): boolean {
-  if (!job || job.ticket_queue || job.workflow || job.batch_flow || job.land_turn || job.auto_land === false) return false;
-  return job.auto_land === true || (typeof job.request_key === 'string' && job.request_key.startsWith('flakes:'));
+  return job?.auto_land === true && !job.ticket_queue && !job.workflow && !job.batch_flow && !job.land_turn;
 }
 
 /** Shared admission snapshot for running-list tickets of the configured flake feature. */

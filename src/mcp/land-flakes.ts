@@ -715,11 +715,13 @@ export async function retryPendingFlakeCollections(
 const CLEAN_SETTLED_STATES = new Set(['idle_grace', 'done', 'closed']);
 const MAX_FLAKE_REPORT_BYTES = 1024 * 1024;
 
-function hasOpenQuestions(dir: string): boolean {
+function hasOpenQuestions(dir: string, timedOut: Job['timed_out_questions']): boolean {
   try {
     const names = new Set(fs.readdirSync(join(dir, jobFiles.qa)));
+    const timedOutIds = new Set(Array.isArray(timedOut) ? timedOut : []);
     for (const name of names) {
-      if (/^q\d+\.md$/.test(name) && !names.has(name.replace('.md', '.answer.md'))) return true;
+      const id = /^(q\d+)\.md$/.exec(name)?.[1];
+      if (id && !names.has(`${id}.answer.md`) && !timedOutIds.has(id)) return true;
     }
     return false;
   } catch {
@@ -791,7 +793,7 @@ export async function settleAutoLandFlakeJob(
     if (!job.worktree || job.worktree.root !== job.cwd) return { action: 'noop' as const };
     if (!CLEAN_SETTLED_STATES.has(status.state ?? '')) return { action: 'noop' as const };
     if (landAttempt(home, id).prior) return { action: 'noop' as const };
-    if (hasOpenQuestions(dir)) return { action: 'wait' as const };
+    if (hasOpenQuestions(dir, job.timed_out_questions)) return { action: 'wait' as const };
     const sonic = sonicChildren(dir);
     if (sonic.open || sonic.uncollected.length) return { action: 'wait' as const };
 

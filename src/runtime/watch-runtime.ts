@@ -148,6 +148,7 @@ function warn(kind: string, message: string) {
   log(message);
 }
 let watcher: fs.FSWatcher | undefined, flowsWatcher: fs.FSWatcher | undefined, settingsWatcher: fs.FSWatcher | undefined, timer: NodeJS.Timeout;
+let autoLandRetryTimer: NodeJS.Timeout | undefined;
 let notify: (event: 'subscribe' | 'idle') => void, subscribed = false,
   queued = false,
   queuedRetryWatch = false,
@@ -348,6 +349,8 @@ function stopScheduling() {
   settingsWatcher?.close();
   settingsWatcher = undefined;
   clearTimeout(timer);
+  clearTimeout(autoLandRetryTimer);
+  autoLandRetryTimer = undefined;
 }
 async function shutdown() {
   pauseReady?.(null);
@@ -553,9 +556,11 @@ function startWorktree(id: string, file: string, job: Job, sweep = false) {
 }
 function startAutoLand(id: string) {
   if (inFlightAutoLands.has(id) || stopped || pauseReady) return;
+  let landed = false;
   const promise = settleAutoLandFlakeJob(home, id, {
     writeJob: (file, value) => writeJsonAtomic(file, value, 2),
   }).then(res => {
+    landed = res.action === 'landed';
     if (res.action === 'landed') log(`auto-land ${id} -> ${res.flow}`);
     else if (res.action === 'blocked') log(`auto-land blocked ${id}: ${res.reason}`);
   }).catch((error) => {
@@ -563,7 +568,9 @@ function startAutoLand(id: string) {
   }).finally(() => {
     inFlightAutoLands.delete(id);
     drained();
-    schedule();
+    if (landed) schedule();
+    // Job/QA/flow changes can wake the watcher sooner; don't rescan on every wait.
+    else if (!stopped && !autoLandRetryTimer) autoLandRetryTimer = setTimeout(() => schedule(true), cliCheck);
   });
   inFlightAutoLands.set(id, promise);
 }
@@ -790,6 +797,8 @@ function trackStart(id: string, targetRole: string, launch: () => Promise<void>)
 function scan(retryWatch = false) {
   if (stopped || pauseReady) return;
   clearTimeout(timer);
+  clearTimeout(autoLandRetryTimer);
+  autoLandRetryTimer = undefined;
   if (retryWatch && (!watcher || !flowsWatcher)) startWatch(); // Install before catch-up, only on the timer path.
   // Piggyback on the on-demand retention scan; never keep the watcher alive for housekeeping.
   const scanAt = performance.now(), housekeep = scanAt >= nextHomeRetention;
