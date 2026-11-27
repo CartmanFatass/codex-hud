@@ -167,7 +167,7 @@ async function until(check, message, timeoutMs = 10000) {
     if (check()) return;
     await delay(25);
   }
-  assert.fail(message);
+  assert.fail(typeof message === 'function' ? message() : message);
 }
 
 test('bar line pushed to pane strip equals today’s codexH bar at 40, 80 and 120 columns across resizes', async (t) => {
@@ -369,11 +369,13 @@ const timer = setInterval(() => {
   );
 
   // Minimal PATH containing fakeBin, node dir, and standard system tools (no tmux except trap).
+  // Forward TZ when set (e.g. TZ=UTC in tests) so the launcher and bar search the same day directory as sessionDir.
   const env = {
     HOME: home,
     HUD_HOME: hudHome,
     CODEX_HOME: codexHome,
     PATH: `${fakeBin}:${dirname(process.execPath)}:/usr/bin:/bin`,
+    ...(process.env.TZ ? { TZ: process.env.TZ } : {}),
     HERDR_ENV: '1',
     HERDR_SOCKET_PATH: fork.socketPath,
     HERDR_PANE_ID: 'w4E:p1',
@@ -409,6 +411,7 @@ const timer = setInterval(() => {
     stderr += chunk.toString('utf8');
   });
   t.after(() => {
+    try { fs.writeFileSync(releaseFile, 'exit\n'); } catch {}
     if (launcher.exitCode === null) launcher.kill('SIGKILL');
   });
 
