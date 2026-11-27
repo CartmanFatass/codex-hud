@@ -16,7 +16,7 @@ import { freezeGraph, noticeEvents, runDir, runLock } from '../workflows/store.j
 import { wakeWorkflow } from '../workflows/wake.js';
 import { ESCALATION_RULE, isOpenTicketRun, ticketClosed } from '../unattended/state.js';
 import { validLandConfig } from './land.js';
-import { completedLandForJob } from './land-state.js';
+import { activeLand, landAttempt, readLand } from './land-state.js';
 import { checkFeatureTickets, checkTicketPaths, declaredReadyTickets, ticketObjectiveOwner, ticketReadiness } from './local-tickets.js';
 import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
 import { BUNDLED_ROOT } from './paths.js';
@@ -24,7 +24,7 @@ import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
   blockerHandbackItem, cancelTicketQueue, clearItemHold, isTicketQueueId, prepareTicketQueueRepair, queueIds, readTicketQueue, recordDecision,
-  syncBlockerHandback, ticketQueueNotice, ticketQueueView, writeTicketQueue, type TicketQueue,
+  syncBlockerHandback, ticketQueueNotice, ticketQueueView, writeTicketQueue, type RunDecision, type TicketQueue,
 } from './ticket-queue-state.js';
 
 let template: string | undefined;
@@ -205,7 +205,8 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
     const roles = requireTicketQueueRoles(home, root, unattended
       ? { objectives: [unattended.objective] } : { feature: target, handbackTo: effectiveHandbackTo });
     fs.mkdirSync(join(home, 'flows'), { mode: 0o700, recursive: true });
-    const handback = resumed?.state === 'paused' && resumed.handback?.kind === 'assumption' ? resumed.handback : undefined;
+    const handback = resumed?.state === 'paused' && (resumed.handback?.kind === 'assumption' || resumed.handback?.kind === 'blocker')
+      ? resumed.handback : undefined;
     const limit = max_parallel ?? resumed?.max_parallel ?? capForRole(loadConcurrencySettings(), 'imp');
     const effectiveRule = unattended ? ESCALATION_RULE : escalation_rule?.trim() ?? resumed?.escalation_rule;
     const workspace = resolvedWorkspace ?? resumed?.workspace;
@@ -239,17 +240,25 @@ export async function startTicketQueue(home: string, cwd: string, pane: string |
       dispatcher: resumed ? resumed.dispatcher : dispatcher,
       state: 'working', tickets: resumed?.tickets.flatMap(item => {
         const next = { ...item, dispatch_queue: item.dispatch_queue ?? resumed.flow };
-        // A manual land can close the ticket before the successor has observed the receipt.
-        const land = item.held && item.job ? completedLandForJob(home, item.job) : null;
-        if (land && !land.ticket_queue) {
+        const recorded = item.land ? readLand(home, item.land) : null;
+        const attempt = item.job ? landAttempt(home, item.job).prior : null;
+        const land = (attempt?.job === item.job ? attempt : null) ?? (recorded?.job === item.job ? recorded : null);
+        // Carry in-flight lands and adopt lands that completed while the predecessor was paused.
+        if (!item.landed && land?.state === 'completed') {
           const at = land.landed_at ?? land.updated_at ?? now;
           next.land = land.flow;
-          next.held_land = land.flow;
+          if (item.held && !land.ticket_queue) next.held_land = land.flow;
           next.landed = true;
           next.landed_at = at;
           next.changed_at = at;
           next.base_moves = land.base_moves;
           delete next.held;
+        } else if (!item.landed && land && activeLand(land)) {
+          next.land = land.flow;
+          if (item.held) {
+            if (!land.ticket_queue) next.held_land = land.flow;
+            delete next.held;
+          }
         } else if (!item.landed && (launchFailed(home, item.job) || ticketClosed(root, item))) {
           return [];
         }
@@ -365,6 +374,69 @@ export async function answerTicketQueueHandback(
         code: 'invalid_choice',
         error: `Invalid choice for ${id} (${step}); expected one of: ${cur.handback.choices.join(', ')} (optional ": <reason>" or newline)`,
       };
+    }
+    if (parsed.choice === 'resume') {
+      const at = new Date().toISOString();
+      const handback = cur.handback;
+      const decisionKind: RunDecision['kind'] = handback.kind === 'blocker' ? 'blocker'
+        : handback.kind === 'assumption' ? 'assumption' : 'accept';
+      if (handback.assumption && handback.ticket && handback.job) {
+        const item = cur.tickets.find(t => !t.held && t.ticket === handback.ticket && t.job === handback.job);
+        if (item) {
+          item.approved_assumptions_head = handback.assumption.head;
+          item.approved_assumptions_sig = handback.assumption.report_sig;
+          item.changed_at = at;
+        }
+      }
+      recordDecision(cur, {
+        step, kind: decisionKind, job: 'main', decision: 'resume',
+        ...(handback.ticket && { ticket: handback.ticket }),
+        ...(handback.job && { worker_job: handback.job }),
+        ...(parsed.reason && { reason: parsed.reason }),
+        at,
+      });
+      cur.epoch = (cur.epoch ?? 0) + 1;
+      cur.steps ??= {};
+      cur.steps[step] = { state: 'running', changed_at: at };
+      delete cur.handback;
+      delete cur.reason;
+      delete cur.remaining;
+      delete cur.pid;
+      delete cur.start;
+      cur.streak = 0; cur.settled = 0; cur.failures = 0;
+      cur.notices = {};
+      cur.state = 'working';
+      writeTicketQueue(home, cur);
+      return { ok: true, queue: cur, resumed: true };
+    }
+    if (parsed.choice === 'stop') {
+      const at = new Date().toISOString();
+      const handback = cur.handback;
+      const decisionKind: RunDecision['kind'] = handback.kind === 'blocker' ? 'blocker'
+        : handback.kind === 'assumption' ? 'assumption' : 'accept';
+      recordDecision(cur, {
+        step, kind: decisionKind, job: 'main', decision: 'stop',
+        ...(handback.ticket && { ticket: handback.ticket }),
+        ...(handback.job && { worker_job: handback.job }),
+        ...(parsed.reason && { reason: parsed.reason }),
+        at,
+      });
+      cur.epoch = (cur.epoch ?? 0) + 1;
+      cur.steps ??= {};
+      cur.steps[step] = { state: 'cancelled', answer: 'stop', changed_at: at };
+      for (const cursor of Object.values(cur.steps)) {
+        if (cursor.state === 'waiting' || cursor.state === 'ready') {
+          cursor.state = 'cancelled';
+          cursor.changed_at = at;
+        }
+      }
+      delete cur.handback;
+      cur.reason = parsed.reason ? `stopped: ${parsed.reason}` : 'stopped by main';
+      cur.queued = undefined;
+      cur.notices = {};
+      cur.state = 'cancelled';
+      writeTicketQueue(home, cur);
+      return { ok: true, queue: cur, resumed: false };
     }
     if (parsed.choice === 'repair') {
       const repair = prepareTicketQueueRepair(cur, handbackStepKeys(home, cur),

@@ -8,6 +8,7 @@ import { readDone, readTurn, receiptForTurn } from '../roles/cli-turn.js';
 import { checkBinding, CHECK_TIMEOUT_MS, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
 import { sharedRoot } from '../roles/projects.js';
 import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
+import { roleRegistry } from '../roles/roster.js';
 import { readFileBounded, readJsonFile } from '../utils/atomic-fs.js';
 import { isProcAlive } from '../utils/proc.js';
 import { SAFE_GIT_ARGS, safeGitEnv } from '../utils/git-safety.js';
@@ -25,7 +26,7 @@ import { startLand, validLandConfig } from './land.js';
 import {
   checkTicketPaths, recordUnattendedAcceptance, ticketApprovedRemovals, ticketObjectiveOwner, ticketReadiness,
 } from './local-tickets.js';
-import { jobFiles } from './paths.js';
+import { BUNDLED_ROOT, jobFiles } from './paths.js';
 import { piReportSettlement } from './pi-read-settlement.js';
 import { directory, findJob, hudHome, jobCache, jobs, readRow } from './store/job-store.js';
 import { resumeTicketEdits, stopTicketEdits } from './ticket-edit-queue.js';
@@ -51,6 +52,8 @@ const receiptFor = (q: TicketQueue, item: TicketQueueItem) => jobs().find(job =>
 const livePane = (q: TicketQueue) => q.pane && directRecipient(q) ? q.pane : undefined;
 const trustDispatchFailed = (job: Job, status: JobStatus | null | undefined) =>
   status?.exit_reason === 'untrusted_cwd' || job.dispatch_code === 'untrusted_cwd';
+const leadEnabled = (root: string) =>
+  roleRegistry(hudHome, root, process.env, undefined, undefined, BUNDLED_ROOT).roles().has('lead');
 
 function ticketHeader(path: string) {
   return readFileBounded(path, 64 * 1024).bytes.toString('utf8').split(/^## Comments[ \t]*\r?$/m, 1)[0];
@@ -302,17 +305,27 @@ function pauseNotice(q: TicketQueue) {
 }
 
 /** Hand-back settlement for ticket-queue problems:
- * - assumption breaker: pauses the run with no main wake (empty notices).
- * - blocker / escalate / unattended run hold: pauses the run, records pause-<epoch> in notices, and wakes main once.
+ * - assumption / blocker report gate: leaves the step asking, pauses the run, records pause-<epoch> in notices, and wakes main once.
+ * - escalate / unattended run hold: pauses the run, records pause-<epoch> in notices, and wakes main once.
  * - other problems (land/check/worker/dispatch/to:main question): failed receipt with terminal notice. */
 export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
   const step = problem?.step ?? q.handback?.step ?? 'tickets';
+  if (problem?.reason && !q.reason) q.reason = problem.reason;
+  const setAsking = () => {
+    q.steps ??= {};
+    q.steps[step] = {
+      state: 'asking',
+      ...(problem?.reason ? { reason: problem.reason } : q.reason ? { reason: q.reason } : {}),
+      changed_at: new Date().toISOString(),
+    };
+  };
   q.queued = undefined;
   q.remaining = computeRemaining(q);
   if (q.unattended && (q.held || problem?.ownerApproval || problem?.kind === 'blocker' || problem?.kind === 'escalate')) {
+    const manual = Boolean(q.held || problem?.ownerApproval);
     q.handback = {
       step,
-      choices: q.held || problem?.ownerApproval ? ['manual'] : ['resume', 'stop'],
+      choices: manual ? ['manual'] : ['resume', 'stop'],
       ...(problem && {
         kind: problem.kind,
         ...(problem.ticket && { ticket: problem.ticket }),
@@ -320,8 +333,10 @@ export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
         ...(problem.question && { question: problem.question }),
         ...(problem.land && { land: problem.land }),
         ...(problem.ownerApproval && { owner_approval: problem.ownerApproval }),
+        ...(problem.assumption && { assumption: problem.assumption }),
       }),
     };
+    if (!manual && (problem?.kind === 'blocker' || problem?.kind === 'assumption')) setAsking();
     q.state = 'paused';
     q.notices = pauseNotice(q);
     return;
@@ -345,12 +360,13 @@ export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
       ...(problem.assumption && { assumption: problem.assumption }),
     }),
   };
-  if (problem?.kind === 'assumption') {
+  if (problem?.kind === 'assumption' || problem?.kind === 'blocker') {
+    setAsking();
     q.state = 'paused';
-    q.notices = {};
+    q.notices = pauseNotice(q);
     return;
   }
-  if (problem?.kind === 'escalate' || problem?.kind === 'blocker') {
+  if (problem?.kind === 'escalate') {
     q.state = 'paused';
     q.notices = pauseNotice(q);
     return;
@@ -1137,7 +1153,11 @@ function tickTicketQueue(
           const head = verifiedSourceHead(job);
           if (!head) { flag('worker', 'Verified worker commit unavailable'); continue; }
           if (item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig) {
-            pendingAssumption ??= { item, job, head, sig, trigger: 'report declares Blockers:', assumed, blockers };
+            if (q.handback_to === 'main' && !leadEnabled(q.root)) {
+              flag('blocker', 'report declares Blockers:', { assumption: { head, report_sig: sig } });
+            } else {
+              pendingAssumption ??= { item, job, head, sig, trigger: 'report declares Blockers:', assumed, blockers };
+            }
             continue;
           }
           changed = appendTodos(q, blockers.map(text => ({ source, kind: 'blocker' as const, text }))) || changed;
@@ -1184,6 +1204,11 @@ function tickTicketQueue(
 
   changed = syncBlockerHandback(q) || changed;
   if (problem) {
+    if (problem.kind === 'assumption' || problem.kind === 'blocker') {
+      q.reason = problem.reason;
+      settleTicketHandback(q, problem);
+      return { state: 'asking', changed: true };
+    }
     state.problem = problem;
     return { state: 'failed', reason: problem.reason, changed: true };
   }

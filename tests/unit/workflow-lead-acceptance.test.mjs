@@ -69,7 +69,7 @@ test('ticket check refuses a run with gaps including empty Approved removals and
   assert.match(proseOnly, /^\*\*What to build:\*\* Add a Live try: parser rule\.$/m);
 });
 
-test('Assumed: lines move to run todo; four assumptions pause a main hand-back without waking main', { timeout: 45_000 }, async t => {
+test('Assumed: lines move to run todo; four assumptions pause a main hand-back asking, wake main, and hud_respond resume lands the item', { timeout: 45_000 }, async t => {
   const f = await setupWorkflowProject(t, {
     tickets: {
       '01-two-assumed.md': goodTicket(1),
@@ -89,33 +89,49 @@ test('Assumed: lines move to run todo; four assumptions pause a main hand-back w
   assert.deepEqual(midRead.todo.map(x => x.text), ['keep default timeout', 'preserve JSON field order']);
   assert.equal(midRead.changes, undefined);
 
-  // 4 assumptions trigger the assumption breaker -> paused with NO main wake (empty notices, no stored no_wake).
+  // 4 assumptions trigger the report gate -> paused with step asking and a main wake notice.
   await f.settle(second, {
     report: 'Synthetic done.\n\nAssumed: one\nAssumed: two\nAssumed: three\nAssumed: four\n',
   });
   const paused = await f.end(flow);
   assert.equal(paused.state, 'paused');
+  assert.equal(paused.steps.tickets.state, 'asking');
   assert.equal('no_wake' in paused, false);
   assert.equal('pause_notice' in paused, false);
-  assert.deepEqual(paused.notices, {});
   assert.equal(paused.handback.kind, 'assumption');
+  assert.deepEqual(paused.handback.choices, ['resume', 'stop']);
+  assert.match(paused.notices['pause-0'], /Assumed: lines/);
+  assert.match(paused.notices['pause-0'], new RegExp(`hud_respond job=${flow} answer=<resume\\|stop>`));
   assert.equal(paused.todo.length, 6);
   const after = await f.call('hud_read', { job: flow });
-  assert.equal(after.changes, undefined);
   assert.equal(after.todo.length, 6);
-  assert.match(after.pause_notice, /Assumed: lines/);
+  const wakeNotices = await collectDeliveredNotices(f, flow, after, 1);
+  assert.equal(wakeNotices.length, 1);
+  assert.match(wakeNotices[0], /Assumed: lines/);
+
+  // Answering resume via hud_respond approves that report and lands sample/02 in the same run.
+  const resumed = await f.call('hud_respond', { job: flow, answer: 'resume: Reviewed all four defaults.' });
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.flow, flow);
+  assert.equal(resumed.state, 'working');
+  await until(() => Boolean(f.flow(flow).review_job), 15_000);
+  const q = f.flow(flow);
+  assert.deepEqual(q.tickets.filter(x => x.landed).map(x => x.ticket), ['sample/01', 'sample/02']);
+  assert.ok(q.decisions.some(d => d.kind === 'assumption' && d.decision === 'resume' && d.ticket === 'sample/02'));
+  await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
 });
 
-for (const { label, handback_to, report } of [
-  { label: 'a scope assumption on default hand-back', report: 'Done.\nAssumed: [scope] kept the old command.\n' },
-  { label: 'four assumptions on explicit lead hand-back', handback_to: 'lead', report: 'Done.\nAssumed: one\nAssumed: two\nAssumed: three\nAssumed: four\n' },
+for (const { label, handback_to, report, expectedKind } of [
+  { label: 'a scope assumption on default hand-back', report: 'Done.\nAssumed: [scope] kept the old command.\n', expectedKind: 'assumption' },
+  { label: 'four assumptions on explicit lead hand-back', handback_to: 'lead', report: 'Done.\nAssumed: one\nAssumed: two\nAssumed: three\nAssumed: four\n', expectedKind: 'assumption' },
+  { label: 'a Blockers line on explicit lead hand-back', handback_to: 'lead', report: 'Done.\nBlockers: needs an owner decision on keeping the legacy flag.\n', expectedKind: 'blocker' },
 ]) {
   test(`${label} goes to a temporary lead and lands on continue without waking main`, { timeout: 45_000 }, async t => {
     const f = await setupWorkflowProject(t, { count: 1 });
     const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, handback_to });
     const [first] = await f.jobs(flow, 1);
     await f.settle(first, { report });
-    await until(() => f.flow(flow).active_lead?.kind === 'assumption', 15_000);
+    await until(() => f.flow(flow).active_lead?.kind === expectedKind, 15_000);
     const waiting = f.flow(flow);
     const lead = waiting.active_lead.job;
     assert.equal(waiting.unattended, undefined);
@@ -611,7 +627,7 @@ test('an ordinary run with a landed ticket and a held item never reaches review 
   assert.deepEqual(done.tickets.filter(x => x.landed).map(x => x.ticket).sort(), ['sample/01', 'sample/02']);
 });
 
-test('a scope assumption on main hand-back pauses without waking main; one resume accepts that report and lands', { timeout: 45_000 }, async t => {
+test('a scope assumption on main hand-back pauses asking and wakes main; hud_respond resume lands it and stop cancels cleanly', { timeout: 60_000 }, async t => {
   const f = await setupWorkflowProject(t, { tickets: { '01-scope.md': goodTicket(1) } });
   const args = { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' };
   const { flow } = await f.call('hud_tickets', args);
@@ -620,25 +636,176 @@ test('a scope assumption on main hand-back pauses without waking main; one resum
   await f.settle(first, { report: `Done.\n\nAssumed: ${assumed}\n` });
   const paused = await f.end(flow);
   assert.equal(paused.state, 'paused');
+  assert.equal(paused.steps.tickets.state, 'asking');
   assert.equal('no_wake' in paused, false);
-  assert.deepEqual(paused.notices, {});
   assert.equal(paused.handback.kind, 'assumption');
+  assert.deepEqual(paused.handback.choices, ['resume', 'stop']);
   assert.match(paused.reason, /scope assumption/);
-  assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
+  assert.match(paused.notices['pause-0'], /scope assumption/);
+  assert.match(paused.notices['pause-0'], new RegExp(`hud_respond job=${flow} answer=<resume\\|stop>`));
+  const readPaused = await f.call('hud_read', { job: flow });
+  const delivered = await collectDeliveredNotices(f, flow, readPaused, 1);
+  assert.equal(delivered.length, 1);
+  assert.match(delivered[0], /scope assumption/);
   const leads = fs.readdirSync(join(f.home, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id)).map(f.job).filter(j => j.role === 'lead');
   assert.equal(leads.length, 0, 'main-handback runs keep the breaker with zero leads');
 
-  const resumed = await f.call('hud_tickets', args);
-  assert.notEqual(resumed.flow, flow);
+  // hud_respond resume approves the exact report/commit and continues to land in the same run.
+  const resumed = await f.call('hud_respond', { job: flow, answer: 'resume' });
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.flow, flow);
+  assert.equal(resumed.state, 'working');
   await until(() => {
-    const q = f.flow(resumed.flow);
+    const q = f.flow(flow);
     assert.equal(q.state, 'working', JSON.stringify(q));
     return Boolean(q.review_job);
   }, 15_000);
-  const landed = await f.call('hud_read', { job: resumed.flow });
+  const landed = await f.call('hud_read', { job: flow });
   assert.deepEqual(landed.landed, ['sample/01']);
   assert.equal(landed.jobs[0].job, first);
   assert.deepEqual(landed.todo, [{ source: `sample/01 (${first})`, kind: 'assumed', text: assumed }]);
+  await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
+
+  // hud_respond stop cancels a report-gate pause cleanly.
+  const stopIssues = join(f.root, '.scratch', 'stopgate', 'issues');
+  fs.mkdirSync(stopIssues, { recursive: true });
+  fs.writeFileSync(join(stopIssues, '01-stop.md'), goodTicket(1));
+  f.git(f.root, 'add', '.scratch');
+  f.git(f.root, 'commit', '-qm', 'stopgate feature');
+  const { flow: stopFlow } = await f.call('hud_tickets', { op: 'run', feature: 'stopgate', max_parallel: 1, cwd: f.root, handback_to: 'main' });
+  const [stopJob] = await f.jobs(stopFlow, 1);
+  await f.settle(stopJob, { report: 'Done.\nAssumed: [scope] changed public flag.\n' });
+  const pausedStop = await f.end(stopFlow);
+  assert.equal(pausedStop.state, 'paused');
+  assert.equal(pausedStop.steps.tickets.state, 'asking');
+  const stopped = await f.call('hud_respond', { job: stopFlow, answer: 'stop: Owner rejected scope change.' });
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.state, 'cancelled');
+  assert.match(stopped.reason, /stopped: Owner rejected scope change\./);
+  assert.equal(f.flow(stopFlow).steps.tickets.state, 'cancelled');
+});
+
+test('a Blockers-line report-gate pause on main hand-back (without lead) leaves tickets asking, wakes main, and hud_respond resume lands it', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { tickets: { '01-blocker.md': goodTicket(1) } });
+  const projectJson = join(f.root, '.hud', 'project.json');
+  const baseConfig = JSON.parse(fs.readFileSync(projectJson, 'utf8'));
+  writeFixtureFile(projectJson, JSON.stringify({ ...baseConfig, roles: ['imp', 'reviewer'] }));
+
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', max_parallel: 1, cwd: f.root, handback_to: 'main' });
+  const [first] = await f.jobs(flow, 1);
+  const blockerText = 'needs an owner decision on removing legacy output';
+  await f.settle(first, { report: `Done.\nBlockers: ${blockerText}\nRemoves: none\n` });
+
+  const paused = await f.end(flow);
+  assert.equal(paused.state, 'paused');
+  assert.equal(paused.steps.tickets.state, 'asking');
+  assert.equal(paused.handback.kind, 'blocker');
+  assert.deepEqual(paused.handback.choices, ['resume', 'stop']);
+  assert.match(paused.notices['pause-0'], /Blockers:/);
+  assert.match(paused.notices['pause-0'], new RegExp(`hud_respond job=${flow} answer=<resume\\|stop>`));
+  const readPaused = await f.call('hud_read', { job: flow });
+  const delivered = await collectDeliveredNotices(f, flow, readPaused, 1);
+  assert.equal(delivered.length, 1);
+  assert.match(delivered[0], /Blockers:/);
+  const leads = fs.readdirSync(join(f.home, 'jobs')).filter(id => /^j[a-f0-9]{16}$/.test(id)).map(f.job).filter(j => j.role === 'lead');
+  assert.equal(leads.length, 0);
+
+  const resumed = await f.call('hud_respond', { job: flow, answer: 'resume: Approved legacy output removal.' });
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.flow, flow);
+  assert.equal(resumed.state, 'working');
+  await until(() => Boolean(f.flow(flow).review_job), 15_000);
+  const q = f.flow(flow);
+  assert.deepEqual(q.tickets.filter(x => x.landed).map(x => x.ticket), ['sample/01']);
+  assert.ok(q.todo.some(item => item.kind === 'blocker' && item.text === blockerText));
+  assert.ok(q.decisions.some(d => d.kind === 'blocker' && d.decision === 'resume' && d.ticket === 'sample/01'));
+  await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
+});
+
+test('hud_tickets run superseding a paused run keeps an in-flight land and adopts a land that completed while paused', { timeout: 60_000 }, async t => {
+  const f = await setupWorkflowProject(t, {
+    tickets: {
+      '01-inflight.md': goodTicket(1),
+      '02-gate.md': goodTicket(2, { blocked: 'none' }),
+    },
+  });
+  const gateStarted = join(f.home, 'gate-started');
+  const gateRelease = join(f.home, 'gate-release');
+  t.after(() => { try { fs.writeFileSync(gateRelease, '1'); } catch {} });
+  const projectJson = join(f.root, '.hud', 'project.json');
+  const baseConfig = JSON.parse(fs.readFileSync(projectJson, 'utf8'));
+  const waitScript = `const fs=require('fs');if(!fs.existsSync(${JSON.stringify(gateStarted)})){fs.writeFileSync(${JSON.stringify(gateStarted)},'1');while(!fs.existsSync(${JSON.stringify(gateRelease)}))Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,25);}`;
+  writeFixtureFile(projectJson, JSON.stringify({
+    ...baseConfig,
+    land: { ...baseConfig.land, gate: [`${JSON.stringify(process.execPath)} -e ${JSON.stringify(waitScript)}`] },
+  }));
+
+  const runArgs = { op: 'run', feature: 'sample', max_parallel: 2, cwd: f.root, handback_to: 'main' };
+  const { flow } = await f.call('hud_tickets', runArgs);
+  const [job1, job2] = await f.jobs(flow, 2);
+
+  // Start ticket 01 landing and hold its gate open so the land is genuinely in flight.
+  await f.settle(job1);
+  await until(() => fs.existsSync(gateStarted) && Boolean(f.flow(flow).tickets.find(x => x.ticket === 'sample/01')?.land), 15_000);
+  const inFlightLand = f.flow(flow).tickets.find(x => x.ticket === 'sample/01').land;
+
+  // Ticket 02 pauses the run on a report gate while ticket 01's land is still in flight.
+  await f.settle(job2, { report: 'Done.\nAssumed: one\nAssumed: two\nAssumed: three\nAssumed: four\n' });
+  const paused = await f.end(flow);
+  assert.equal(paused.state, 'paused');
+  assert.equal(paused.steps.tickets.state, 'asking');
+  assert.equal(f.flow(inFlightLand).state, 'running');
+
+  // Supersede the paused run while ticket 01's land is still in flight: new run's jobs keep it.
+  const superseded = await f.call('hud_tickets', runArgs);
+  assert.notEqual(superseded.flow, flow);
+  assert.equal(f.flow(flow).superseded_by, superseded.flow);
+  assert.deepEqual(
+    superseded.jobs.map(j => [j.ticket, j.job, j.land]),
+    [['sample/01', job1, inFlightLand], ['sample/02', job2, undefined]],
+  );
+
+  // Release the gate: both ticket 01 (carried in-flight land) and ticket 02 finish landing and reach review.
+  fs.writeFileSync(gateRelease, '1');
+  await until(() => Boolean(f.flow(superseded.flow).review_job), 20_000);
+  const after = f.flow(superseded.flow);
+  assert.deepEqual(after.tickets.filter(x => x.landed).map(x => x.ticket).sort(), ['sample/01', 'sample/02']);
+  assert.equal(after.tickets.find(x => x.ticket === 'sample/01').land, inFlightLand);
+  await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root, cancel: true });
+
+  // Also verify: a non-held in-flight land that already completed (closing the ticket) while the predecessor was paused is adopted, not dropped.
+  const doneIssues = join(f.root, '.scratch', 'donepause', 'issues');
+  fs.mkdirSync(doneIssues, { recursive: true });
+  fs.writeFileSync(join(doneIssues, '01-completed-while-paused.md'), goodTicket(1));
+  fs.writeFileSync(join(doneIssues, '02-paused.md'), goodTicket(2, { blocked: 'none' }));
+  f.git(f.root, 'add', '.scratch');
+  f.git(f.root, 'commit', '-qm', 'donepause feature');
+  fs.rmSync(gateStarted, { force: true });
+  fs.rmSync(gateRelease, { force: true });
+
+  const doneArgs = { op: 'run', feature: 'donepause', max_parallel: 2, cwd: f.root, handback_to: 'main' };
+  const { flow: flow2 } = await f.call('hud_tickets', doneArgs);
+  const [dj1, dj2] = await f.jobs(flow2, 2);
+  await f.settle(dj1);
+  await until(() => fs.existsSync(gateStarted) && Boolean(f.flow(flow2).tickets.find(x => x.ticket === 'donepause/01')?.land), 15_000);
+  const land2 = f.flow(flow2).tickets.find(x => x.ticket === 'donepause/01').land;
+  await f.settle(dj2, { report: 'Done.\nAssumed: [scope] changed option.\n' });
+  const paused2 = await f.end(flow2);
+  assert.equal(paused2.state, 'paused');
+  assert.equal(paused2.tickets.find(x => x.ticket === 'donepause/01').landed, undefined);
+
+  // Let ticket 01's land finish (and mark the ticket done on base) while flow2 is paused.
+  fs.writeFileSync(gateRelease, '1');
+  await until(() => f.flow(land2).state === 'completed', 20_000);
+  assert.equal(f.flow(flow2).tickets.find(x => x.ticket === 'donepause/01').landed, undefined);
+
+  const superseded2 = await f.call('hud_tickets', doneArgs);
+  assert.notEqual(superseded2.flow, flow2);
+  assert.ok(superseded2.jobs.some(j => j.ticket === 'donepause/01' && j.job === dj1 && j.land === land2), JSON.stringify(superseded2));
+  assert.ok(superseded2.landed.includes('donepause/01'), JSON.stringify(superseded2));
+  await until(() => Boolean(f.flow(superseded2.flow).review_job), 20_000);
+  assert.deepEqual(f.flow(superseded2.flow).tickets.filter(x => x.landed).map(x => x.ticket).sort(), ['donepause/01', 'donepause/02']);
+  await f.call('hud_tickets', { op: 'run', feature: 'donepause', cwd: f.root, cancel: true });
 });
 
 for (const change of ['report', 'head']) {
