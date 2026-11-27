@@ -512,7 +512,15 @@ export function workboardInput(state: MonitorState, input: WorkbenchInput, ctx: 
     const target = row?.item && boardFrame.targets.get(row.item);
     if (!fileOnly && target && target.kind === 'worker') {
       if (sub?.kind === 'jobs') next.jobs = { cursor: row.item, scroll: sub.scroll, revealed: sub.revealed };
-      next.subpage = { kind: 'inspector', target, scroll: 0 };
+      next.subpage = sub?.kind === 'inspector'
+        ? {
+            kind: 'inspector',
+            target,
+            scroll: 0,
+            ...(sub.from ? { from: sub.from } : {}),
+            back: { ...sub, cursor: row.item, revealed: row.item === sub.cursor ? sub.revealed : undefined },
+          }
+        : { kind: 'inspector', target, scroll: 0 };
     }
     return result();
   };

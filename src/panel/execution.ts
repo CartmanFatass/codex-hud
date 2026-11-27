@@ -2,8 +2,27 @@
 import { executionSnapshot, type ExecutionSnapshot, type ExecutionView } from '../collectors/execution.js';
 import type { ProjectSnapshot } from '../collectors/project-board.js';
 import type { WorkboardSnapshot } from '../collectors/workboard-types.js';
+import { inspectorFeatureBack, type MonitorState } from '../render/monitor-state.js';
 import type { SubagentTree } from '../types.js';
 import { PanelJobPipeline } from './job-pipeline.js';
+
+/** Project root kept open by an Objective, Feature or Feature-chained job Inspector sub-page. */
+export function subpageProjectRoot(state: MonitorState, fallbackRoot: string, modal = false): string | undefined {
+  if (modal || state.help) return undefined;
+  const sub = state.subpage;
+  if (sub?.kind === 'objective') return sub.target.root || fallbackRoot;
+  if (sub?.kind === 'feature') return sub.target.root || fallbackRoot;
+  if (sub?.kind === 'inspector' && sub.from === 'feature') return inspectorFeatureBack(sub)?.target.root || fallbackRoot;
+  return undefined;
+}
+
+/** True when a sub-page reads the project-wide job board instead of the calling pane's board. */
+export function usesProjectJobBoard(state: MonitorState): boolean {
+  return Boolean(
+    (state.activeTab === 'execution' && state.subpage)
+    || (state.subpage?.kind === 'inspector' && state.subpage.from === 'feature'),
+  );
+}
 
 export class PanelExecution {
   private readonly noAgents: SubagentTree = { rootId: '', nodes: [], totalCount: 0, updatedAt: new Date() };

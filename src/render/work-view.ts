@@ -6,13 +6,13 @@ import type { MonitorData, MonitorFrame, MonitorRow, MonitorState } from './moni
 import { nativeInspectorRows, workInspectorRows } from './work-inspector.js';
 import { homeRows, OTHER_PROJECTS, otherProjectsHint, unattendedRow } from './home-view.js';
 import { scheduleBadge, scheduleView } from './home-cards.js';
-import { objectiveCrumb, objectiveDetailRows } from './objective-detail.js';
+import { objectiveCrumb, objectiveDetailRows, reconcileObjectiveDetail } from './objective-detail.js';
 import { featureCrumb, featureDetailRows } from './feature-detail.js';
 import { runDetailRows, stationDetailRows } from './execution-run-detail.js';
 import { executionRows } from './execution-view.js';
 import { workflowDetailRows } from './execution-workflow.js';
 import { findMetroStation, renderMetroLegend } from './execution-metro.js';
-import { activeFilter, missingObjectiveTarget, type RowNav } from './monitor-state.js';
+import { activeFilter, missingObjectiveTarget, pendingObjectiveTarget, type RowNav } from './monitor-state.js';
 import { isHudJob, jobTarget, jobsRows } from './work-jobs.js';
 import { ACCEPT_ALL, projectRows, projectPageOf, projectCrumb, projectListOpen } from './project-view.js';
 import { projectHeaderRows, projectLinks } from './inbox-project.js';
@@ -273,23 +273,13 @@ export function renderWorkboardFrame(
         ? input.project
         : objPortfolio?.snapshot ?? (!objRoot ? input.project : undefined))
     : undefined;
-  const liveObj = objective && objProject?.objectives?.objectives.find((o) => o.id === objective.target.objective.id);
-  const objDetail = objective && objProject && liveObj
-    ? {
-        ...objective,
-        target: {
-          root: objective.target.root,
-          objective: liveObj,
-          blocked: liveObj.state !== 'done' && blockedObjectives(objProject.waiting).has(liveObj.id),
-        },
-      }
-    : objective;
+  const objDetail = objective ? reconcileObjectiveDetail(objective, objProject) : undefined;
   const objProjectName = objective
     ? (objRoot ? input.projects?.find((p) => p.root === objRoot)?.name : undefined)
       ?? objPortfolio?.name
       ?? (!objRoot || !input.projectDisplayRoot || input.projectDisplayRoot === objRoot ? input.projectName : undefined)
     : undefined;
-  const objResultAt = objDetail && !objDetail.target.unavailable
+  const objResultAt = objDetail && !objDetail.target.unavailable && !objDetail.target.pending
     ? objProject?.objectives?.resultDates?.[objDetail.target.objective.id]
       ?? objPortfolio?.resultDates?.get(objDetail.target.objective.id)
     : undefined;
@@ -310,9 +300,10 @@ export function renderWorkboardFrame(
     const root = worker.projectRoot ?? input.projectDisplayRoot ?? selectedRoot;
     const snap = (input.project && (!input.projectDisplayRoot || !root || input.projectDisplayRoot === root) ? input.project : undefined)
       ?? (root ? input.homePortfolio?.projects.find((p) => p.root === root)?.snapshot : undefined);
-    const found = snap?.objectives?.objectives.find((o) => o.id === worker.objective!.id);
+    if (!snap) return pendingObjectiveTarget(root, worker.objective);
+    const found = snap.objectives?.objectives.find((o) => o.id === worker.objective!.id);
     return found
-      ? { root, objective: found, blocked: found.state !== 'done' && blockedObjectives(snap!.waiting).has(found.id) }
+      ? { root, objective: found, blocked: found.state !== 'done' && blockedObjectives(snap.waiting).has(found.id) }
       : missingObjectiveTarget(root, worker.objective);
   })();
   const detailFlow = runDetail?.flow ?? stationDetail?.flow;

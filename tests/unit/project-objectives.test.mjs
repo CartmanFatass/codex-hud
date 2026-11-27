@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { collectObjectiveEvidence, objectivePath, readObjectives } from '../../dist/collectors/objectives.js';
+import { PanelObjectiveSync } from '../../dist/panel/objective-detail.js';
 import { STATE_BYTES } from '../../dist/collectors/state-ledger.js';
 import { visualLength } from '../../dist/render/colors.js';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
@@ -607,4 +608,145 @@ test('Objective page: crumb, prose with result age, features in every activity s
     assert.match(text, lang === 'zh' ? /当前目标记录不可用/ : /Current record unavailable/);
     assert.doesNotMatch(text, lang === 'zh' ? /进行中|功能 ─|依据 ─/ : /\bactive\b|Features ─|Evidence ─/);
   }
+});
+
+test('Objective page resolves record and evidence from one read, handles removal in EN/ZH, and distinguishes not-yet-loaded from missing', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'project-objective-sync-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const oldDoc = join(f.cwd, 'docs/old-proof.md');
+  const newDoc = join(f.cwd, 'docs/new-proof.md');
+  f.put(oldDoc, '# Old synthetic proof\n');
+  f.put(objectivePath(f.cwd), [
+    '# Objectives',
+    '**Stance:** active · **Priority:** high',
+    '',
+    '## measure: Measure the sample',
+    '**State:** active',
+    '**Next:** Gather the first sample.',
+    '**Evidence:** docs/old-proof.md',
+    '',
+  ].join('\n'));
+
+  const sync = new PanelObjectiveSync(f.hud);
+  const key = (frame, k) => handleMonitorInput(frame.state, { type: 'key', key: k }, { frame, nowMs: NOW });
+  const draw = (state, snap, lang = 'en', extra = {}) => f.render(100, lang, state, 24, snap, true, 'unicode', 'none', {
+    projectDisplayRoot: f.cwd,
+    projectName: 'orchard',
+    ...extra,
+  });
+
+  // 1. Open Objective page on initial read.
+  const snap1 = await f.collector.collect(true, f.board, NOW);
+  const hub = draw(onPage(undefined, { project: { nav: { cursor: `project:objective:${f.cwd}:measure` } } }), snap1);
+  let state = key(hub, 'enter').state;
+  state = { ...state, subpage: sync.sync(state.subpage, snap1) };
+  const frame1 = draw(state, snap1);
+  assert.match(plain(frame1).join('\n'), /docs\/old-proof\.md/);
+  assert.doesNotMatch(plain(frame1).join('\n'), /docs\/new-proof\.md/);
+
+  // 2. While the Objective page stays open, add a Result and a new Evidence entry on disk.
+  f.put(newDoc, '# New synthetic proof\n');
+  f.put(objectivePath(f.cwd), [
+    '# Objectives',
+    '**Stance:** active · **Priority:** high',
+    '',
+    '## measure: Measure the sample',
+    '**State:** active',
+    '**Result:** Fresh synthetic result recorded.',
+    '**Evidence:** docs/old-proof.md, docs/new-proof.md, 123abcd',
+    '',
+  ].join('\n'));
+  const snap2 = await f.collector.collect(true, f.board, NOW + 60_000);
+
+  // Even a pure render with stale detail.evidence + fresh snap2 shows both the new result and the new evidence text.
+  const pureUpdated = draw(state, snap2);
+  const pureText = plain(pureUpdated).join('\n');
+  assert.match(pureText, /Fresh synthetic result recorded\./);
+  assert.match(pureText, /docs\/new-proof\.md/);
+  assert.match(pureText, /123abcd/);
+
+  // Resolving outside paint via PanelObjectiveSync updates target and openable evidence together from snap2.
+  const syncedState = { ...state, subpage: sync.sync(state.subpage, snap2) };
+  assert.equal(syncedState.subpage.evidence.length, 3);
+  for (const lang of ['en', 'zh']) {
+    const frame2 = draw(syncedState, snap2, lang);
+    assert.ok(frame2.lines.every((line) => visualLength(line) === 100 && !line.includes('\x1b')));
+    const text = plain(frame2).join('\n');
+    assert.match(text, /Fresh synthetic result recorded\./);
+    assert.match(text, /docs\/old-proof\.md/);
+    assert.match(text, /docs\/new-proof\.md/);
+    assert.match(text, /123abcd/);
+    const onNewDoc = draw({ ...syncedState, subpage: { ...syncedState.subpage, cursor: 'objective:evidence:1' } }, snap2, lang);
+    assert.deepEqual(key(onNewDoc, 'enter').action, { type: 'open-files', files: [newDoc] });
+    const onCommit = draw({ ...syncedState, subpage: { ...syncedState.subpage, cursor: 'objective:evidence:2' } }, snap2, lang);
+    assert.deepEqual(key(onCommit, 'enter').action, { type: 'git-show', cwd: f.cwd, hash: '123abcd' });
+  }
+
+  // 3. Remove the Objective from a fresh read -> both synced state AND pure render from an old available target show 'Current record unavailable' (EN/ZH).
+  f.put(objectivePath(f.cwd), '# Objectives\n**Stance:** active · **Priority:** high\n');
+  const snapRemoved = await f.collector.collect(true, f.board, NOW + 120_000);
+  const removedSynced = { ...syncedState, subpage: sync.sync(syncedState.subpage, snapRemoved) };
+  assert.equal(removedSynced.subpage.target.unavailable, true);
+  assert.deepEqual(removedSynced.subpage.evidence, []);
+  for (const lang of ['en', 'zh']) {
+    for (const candidate of [removedSynced, syncedState]) {
+      const frame = draw(candidate, snapRemoved, lang);
+      assert.ok(frame.lines.every((line) => visualLength(line) === 100 && !line.includes('\x1b')));
+      const text = plain(frame).join('\n');
+      assert.match(text, lang === 'zh' ? /当前目标记录不可用/ : /Current record unavailable/);
+      assert.doesNotMatch(text, /Fresh synthetic result|docs\/new-proof\.md|Evidence ─|依据 ─/);
+    }
+  }
+
+  // 4. Not-yet-loaded record (Inspector opened before matching Project snapshot loads) is NOT reported as missing.
+  const baseWorker = f.board.workers[0];
+  const workerWithObj = {
+    ...baseWorker,
+    projectRoot: f.cwd,
+    objective: { id: 'measure', title: 'Measure the sample' },
+  };
+  const boardWithObj = {
+    ...f.board,
+    lanes: f.board.lanes.map((l) => l.id === baseWorker.laneId ? { ...l, workers: l.workers.map((w) => w.id === baseWorker.id ? workerWithObj : w) } : l),
+    workers: f.board.workers.map((w) => w.id === baseWorker.id ? workerWithObj : w),
+  };
+  const inspState = {
+    ...onPage(),
+    activeTab: 'execution',
+    subpage: {
+      kind: 'inspector',
+      target: { kind: 'worker', laneId: baseWorker.laneId, workerId: baseWorker.id },
+      from: 'execution',
+      cursor: 'inspector:objective',
+      scroll: 0,
+      revealed: 'inspector:objective',
+    },
+  };
+  const inspUnloaded = draw(inspState, undefined, 'en', { project: undefined, workboard: boardWithObj, projectDisplayRoot: undefined });
+  const factRow = inspUnloaded.workboard.rows.find((r) => r.item === 'inspector:objective');
+  assert.equal(factRow?.objectiveTarget?.pending, true);
+  assert.notEqual(factRow?.objectiveTarget?.unavailable, true);
+
+  const openedPending = key(inspUnloaded, 'enter').state;
+  const syncPending = new PanelObjectiveSync(f.hud);
+  const pendingState = { ...openedPending, subpage: syncPending.sync(openedPending.subpage, undefined) };
+  assert.equal(pendingState.subpage.target.pending, true);
+  assert.notEqual(pendingState.subpage.target.unavailable, true);
+  for (const lang of ['en', 'zh']) {
+    const pendingFrame = draw(pendingState, undefined, lang, { project: undefined, workboard: boardWithObj, projectDisplayRoot: undefined });
+    assert.ok(pendingFrame.lines.every((line) => visualLength(line) === 100 && !line.includes('\x1b')));
+    const text = plain(pendingFrame).join('\n');
+    assert.match(text, /Measure the sample/);
+    assert.match(text, lang === 'zh' ? /正在加载…/ : /Loading…/);
+    assert.doesNotMatch(text, lang === 'zh' ? /当前目标记录不可用|进行中|依据 ─/ : /Current record unavailable|\bactive\b|Evidence ─/);
+  }
+
+  // Once the matching Project snapshot loads, the pending Objective resolves to the live record and openable evidence.
+  const loadedFromPending = { ...pendingState, subpage: syncPending.sync(pendingState.subpage, snap2) };
+  assert.notEqual(loadedFromPending.subpage.target.pending, true);
+  assert.notEqual(loadedFromPending.subpage.target.unavailable, true);
+  assert.equal(loadedFromPending.subpage.evidence[1].file, newDoc);
+  const loadedFrame = draw(loadedFromPending, snap2, 'en', { workboard: boardWithObj });
+  assert.match(plain(loadedFrame).join('\n'), /Fresh synthetic result recorded\.[\s\S]*docs\/new-proof\.md/);
 });

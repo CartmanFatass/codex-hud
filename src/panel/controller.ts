@@ -4,8 +4,7 @@ import { ClaudeNativeTree } from '../collectors/claude-native-tree.js';
 import { readExpData } from '../collectors/exp-store.js';
 import type { HealthSource } from '../collectors/hud-health.js';
 import { HudStatus } from '../collectors/hud-status.js';
-import { blockedObjectives, ProjectCollector, projectShown } from '../collectors/project-board.js';
-import { collectObjectiveEvidence, readObjectives } from '../collectors/objectives.js';
+import { ProjectCollector, projectShown } from '../collectors/project-board.js';
 import { HomePortfolioCollector, type HomePortfolio } from '../collectors/home-portfolio.js';
 import { HomeCardsCollector, type TodayFacts } from '../collectors/home-cards.js';
 import type { ScheduleItem } from '../collectors/schedule.js';
@@ -44,7 +43,8 @@ import { createAgentContext, treePaths } from './agent-context.js';
 import { PanelJobPipeline } from './job-pipeline.js';
 import { createPanelLifecycle, type InstallCleanup } from './lifecycle.js';
 import { createPanelModelDiscovery } from './model-discovery.js';
-import { PanelExecution } from './execution.js';
+import { PanelExecution, subpageProjectRoot, usesProjectJobBoard } from './execution.js';
+import { PanelObjectiveSync } from './objective-detail.js';
 import { countProjectLiveJobs, countProjectWaitingRuns, type ExecutionView } from '../collectors/execution.js';
 import { callsByFeature, ModelRuntimeStore } from '../collectors/model-runtime-store.js';
 import { computeRepaintDelay, createCollectionScheduler } from './scheduler.js';
@@ -118,15 +118,19 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   const projectHub = () => projectShown(state, settingsFlow.open) && state.project.view.kind === 'hub';
   const objectiveOpen = (s = state) => !settingsFlow.open && !s.help && s.subpage?.kind === 'objective' ? s.subpage : undefined;
   const featureOpen = (s = state) => !settingsFlow.open && !s.help && s.subpage?.kind === 'feature' ? s.subpage : undefined;
-  const subProjectRoot = (s = state) => {
-    const obj = objectiveOpen(s);
-    if (obj) return obj.target.root;
-    const feat = featureOpen(s);
-    if (feat) return feat.target.root || shownRoot();
-    if (!settingsFlow.open && !s.help && s.subpage?.kind === 'inspector' && s.subpage.from === 'feature') {
-      return s.subpage.back?.target.root || shownRoot();
+  const subProjectRoot = (s = state) => subpageProjectRoot(s, shownRoot(), settingsFlow.open);
+  const objectiveSync = new PanelObjectiveSync(jobPipeline.home);
+  const syncObjectiveDetail = () => {
+    const detail = state.subpage?.kind === 'objective' ? state.subpage : undefined;
+    if (!detail) {
+      objectiveSync.sync(undefined, undefined);
+      return;
     }
-    return undefined;
+    const root = detail.target.root || shownRoot();
+    const normalized = detail.target.root ? detail : { ...detail, target: { ...detail.target, root } };
+    const snapshot = visits.snapshot(root) ?? portfolio?.projects.find((p) => p.root === root)?.snapshot;
+    const resolved = objectiveSync.sync(normalized, snapshot);
+    if (resolved && resolved !== detail) state = { ...state, subpage: resolved };
   };
   const executionPage = () => executionShown(state, settingsFlow.open);
   const executionTargetRoot = () => subProjectRoot() ?? (state.activeTab === 'execution' || projectHub() ? shownRoot() : undefined);
@@ -210,9 +214,9 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     // On a switch, the previous snapshot goes with its own root until the new project has been read.
     const control = projectControlShown(painted, settingsFlow.open), chosen = shownRoot();
     const executing = painted.activeTab === 'execution';
-    const objRoot = objectiveOpen(painted)?.target.root;
+    const objOpen = objectiveOpen(painted);
     const featOpen = featureOpen(painted);
-    const detailRoot = objRoot ?? (featOpen ? (featOpen.target.root || chosen) : undefined);
+    const detailRoot = (objOpen ? (objOpen.target.root || chosen) : undefined) ?? (featOpen ? (featOpen.target.root || chosen) : undefined);
     const chosenSnapshot = visits.snapshot(chosen) ?? portfolio?.projects.find((p) => p.root === chosen)?.snapshot;
     const shown = control ? { root: chosen, snapshot: visits.control(chosen) }
       : detailRoot ? { root: detailRoot, snapshot: visits.snapshot(detailRoot) ?? portfolio?.projects.find((p) => p.root === detailRoot)?.snapshot }
@@ -249,7 +253,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       frame = renderMonitor({
         tree,
         // An Inspector opened from Execution or a Feature page reads the project's jobs, which other panes may have dispatched.
-        workboard: (((executing && painted.subpage) || (painted.subpage?.kind === 'inspector' && painted.subpage.from === 'feature')) && execution.board()) || boardFacts(),
+        workboard: (usesProjectJobBoard(painted) && execution.board()) || boardFacts(),
         execution: executing && (!painted.subpage || painted.subpage.kind === 'run-detail' || painted.subpage.kind === 'station-detail') ? execution.view(chosen) : undefined,
         projectActivity: detailRoot ? execution.activity(detailRoot)
           : projectHub() && shown.root === chosen ? execution.activity(chosen) : undefined,
@@ -429,13 +433,15 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
           visit.snapshot = facts;
           if (facts) overview.set(shownRoot(), overviewOf(facts, facts.active.length));
         }
-      } else if (objectiveOpen()?.target.root || featureOpen()) {
-        const targetRoot = objectiveOpen()?.target.root ?? (featureOpen()!.target.root || shownRoot());
+      } else if (objectiveOpen() || featureOpen()) {
+        const targetRoot = (objectiveOpen() ? (objectiveOpen()!.target.root || shownRoot()) : undefined)
+          ?? (featureOpen()!.target.root || shownRoot());
         const visit = visits.visit(targetRoot);
         const facts = await visit.collector.collect(true, board, now);
         visit.snapshot = facts;
         if (facts) overview.set(targetRoot, overviewOf(facts, facts.active.length));
       }
+      syncObjectiveDetail();
       // Join Execution's workers to the ticket jobs resolved by this tick's Project scan.
       const activityRoot = activityOnly() ? executionTargetRoot() : undefined;
       if (activityRoot) {
@@ -549,36 +555,7 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       const wasWorkingTree = workingTree(), priorRoot = shownRoot(), wasNative = nativeInspector(), wasExecution = executionPage(), wasHub = projectHub(), wasSubRoot = subProjectRoot();
       const result = handleMonitorInput(state, input, { frame, navigationOverlay: fromSettings });
       state = result.state;
-      const detail = state.subpage;
-      if (detail?.kind === 'objective' && !detail.evidence) {
-        const { root, objective } = detail.target;
-        const cachedSnap = root ? visits.snapshot(root) ?? portfolio?.projects.find((p) => p.root === root)?.snapshot : undefined;
-        const freshRecord = cachedSnap?.objectives ?? (root ? readObjectives(root) : undefined);
-        const freshObj = freshRecord?.objectives.find((o) => o.id === objective.id);
-        if (freshObj) {
-          const blocked = cachedSnap
-            ? freshObj.state !== 'done' && blockedObjectives(cachedSnap.waiting).has(freshObj.id)
-            : detail.target.blocked;
-          state = {
-            ...state,
-            subpage: {
-              ...detail,
-              target: { root, objective: freshObj, blocked },
-              evidence: collectObjectiveEvidence(freshObj, root, jobPipeline.home),
-            },
-          };
-        } else if (detail.target.unavailable) {
-          state = { ...state, subpage: { ...detail, evidence: [] } };
-        } else {
-          state = {
-            ...state,
-            subpage: {
-              ...detail,
-              evidence: collectObjectiveEvidence(detail.target.objective, root, jobPipeline.home),
-            },
-          };
-        }
-      }
+      syncObjectiveDetail();
       if (resourcesShown(state) && !resourcesShown(previous)) reloadExp();
       if (workingTree() && (!wasWorkingTree || priorRoot !== shownRoot())) void scheduler.refreshGit();
       if (!nativeInspector()) tree = undefined;
@@ -588,6 +565,9 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       if (!listing(previous) && listing(state)) overviewAt = -Infinity;
       if ((projectShown(state) && (!projectShown(previous) || listing(previous) !== listing(state) || priorRoot !== shownRoot())) ||
         (projectControlShown(state) && (!projectControlShown(previous) || state.selectedProject !== previous.selectedProject)) ||
+        (state.subpage?.kind === 'objective' && (previous.subpage?.kind !== 'objective' ||
+          previous.subpage.target.root !== state.subpage.target.root ||
+          previous.subpage.target.objective.id !== state.subpage.target.objective.id)) ||
         ((state.subpage?.kind === 'inspector' || previous.subpage?.kind === 'inspector') &&
           (state.subpage?.kind !== previous.subpage?.kind || !!state.help !== !!previous.help ||
             (state.subpage?.kind === 'inspector' && previous.subpage?.kind === 'inspector' && state.subpage.target !== previous.subpage.target)))) void scheduler.collect(true);

@@ -1,8 +1,8 @@
 import { basename } from 'node:path';
 import type { TicketActivity } from '../collectors/execution.js';
 import type { ObjectiveEvidence } from '../collectors/objectives.js';
-import type { ProjectSnapshot, ProjectTicket, TicketFeature } from '../collectors/project-board.js';
-import type { ObjectiveDetail } from './monitor-state.js';
+import { blockedObjectives, type ProjectSnapshot, type ProjectTicket, type TicketFeature } from '../collectors/project-board.js';
+import { missingObjectiveTarget, type ObjectiveDetail } from './monitor-state.js';
 import type { MonitorRow } from './monitor.js';
 import { theme, truncateAnsi, visualLength } from './colors.js';
 import { fit, monitorText, pair, sentenceRows, tokenColumn, wrapped } from './monitor-text.js';
@@ -10,6 +10,34 @@ import { linkedTicketProgress } from './progress-bar.js';
 import { collectFeatureActivity, resolvedTicket, ticketProgressText, ticketTrack } from './project-objectives.js';
 import { boardRow, compactAge, mark, section, stateMark } from './workboard-rows.js';
 import { t } from './i18n.js';
+
+/** Reconcile an open Objective sub-page with the latest matching Project snapshot (pure, no I/O). */
+export function reconcileObjectiveDetail(
+  detail: ObjectiveDetail,
+  project: ProjectSnapshot | undefined,
+): ObjectiveDetail {
+  if (!project) return detail;
+  const live = project.objectives?.objectives.find((o) => o.id === detail.target.objective.id);
+  if (!live) {
+    return {
+      ...detail,
+      target: missingObjectiveTarget(detail.target.root, detail.target.objective),
+      evidence: [],
+    };
+  }
+  const sameEvidence = detail.evidence !== undefined
+    && detail.evidence.length === live.evidence.length
+    && detail.evidence.every((entry, i) => entry.text === live.evidence[i]);
+  return {
+    ...detail,
+    target: {
+      root: detail.target.root,
+      objective: live,
+      blocked: live.state !== 'done' && blockedObjectives(project.waiting).has(live.id),
+    },
+    evidence: sameEvidence ? detail.evidence : undefined,
+  };
+}
 
 function featureMap(project?: ProjectSnapshot): Map<string, TicketFeature> {
   return new Map((project?.objectiveTickets ?? project?.tickets ?? []).map((feature) => [feature.slug, feature]));
@@ -32,7 +60,7 @@ export function objectiveCrumb(
   const { target } = detail;
   const label = truncateAnsi(monitorText(projectName || basename(target.root) || t('Project')), 16);
   const crumb = `${label} ${mark('›', '>')} ${monitorText(target.objective.id)}`;
-  if (target.unavailable) return { crumb, right: '' };
+  if (target.unavailable || target.pending) return { crumb, right: '' };
   const { objective, blocked } = target;
   const stateText = blocked ? `${t(objective.state)} · ${t('blocked')}` : t(objective.state);
   const ratio = ticketProgressText(linkedTicketProgress(featureMap(project), objective.features));
@@ -112,6 +140,13 @@ export function objectiveDetailRows(
 
   for (const line of sentenceRows(monitorText(target.objective.title), width, 3, 2)) {
     rows.push(boardRow(fit(line, width)));
+  }
+  if (target.pending) {
+    rows.push(boardRow(''));
+    for (const line of sentenceRows(t('Loading…'), width, 3, 2)) {
+      rows.push(boardRow(fit(ink.muted(line), width)));
+    }
+    return rows;
   }
   if (target.unavailable) {
     rows.push(boardRow(''));

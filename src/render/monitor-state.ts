@@ -22,7 +22,13 @@ export interface InspectorState extends RowNav {
   target: JobTarget;
   /** Opened from the Execution tab or a Feature page: it reads that project's jobs, and back returns there. */
   from?: 'execution' | 'feature';
-  back?: FeatureDetail;
+  back?: FeatureDetail | InspectorState;
+}
+/** Walk nested job Inspectors back to the Feature page that opened the chain, if any. */
+export function inspectorFeatureBack(sub: InspectorState): FeatureDetail | undefined {
+  let cur: FeatureDetail | InspectorState | undefined = sub.back;
+  while (cur?.kind === 'inspector') cur = cur.back;
+  return cur?.kind === 'feature' ? cur : undefined;
 }
 export interface JobsState extends RowNav { kind: 'jobs' }
 interface HomeTabState extends RowNav { othersExpanded?: boolean; requestsExpanded?: boolean }
@@ -52,13 +58,20 @@ export const projectPage = (view: ProjectView): ProjectSubPage | 'waiting' | und
 
 export type ObjectiveRef = Pick<Objective, 'id' | 'title'>;
 export type ObjectiveTarget =
-  | { root: string; objective: Objective; blocked: boolean; unavailable?: false }
-  | { root: string; objective: ObjectiveRef; blocked: false; unavailable: true };
+  | { root: string; objective: Objective; blocked: boolean; unavailable?: false; pending?: false }
+  | { root: string; objective: ObjectiveRef; blocked: false; unavailable: true; pending?: false }
+  | { root: string; objective: ObjectiveRef; blocked: false; unavailable?: false; pending: true };
 export const missingObjectiveTarget = (root: string, ref: ObjectiveRef): ObjectiveTarget => ({
   root,
   objective: { id: ref.id, title: ref.title },
   blocked: false,
   unavailable: true,
+});
+export const pendingObjectiveTarget = (root: string, ref: ObjectiveRef): ObjectiveTarget => ({
+  root,
+  objective: { id: ref.id, title: ref.title },
+  blocked: false,
+  pending: true,
 });
 export interface ObjectiveDetail extends RowNav {
   kind: 'objective';

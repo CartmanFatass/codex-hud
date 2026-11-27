@@ -6,7 +6,7 @@ import test from 'node:test';
 import { executionSnapshot } from '../../dist/collectors/execution.js';
 import { objectivePath } from '../../dist/collectors/objectives.js';
 import { readThinJobs } from '../../dist/collectors/thin-jobs.js';
-import { PanelExecution } from '../../dist/panel/execution.js';
+import { PanelExecution, subpageProjectRoot, usesProjectJobBoard } from '../../dist/panel/execution.js';
 import { visualLength } from '../../dist/render/colors.js';
 import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
@@ -341,7 +341,7 @@ test('Feature page: ticket states, completion order, status fitting, Inspector/i
     assert.equal(backObj.state.subpage?.scroll, 2);
 
     // 6. Entry from Unlinked list -> Feature page, and Esc returns to Unlinked list at exact feature row.
-    const unlinkedFrame = draw(onPage('unlinked', { project: { nav: { cursor: `project:file:${ticketPath('spare-cli', '01')}:unlinked` } } }), 24);
+    const unlinkedFrame = draw(onPage('unlinked', { project: { nav: { cursor: 'project:unlinked:spare-cli' } } }), 24);
     const fromUnlinked = key(unlinkedFrame, 'enter');
     assert.equal(fromUnlinked.state.subpage?.kind, 'feature');
     assert.equal(fromUnlinked.state.subpage?.target.slug, 'spare-cli');
@@ -351,7 +351,7 @@ test('Feature page: ticket states, completion order, status fitting, Inspector/i
     const backUnlinked = key(unlinkedFeatFrame, 'escape');
     assert.equal(backUnlinked.state.subpage, undefined);
     assert.equal(backUnlinked.state.project.view.kind, 'unlinked');
-    assert.equal(backUnlinked.state.project.nav.cursor, `project:file:${ticketPath('spare-cli', '01')}:unlinked`);
+    assert.equal(backUnlinked.state.project.nav.cursor, 'project:unlinked:spare-cli');
 
     // 7. Entry from Tickets page (`t`) -> Feature page, and Esc returns to Tickets page at exact feature row.
     const ticketsFrame = draw(onPage('tickets', { project: { nav: { cursor: 'project:fold:feature:nav-redesign' } } }), 24);
@@ -507,7 +507,13 @@ test('Feature and Objective use individual queue landing times, not the queue en
   assert.match(lines, /Queue ticket 03\s+done\s*$/m);
   assert.deepEqual([...lines.matchAll(/Queue ticket (\d+)/g)].map((m) => m[1]), ['02', '01', '04', '03']);
   const objective = { id: 'interaction', state: 'active', title: 'Synthetic project navigation', features: [slug], evidence: [] };
-  const detail = draw({ kind: 'objective', target: { root: f.cwd, objective, blocked: false } });
+  const projectWithObjective = {
+    ...project,
+    objectives: { path: objectivePath(f.cwd), stance: 'active', priority: 'normal', objectives: [objective], diagnostics: [], acceptance: {} },
+  };
+  const detail = f.render(120, 'en', { ...onPage(), subpage: { kind: 'objective', target: { root: f.cwd, objective, blocked: false } } }, 24, projectWithObjective, true, 'unicode', 'none', {
+    projectActivity, projectLandings: execution.landings(f.cwd),
+  });
   assert.match(detail.workboard.rows.find((row) => row.item === `objective:feature:${slug}`).text, /✓ landed 2h ago/);
 });
 
@@ -552,4 +558,163 @@ test('Project-resolved target hints and filenames supply the live Feature Inspec
       assert.deepEqual(send({ text }).action, { type, dir });
     }
   }
+});
+
+test('Filtered Tickets -> Feature -> ticket Inspector -> cross-pane Sonic child preserves board, filter and Esc chain', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-child-chain-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const otherPane = 'w4E:p2'; // Different from caller pane w4E:p1.
+  const parentId = 'j0000000000000401';
+  const childId = 'j0000000000000402';
+  f.issue('alpha-other', '01', 'Unrelated alpha task', 'ready-for-agent');
+  f.issue('nav-redesign', '01', 'Preserve inspector return chain', 'ready-for-agent');
+  f.put(join(f.hud, 'jobs', parentId, 'job.json'), {
+    job: parentId, role: 'imp', cwd: f.cwd, herdr_pane: otherPane, ticket: 'nav-redesign/01',
+    task: 'Parent cross-pane ticket job', created_at: new Date(NOW - 120_000).toISOString(),
+  });
+  f.put(join(f.hud, 'jobs', parentId, 'STATUS.json'), { state: 'working', started_at: new Date(NOW - 120_000).toISOString() });
+  f.put(join(f.hud, 'jobs', childId, 'job.json'), {
+    job: childId, role: 'sonic', cwd: f.cwd, herdr_pane: otherPane, parent_job: parentId,
+    created_at: new Date(NOW - 60_000).toISOString(),
+  });
+  f.put(join(f.hud, 'jobs', childId, 'brief.md'), '# Cross-pane Sonic child scout\n');
+  f.put(join(f.hud, 'jobs', childId, 'STATUS.json'), { state: 'working', started_at: new Date(NOW - 60_000).toISOString() });
+
+  const project = await f.collector.collect(true, f.board, NOW);
+  const callerLanes = readThinJobs(f.hud, { project: f.cwd, pane: 'w4E:p1' });
+  const callerBoard = {
+    revision: 'caller',
+    lanes: callerLanes,
+    workers: callerLanes.flatMap((l) => l.workers),
+    decisions: [],
+    coverage: { incomplete: false, diagnostics: [], workspace: f.cwd },
+  };
+  assert.ok(!callerBoard.workers.some((w) => w.id === `thin-job:${childId}`), 'child job is absent from caller-pane board');
+
+  const execution = new PanelExecution(f.hud, 'w4E:p1');
+  t.after(() => execution.dispose());
+  execution.sync(f.cwd);
+  await execution.refresh(undefined, NOW, true, project);
+  assert.ok(execution.board().workers.some((w) => w.id === `thin-job:${childId}`), 'child job is on project-wide execution board');
+
+  // Mirror controller.ts: use execution.board() only when usesProjectJobBoard(state) is true.
+  const draw = (state) => f.render(90, 'en', state, 28, project, true, 'unicode', 'none', {
+    workboard: (usesProjectJobBoard(state) && execution.board()) || callerBoard,
+    projectDisplayRoot: f.cwd,
+    projectName: 'orchard',
+    projectActivity: execution.activity(f.cwd),
+    projectLandings: execution.landings(f.cwd),
+  });
+  const key = (frame, k) => handleMonitorInput(frame.state, { type: 'key', key: k }, { frame, nowMs: NOW });
+  const typeText = (frame, text) => handleMonitorInput(frame.state, { type: 'key', text }, { frame, nowMs: NOW });
+
+  // 1. Project -> Tickets -> filter to nav-redesign.
+  let frame = draw(onPage('tickets'));
+  frame = draw(typeText(frame, '/').state);
+  for (const ch of 'nav-redesign') frame = draw(typeText(frame, ch).state);
+  frame = draw(key(frame, 'enter').state);
+  assert.deepEqual(frame.state.project.filter, { query: 'nav-redesign', editing: false });
+  assert.equal(frame.state.project.nav.cursor, 'project:fold:feature:nav-redesign');
+
+  // 2. Enter -> Feature page (keeps filter).
+  frame = draw(key(frame, 'enter').state);
+  assert.equal(frame.state.subpage?.kind, 'feature');
+  assert.equal(frame.state.subpage.target.slug, 'nav-redesign');
+  assert.deepEqual(frame.state.project.filter, { query: 'nav-redesign', editing: false });
+  assert.equal(subpageProjectRoot(frame.state, f.cwd), f.cwd);
+
+  // 3. Enter -> parent ticket job Inspector (from: 'feature').
+  const ticketCursor = 'feature:ticket:nav-redesign:01-sample.md';
+  assert.equal(frame.state.subpage.cursor, ticketCursor);
+  frame = draw(key(frame, 'enter').state);
+  assert.equal(frame.state.subpage?.kind, 'inspector');
+  assert.equal(frame.state.subpage.from, 'feature');
+  assert.equal(frame.state.subpage.target.workerId, `thin-job:${parentId}`);
+  assert.equal(usesProjectJobBoard(frame.state), true);
+  assert.equal(subpageProjectRoot(frame.state, f.cwd), f.cwd);
+  assert.match(plain(frame).join('\n'), /Sonic child scout/);
+
+  // 4. Tab to Sonic child row and Enter -> child job Inspector.
+  const childRow = frame.workboard.rows.find((r) => r.text.includes('Sonic child scout'));
+  assert.ok(childRow?.item, 'child row is selectable in parent Inspector');
+  for (let i = 0; i < 20 && frame.state.subpage.cursor !== childRow.item; i++) {
+    frame = draw(key(frame, 'tab').state);
+  }
+  assert.equal(frame.state.subpage.cursor, childRow.item);
+  frame = draw(key(frame, 'enter').state);
+  assert.equal(frame.state.subpage?.kind, 'inspector');
+  assert.equal(frame.state.subpage.from, 'feature');
+  assert.equal(frame.state.subpage.target.workerId, `thin-job:${childId}`);
+  assert.equal(usesProjectJobBoard(frame.state), true);
+  assert.equal(subpageProjectRoot(frame.state, f.cwd), f.cwd);
+  assert.deepEqual(frame.state.project.filter, { query: 'nav-redesign', editing: false });
+  const childText = plain(frame).join('\n');
+  assert.match(childText, /Sonic child scout/);
+  assert.doesNotMatch(childText, /Job not available/);
+
+  // 5. Esc -> parent Inspector -> Feature page -> same filtered Tickets row.
+  frame = draw(key(frame, 'escape').state);
+  assert.equal(frame.state.subpage?.kind, 'inspector');
+  assert.equal(frame.state.subpage.from, 'feature');
+  assert.equal(frame.state.subpage.target.workerId, `thin-job:${parentId}`);
+  assert.equal(frame.state.subpage.cursor, childRow.item);
+  assert.deepEqual(frame.state.project.filter, { query: 'nav-redesign', editing: false });
+
+  frame = draw(key(frame, 'escape').state);
+  assert.equal(frame.state.subpage?.kind, 'feature');
+  assert.equal(frame.state.subpage.target.slug, 'nav-redesign');
+  assert.equal(frame.state.subpage.cursor, ticketCursor);
+  assert.deepEqual(frame.state.project.filter, { query: 'nav-redesign', editing: false });
+
+  frame = draw(key(frame, 'escape').state);
+  assert.equal(frame.state.subpage, undefined);
+  assert.equal(frame.state.project.view.kind, 'tickets');
+  assert.deepEqual(frame.state.project.filter, { query: 'nav-redesign', editing: false });
+  assert.equal(frame.state.project.nav.cursor, 'project:fold:feature:nav-redesign');
+});
+
+test('Unlinked row stays selected on Esc when its first unfinished ticket lands, and o opens a ticket file', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-unlinked-slug-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const ticketPath = (slug, num) => `/synthetic/${slug}/${num}-item.md`;
+  const mkTicket = (slug, num, state) => ({
+    number: num, title: `${slug} task ${num}`, path: ticketPath(slug, num),
+    state, at: NOW, status: state === 'done' ? 'done' : 'ready-for-agent',
+    checked: state === 'done' ? 1 : 0, total: 1, blockers: [], items: [],
+  });
+  const alpha = { slug: 'alpha-misc', at: NOW, tickets: [mkTicket('alpha-misc', '01', 'ready')] };
+  const spareBefore = {
+    slug: 'spare-cli', at: NOW,
+    tickets: [mkTicket('spare-cli', '01', 'ready'), mkTicket('spare-cli', '02', 'ready')],
+  };
+  const spareAfter = {
+    slug: 'spare-cli', at: NOW,
+    tickets: [mkTicket('spare-cli', '01', 'done'), mkTicket('spare-cli', '02', 'ready')],
+  };
+  const makeData = (spare) => ({ ...f.data, tickets: [alpha, spare], unlinked: [alpha, spare] });
+  const draw = (state, snap) => f.render(80, 'en', state, 24, snap, true, 'unicode', 'none', {
+    projectDisplayRoot: f.cwd, projectName: 'orchard',
+  });
+  const decoder = new WorkbenchInputDecoder('workboard');
+  const send = (frame, raw) => handleMonitorInput(frame.state, decoder.push(Buffer.from(raw))[0], { frame, nowMs: NOW });
+  const key = (frame, k) => handleMonitorInput(frame.state, { type: 'key', key: k }, { frame, nowMs: NOW });
+
+  const beforeSnap = makeData(spareBefore);
+  const start = draw(onPage('unlinked', { project: { nav: { cursor: 'project:unlinked:spare-cli' } } }), beforeSnap);
+  assert.equal(start.state.project.nav.cursor, 'project:unlinked:spare-cli');
+  assert.deepEqual(send(start, 'o').action, { type: 'open-files', files: [ticketPath('spare-cli', '01')] });
+
+  const featFrame = draw(key(start, 'enter').state, beforeSnap);
+  assert.equal(featFrame.state.subpage?.kind, 'feature');
+  assert.equal(featFrame.state.subpage.target.slug, 'spare-cli');
+
+  // Ticket 01 lands during the visit; Esc returns to Unlinked with spare-cli still selected and o opening ticket 02.
+  const afterSnap = makeData(spareAfter);
+  const returned = draw(key(featFrame, 'escape').state, afterSnap);
+  assert.equal(returned.state.subpage, undefined);
+  assert.equal(returned.state.project.view.kind, 'unlinked');
+  assert.equal(returned.state.project.nav.cursor, 'project:unlinked:spare-cli');
+  assert.deepEqual(send(returned, 'o').action, { type: 'open-files', files: [ticketPath('spare-cli', '02')] });
 });

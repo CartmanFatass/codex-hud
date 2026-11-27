@@ -75,7 +75,7 @@ export function unlinkedFeatureRows(features: readonly TicketFeature[], width: n
     if (!ticket) return [];
     const p = linkedTicketProgress(scanned, [slug]), ratio = ticketProgressText(p);
     const id = tokenColumn(monitorText(slug), Math.min(24, Math.floor(width / 2)));
-    return [{ item: `project:file:${ticket.path}:unlinked`, files: [ticket.path], featureTarget: { root, slug },
+    return [{ item: `project:unlinked:${slug}`, files: [ticket.path], featureTarget: { root, slug },
       text: fit(pair(`  ${id} ${ticketTrack(p, Math.min(24, Math.max(0, width - visualLength(id + ratio) - 5)), false)}`, ratio, width), width) }];
   });
 }
