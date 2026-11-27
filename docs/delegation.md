@@ -97,6 +97,15 @@ HTML as its template. One artifact, no screenshots, no separate preview after th
 build: the owner tries the real panel. A plain feature slice with no design question goes straight to the build.
 No claude.ai Artifacts.
 
+The settled sample is the acceptance standard (owner, 2026-11-27, after the unified-left sidebar shipped far from
+frames C1/C3): every build ticket that draws a sampled screen names the frames it must reproduce and carries a golden
+test comparing its rendered output with them cell for cell (fixture data equal to the sample's). Words describing a
+frame never replace the frame. A slice whose part cannot match a frame yet says which frame rows stay open. Before
+anything sampled reaches the owner, including fork builds that install on land, main captures the real screen
+(for the herdr sidebar: a second client attached with the `HERDR_*` and `TERM_PROGRAM` variables unset, read with
+`herdr pane read`, then closed) and compares it with the frames; a mismatch is repaired, not passed to milestone
+acceptance.
+
 ## Questions
 
 The implementer asks only when blocked, or when the choice changes what the owner sees or contradicts the spec.
