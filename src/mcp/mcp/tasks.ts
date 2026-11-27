@@ -517,11 +517,6 @@ export function restoreTaskMaps(state: {
   } else if (state.landTasks) {
     const ownStart = procStat(process.pid)?.start;
     for (const id of state.landTasks) {
-      const receipt = loadTaskReceipt(id);
-      if (receipt && !('job' in receipt)) {
-        flowTasks.set(id, { id, expiresAt: receipt.expiresAt, ...(receipt.epoch !== undefined && { epoch: receipt.epoch }) });
-        continue;
-      }
       try {
         const flow = flowReceipt(id);
         if (!flow || 'wt' in flow) continue;

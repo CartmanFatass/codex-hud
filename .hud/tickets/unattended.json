@@ -405,6 +405,122 @@
       "comments": [],
       "created_at": "2026-11-27T16:03:52.535Z",
       "updated_at": "2026-11-27T16:44:25.309Z"
+    },
+    {
+      "number": 31,
+      "title": "Legacy reload: only an owned marker upgrades a task; countdown matched across wrapped lines",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "unattended/30",
+        "unattended/28"
+      ],
+      "what": "Review j738b93327adbfa41 findings 1 and 6 (hud_read, mode full).\n1. `src/mcp/mcp/tasks.ts` ~517–537 promotes a caller-disk receipt into `flowTasks` on a legacy reload before checking the queue marker, so an old connection can combine its ID with a newer epoch and pass `tasks/cancel`. Delete the disk-to-map promotion: only an unexpired marker matching this process's pid, start time and the flow epoch upgrades an ID. Test a disk receipt and a legacy ID together.\n6. The Claude countdown warning (~100 columns) wraps in narrower panes; the regex and both removal sites in `src/mcp/worker-permissions.ts` (~19, 73–103) need it on one row. Normalise the bounded menu-chrome region across visual wraps; never the command preview or option labels. Keep the command/label/selection refusal tests; add an 80-column wrapped case.\nSize: ~40 source lines, two tests.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A legacy reload with both a newer disk receipt and the old ID cannot cancel the task.",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "A Claude permission prompt whose countdown wraps over two rows in an 80-column pane is answered by `hud_respond approve`; a changed command or option is still refused.",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T17:58:16.025Z",
+        "job": "jd8b745cad81f94b4",
+        "flow": "fd8b745cad81f94b4",
+        "replay_base": "81820617b12906ae9f5bba2ccaf3752eb2d1223d",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T17:43:59.631Z",
+      "updated_at": "2026-11-27T17:58:16.025Z"
+    },
+    {
+      "number": 32,
+      "title": "Notice delivery consolidation: one resolver, one send gate, explicit transport outcomes",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "unattended/31"
+      ],
+      "repairs": [
+        "unattended/29"
+      ],
+      "what": "Review j738b93327adbfa41 findings 2, 3, 4, 5, 8. These repeat the delivery kinds of the previous round, and /29 overran its size line 3.5× by adding paths; this ticket consolidates instead of adding. Read the review and oracle design j4b2631efe93fb5fb §1.1–1.2 (the state model stays).\n- One origin/recipient resolver used by notice collection, direct push and `hud_respond` authorisation alike: same origin evidence (job/run `origin_mcp` + pane), own-origin fast path, otherwise one lazy live-pane snapshot for any pending foreign obligation; verify both the origin and the pull recipient is a listed main agent (not any reader by cwd); lookup failure leaves the item pending. Delete the divergent per-caller variants (`watch.ts` ~265/483 without panes, `operations.ts` ~929–938, `watch-runtime.ts` ~329–336, `select-send.ts` ~1070–1085 cwd-only acceptance, `events.ts` ~75–85 queue-only origin).\n- One send gate: every external send first revalidates the source identity (job/permission/flow epoch) and makes the owned `claimed→sending` transition; if either fails, nothing is sent. Buffered items (`typedPending`, Antigravity backlog) carry their source identity. `markDeliveryAbandoned` gets its callers or goes away.\n- Antigravity: `sending` is established before the mailbox hand-off; keep `accepted` for the acknowledged prefix, retry only known-unaccepted items.\n- Transports return an explicit outcome (accepted / refused-before-send / unknown); Pi `deliver` no longer counts a normal return as accepted (`watch.ts` ~283–289, `harness/pi/package-entry.ts` ~151–163).\nOut of scope: quiet-path cost (next ticket), task reload, countdown.\nSize: net NEGATIVE source lines versus today's code (consolidation deletes the variants). Hard stop: if the change will add more source lines than it removes, stop and report with the reason before going further.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A failed auto-land whose stored pane is gone (no origin_mcp) is claimed by a watch started by a live main in the same project; a project shell's `hud watch` that is not a listed main agent does not consume it.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "If the originating MCP exits while its pane stays listed, the queue permission goes to a main that can answer it, and that main's `hud_respond` succeeds.",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "A buffered permission notice whose menu timed out is not sent on retry.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "Killing the watcher after the Antigravity mailbox accepted an item does not republish it on restart.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "A Pi deliver that did not send (session not current, sendMessage error) leaves the notice pending.",
+          "done": false
+        },
+        {
+          "id": 6,
+          "text": "The feature commit removes more source lines than it adds.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T17:43:59.631Z",
+      "updated_at": "2026-11-27T17:43:59.631Z"
+    },
+    {
+      "number": 33,
+      "title": "Quiet clients do no delivery work when nothing is pending",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [
+        "unattended/32"
+      ],
+      "repairs": [
+        "unattended/29"
+      ],
+      "what": "Review j738b93327adbfa41 finding 9 (owner priority: lightweight). With nothing to deliver: the 1 s panel timer (`src/mcp/panel-delivery.ts` ~98–100) calls `jobs().some(...)` which materialises every job (`job-store.ts` ~122–129); accepted-but-open foreign permissions call `loadLivePanes` on every session-watch scan (`thin-jobs.ts` ~634–648); `claimDelivery` on an accepted marker writes and removes a temp file before EEXIST (`delivery-record.ts` ~89–104). Use the existing change/index signals to skip work, a read-only claimability check before any IPC or write, exclusive create only on a real claim. Also serialise reclaim and owned transitions in the helper (review's minor note).\nSize: ~60 source lines; a test that runs the panel timer path on a quiet store and asserts no job materialisation, no pane listing and no file writes.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "On a quiet store, a panel-timer tick materialises no jobs, lists no panes and writes no files.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "An accepted marker is never rewritten by a claim attempt.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T17:43:59.631Z",
+      "updated_at": "2026-11-27T17:43:59.631Z"
     }
   ]
 }

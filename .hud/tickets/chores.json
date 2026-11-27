@@ -587,6 +587,34 @@
       "comments": [],
       "created_at": "2026-11-27T17:30:58.769Z",
       "updated_at": "2026-11-27T17:43:05.211Z"
+    },
+    {
+      "number": 68,
+      "title": "Ticket add: no duplicate on retry after a partial publish or a post-commit cleanup failure",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/66"
+      ],
+      "what": "Review j5e6d4fc01e173396 (hud_read, mode full), two failure paths that need unwritable directories, low priority.\n1. An ordinary add publishes the ticket file before writing the Objective `Features` link (`src/tickets/archive.ts` ~129–134, `src/tickets/store.ts` ~399–405); a failure on the second file reports the add as failed and a retry duplicates the ticket. Stage all outputs before publishing the first, or restore the first on failure.\n2. `pruneTicketWrites` runs after the archive commit succeeds (`src/tickets/commit.ts` ~164–167); a receipt-cleanup failure reports a committed add as failed, and on local land can record the pre-amend SHA (`land-runner.ts` ~485–499). Return the committed outcome and SHA with a cleanup warning.\nOptional: build the publisher only at the ordinary publication site (reviewer's deletion note).\nSize: ~40 source lines; two tests (failure writing the second project file → retry creates exactly one ticket with the link; prune failure → returned outcome matches HEAD).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "A failure writing the Objective link leaves no published ticket, and a retry creates exactly one ticket with the link.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "A receipt-cleanup failure after a successful archive commit returns success with the committed SHA and a warning.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T17:49:49.178Z",
+      "updated_at": "2026-11-27T17:49:49.178Z"
     }
   ]
 }

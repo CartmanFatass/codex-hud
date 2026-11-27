@@ -453,6 +453,7 @@ test('MCP flow-task reload preserves owned receipts and rejects missing receipts
     const qOwnedNew = 'q0000000000000004';
     const qOwnedLegacy = 'q0000000000000005';
     const qDiskOnly = 'q0000000000000006';
+    const qLegacyNewerDisk = 'q0000000000000007';
     const fOwned = 'f0000000000000001';
     const fLegacyMissing = 'f0000000000000002';
     const fDiskOnly = 'f0000000000000003';
@@ -484,6 +485,9 @@ test('MCP flow-task reload preserves owned receipts and rejects missing receipts
     writeFlow(qDiskOnly, baseQueue(qDiskOnly, 0, { state: 'paused', notices: { 'pause-0': 'synthetic disk-only pause' } }));
     fs.mkdirSync(join(home, 'mcp-tasks'), { recursive: true, mode: 0o700 });
     fs.writeFileSync(receiptPath(qDiskOnly), JSON.stringify({ id: qDiskOnly, epoch: 0, expiresAt: now + 60_000 }));
+    writeFlow(qLegacyNewerDisk, baseQueue(qLegacyNewerDisk, 2));
+    writeMarker(qLegacyNewerDisk, { flow: qLegacyNewerDisk, epoch: 2, pane, pid: process.pid + 100000, start: 'reconnected', expires: now + 60_000 });
+    fs.writeFileSync(receiptPath(qLegacyNewerDisk), JSON.stringify({ id: qLegacyNewerDisk, epoch: 2, expiresAt: now + 60_000 }));
     writeFlow(fOwned, baseLand(fOwned));
     writeFlow(fLegacyMissing, baseLand(fLegacyMissing));
     writeFlow(fDiskOnly, baseLand(fDiskOnly));
@@ -569,7 +573,7 @@ test('MCP flow-task reload preserves owned receipts and rejects missing receipts
     await gen2b.retire();
 
     // 2. Legacy landTasks Set (upgrade reload) backfills only from an unexpired own-process queue marker matching pid, start & epoch.
-    const legacyState = { ...snap1, landTasks: new Set([qForeign, qAbsent, qWrongStart, qOwnedLegacy, fLegacyMissing]) };
+    const legacyState = { ...snap1, landTasks: new Set([qForeign, qAbsent, qWrongStart, qOwnedLegacy, qLegacyNewerDisk, fLegacyMissing, fDiskOnly]) };
     delete legacyState.flowTasks;
     const gen3 = await openGeneration(entryUrl);
     await gen3.call('start', legacyState);
@@ -583,6 +587,18 @@ test('MCP flow-task reload preserves owned receipts and rejects missing receipts
       assert.equal(fs.existsSync(receiptPath(id)), false, id + ' must not fabricate caller receipt');
       assert.equal(fs.existsSync(stopPath(id)), false, id + ' must not be cancelled');
     }
+    // A legacy ID combined with a caller disk receipt must never upgrade into cancel authority.
+    for (const id of [qLegacyNewerDisk, fDiskOnly]) {
+      const cancelled = await req(gen3, 'tasks/cancel', { taskId: id });
+      assert.equal(cancelled.status, 'failed', id + ' must not gain cancel authority from disk receipt');
+      assert.match(cancelled.statusMessage, /Unknown or expired task.*hud_read/);
+      assert.equal(fs.existsSync(stopPath(id)), false, id + ' must not be cancelled');
+      const got = await req(gen3, 'tasks/get', { taskId: id });
+      assert.equal(got.status, 'working', id + ' keeps ordinary disk-backed polling');
+      const cancelledAfterGet = await req(gen3, 'tasks/cancel', { taskId: id });
+      assert.equal(cancelledAfterGet.status, 'failed', id + ' still cannot cancel after disk-backed get');
+      assert.equal(fs.existsSync(stopPath(id)), false, id + ' must remain uncancelled');
+    }
     const legacyOwnedGet = await req(gen3, 'tasks/get', { taskId: qOwnedLegacy });
     assert.equal(legacyOwnedGet.status, 'completed');
     assert.match(legacyOwnedGet.result.content[0].text, /synthetic legacy pause/);
@@ -590,6 +606,8 @@ test('MCP flow-task reload preserves owned receipts and rejects missing receipts
     await gen3.call('stop');
     await gen3.retire();
     assert.deepEqual(snap3.flowTasks.get(qOwnedLegacy), { id: qOwnedLegacy, epoch: 1, expiresAt: legacyExpiry });
+    assert.equal(snap3.flowTasks.has(qLegacyNewerDisk), false);
+    assert.equal(snap3.flowTasks.has(fDiskOnly), false);
   `;
 
   const scriptPath = join(root, 'reload-flow-tasks.mjs');

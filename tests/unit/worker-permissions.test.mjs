@@ -298,6 +298,40 @@ test('one watcher pass approves only the proven worker cleanup; restart, handoff
     assert.equal((await respond(requestId, 'approve')).code, 'prompt_changed', change);
     assert.equal(herdr.keys.length, 4);
   }
+
+  // In an 80-column pane, the ~100-column countdown wraps over two rows (word-wrapped or hard-wrapped).
+  const wrapWord80 = line => ` ${line.slice(0, 77).trimEnd()}\n ${line.slice(77).trimStart()}`;
+  const wrapHard80 = line => ` ${line.slice(0, 79)}\n${line.slice(79)}`;
+  const wrappedFooter80 = (screen, time) => `${screen}${wrapWord80(countdown(time))}\n`;
+  const wrappedInline80 = (screen, time) => screen.replace(' ❯ 1. Yes', `${wrapHard80(countdown(time))}\n ❯ 1. Yes`);
+  for (const line of `${wrapWord80(countdown('1:57'))}\n${wrapHard80(countdown('1:57'))}`.split('\n')) {
+    assert.ok(line.length <= 80, `wrapped line exceeds 80 columns: ${line.length}`);
+  }
+
+  const wrappedFooterId = await notify(wrappedFooter80(prompt('npm run build'), '1:57'));
+  herdr.update('blocked', wrappedFooter80(prompt('npm run build'), '1:56'));
+  herdr.changeAfterRead(wrappedFooter80(prompt('npm run build'), '1:55'));
+  const wrappedFooterApproval = await respond(wrappedFooterId, 'approve');
+  assert.equal(wrappedFooterApproval.written, true, JSON.stringify(wrappedFooterApproval));
+  assert.equal(herdr.keys.length, 5);
+
+  const wrappedInlineId = await notify(wrappedInline80(prompt('npm run build'), '1:57'));
+  herdr.update('blocked', wrappedInline80(prompt('npm run build'), '1:56'));
+  herdr.changeAfterRead(wrappedInline80(prompt('npm run build'), '1:55'));
+  const wrappedInlineApproval = await respond(wrappedInlineId, 'approve');
+  assert.equal(wrappedInlineApproval.written, true, JSON.stringify(wrappedInlineApproval));
+  assert.equal(herdr.keys.length, 6);
+
+  for (const [change, screen] of [
+    ['wrapped command', prompt('npm run release')],
+    ['wrapped selection', prompt('npm run build', 2)],
+    ['wrapped option label', prompt('npm run build').replace('3. No', '3. Decline')],
+  ]) {
+    const requestId = await notify(wrappedFooter80(prompt('npm run build'), '1:57'));
+    herdr.changeAfterRead(wrappedFooter80(screen, '1:56'));
+    assert.equal((await respond(requestId, 'approve')).code, 'prompt_changed', change);
+    assert.equal(herdr.keys.length, 6);
+  }
 });
 
 test('an answered permission does not hide the next CLI block on the bar or panel', t => {
@@ -463,6 +497,23 @@ test('native approval layouts pin one-time action and reject stale, wrapped and 
   assert.equal(parsePermissionPrompt(codexDelete, 'codex').target, undefined);
   const piEdit = 'Edit approval required\nCwd: /tmp/wt\nFile: src/app.ts\n❯ 1. Allow once\n2. Decline\nEnter to select · Esc to cancel';
   assert.deepEqual(parsePermissionPrompt(piEdit, 'pi').target, { kind: 'file_edit', paths: ['src/app.ts'], cwd: '/tmp/wt' });
+
+  // Wrapped Claude countdowns are normalized only in menu chrome, never in command previews or option labels.
+  const basePrompt = parsePermissionPrompt(prompt('npm run build'), 'claude');
+  const warning = '⚠ Claude Code will automatically block this request in 1:57, to avoid holding up an unattended session';
+  const wrappedWord = `${warning.slice(0, 77).trimEnd()}\n ${warning.slice(77).trimStart()}`;
+  const wrappedHard = `${warning.slice(0, 79)}\n${warning.slice(79)}`;
+  assert.equal(parsePermissionPrompt(`${prompt('npm run build')} ${wrappedWord}\n`, 'claude').text, basePrompt.text);
+  assert.equal(parsePermissionPrompt(prompt('npm run build').replace(' ❯ 1. Yes', ` ${wrappedHard}\n ❯ 1. Yes`), 'claude').text, basePrompt.text);
+  const inCommand = parsePermissionPrompt(prompt(wrappedWord), 'claude');
+  assert.equal(inCommand.command, undefined);
+  assert.match(inCommand.text, /automatically block this request/);
+  const insideBoxFooter = parsePermissionPrompt(prompt('npm run build').replace(' Esc to cancel · Tab to amend', ` ${wrappedWord}\n Esc to cancel · Tab to amend`), 'claude');
+  assert.equal(insideBoxFooter.text, basePrompt.text);
+  const wrappedOptionLabel = parsePermissionPrompt(prompt('npm run build').replace("2. Yes, and don't ask again", `2. ${wrappedWord}`), 'claude');
+  assert.deepEqual(wrappedOptionLabel.options, []);
+  const optionLabelCountdown = parsePermissionPrompt(prompt('npm run build').replace("2. Yes, and don't ask again", `2. ${warning}`), 'claude');
+  assert.equal(optionLabelCountdown.options[1].label, warning);
 });
 
 test('Claude accepts a basename-only question but not conflicting qualified file paths', () => {

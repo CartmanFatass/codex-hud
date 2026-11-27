@@ -17,6 +17,7 @@ const PERMISSION_LOCK_TIMEOUT_MS = 10_000;
 const FOOTER = /^(?:(?:Enter to (?:select|confirm) · )?(?:(?:Tab\/arrow keys|↑\/↓|↑↓|arrows|arrow keys) to navigate · )?Esc to cancel|Enter to (?:select|confirm) · (?:Esc to cancel|Tab to amend)(?: · Esc to cancel)?|Press enter to confirm or esc to cancel)(?:\s*·\s*(?:Tab to amend|Ctrl\+e to explain))*$/i;
 const CLAUDE_TITLE = /^(?:Bash command|(?:Edit|Write|Create) file(?::?\s+.+)?|Do you want to allow this connection\?)$/i;
 const CLAUDE_COUNTDOWN = /^⚠\uFE0F? Claude Code will automatically block this request in \d+:[0-5]\d, to avoid holding up an unattended session$/;
+const MAX_COUNTDOWN_LINES = 4;
 const BOTTOM_BORDER = /^[╰╯─━—]+$/;
 const OTHER_TITLE = /^(?:Permission required|Permission request|Tool approval required|Command approval required|(?:Edit|Write|Create|File) approval required|(?:Edit|Write|Create) file(?::?\s+.+)?|Allow command\?|Would you like to (?:run the following command|make the following edits)\?)$/i;
 const CWD_LINE = /^(?:Cwd|Working directory|Directory):\s+(.+)$/i;
@@ -36,6 +37,29 @@ export type PermissionEntry = PermissionDecision & {
   resolved_at?: string;
 };
 type Ledger = { active?: string; entries: PermissionEntry[] };
+
+function isClaudeCountdown(lines: readonly string[]): boolean {
+  if (!lines.length || lines.length > MAX_COUNTDOWN_LINES || !lines[0].startsWith('⚠')) return false;
+  const match = (index: number, prefix: string): boolean => {
+    if (index === lines.length) return CLAUDE_COUNTDOWN.test(prefix);
+    return match(index + 1, `${prefix} ${lines[index]}`) || match(index + 1, `${prefix}${lines[index]}`);
+  };
+  return match(1, lines[0]);
+}
+
+function stripClaudeCountdown(lines: string[]): boolean {
+  for (let start = 0; start < lines.length; start++) {
+    if (!lines[start].startsWith('⚠')) continue;
+    const maxLen = Math.min(MAX_COUNTDOWN_LINES, lines.length - start);
+    for (let len = 1; len <= maxLen; len++) {
+      if (isClaudeCountdown(lines.slice(start, start + len))) {
+        lines.splice(start, len);
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 /** Parse the visible native menu, never a recent/scrollback tail. Unsupported layouts never send keys. */
 export function parsePermissionPrompt(screen: string, harness: string): Prompt | null {
@@ -74,9 +98,9 @@ export function parsePermissionPrompt(screen: string, harness: string): Prompt |
   let firstOption = body.findIndex(line => /^(?:[❯›>]\s*)?1[.)]\s+/.test(line));
   if (firstOption < 1 || (harness === 'claude' && (question < 0 || question >= firstOption))) return unknownLayout();
   // Treat the native countdown as menu chrome, never as part of a command preview or option label.
-  if (harness === 'claude' && firstOption === question + 2 && CLAUDE_COUNTDOWN.test(body[question + 1])) {
-    body.splice(question + 1, 1);
-    firstOption--;
+  if (harness === 'claude' && firstOption > question + 1 && isClaudeCountdown(body.slice(question + 1, firstOption))) {
+    body.splice(question + 1, firstOption - question - 1);
+    firstOption = question + 1;
   }
   const options: Option[] = [];
   let selected = -1;
@@ -92,12 +116,8 @@ export function parsePermissionPrompt(screen: string, harness: string): Prompt |
   }
   if (options.length < 2 || options.length > 6 || selected < 0) return unknownLayout();
   const footerLines = body.slice(i);
-  if (harness === 'claude') {
-    const countdown = footerLines.findIndex(line => CLAUDE_COUNTDOWN.test(line));
-    if (countdown !== -1) {
-      footerLines.splice(countdown, 1);
-      while (BOTTOM_BORDER.test(footerLines.at(-1) ?? '')) footerLines.pop();
-    }
+  if (harness === 'claude' && stripClaudeCountdown(footerLines)) {
+    while (BOTTOM_BORDER.test(footerLines.at(-1) ?? '')) footerLines.pop();
   }
   const footer = footerLines.join(' ');
   if (!FOOTER.test(footer)) return unknownLayout();
