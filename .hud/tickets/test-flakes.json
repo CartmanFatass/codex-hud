@@ -396,7 +396,7 @@
       "number": 27,
       "title": "Gate flakes collected after test-flakes/26",
       "kind": "flake-list",
-      "status": "needs-triage",
+      "status": "ready-for-agent",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -426,6 +426,14 @@
           "flow": "fae3be043f2a14655",
           "log": "~/.hud/flows/fae3be043f2a14655.json.gate-1.log",
           "recorded_at": "2026-11-27T08:29:43.544Z"
+        },
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/workflow-composed.test.mjs",
+          "case_name": "plan, admission and dispatch charge the same assembled references including standing brief",
+          "flow": "f9aa920934905884b",
+          "log": "~/.hud/flows/f9aa920934905884b.json.gate-1.log",
+          "recorded_at": "2026-11-27T09:19:39.665Z"
         }
       ],
       "acceptance": [
@@ -442,7 +450,7 @@
       ],
       "comments": [],
       "created_at": "2026-11-27T08:29:43.544Z",
-      "updated_at": "2026-11-27T08:29:43.544Z"
+      "updated_at": "2026-11-27T09:19:39.665Z"
     }
   ]
 }

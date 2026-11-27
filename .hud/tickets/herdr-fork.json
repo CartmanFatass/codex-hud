@@ -437,7 +437,7 @@
     {
       "number": 34,
       "title": "HUD: /hud collapses instead of stopping; Settings choose the dock side and keep the dragged size",
-      "status": "ready-for-agent",
+      "status": "ready-for-human",
       "owner_try": true,
       "live_try": "In Claude Code, Codex, pi and a shell pane: /hud shows and collapses the same panel instantly with its state kept; `hud panel close` stops it; Settings -> Panel -> Side moves it to left/bottom; a dragged size survives hide/show and a new session.",
       "approved_removals": [],
@@ -449,27 +449,34 @@
         {
           "id": 1,
           "text": "Tests: every /hud entry point sends dock.toggle; close stops; status reports shown/hidden/closed",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: Settings Side applies dock.configure live; dock.resized updates the saved size",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Test: a collapsed panel runs no periodic collection and refreshes once on show",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "npm test, npm run test:mjs and check:fixtures pass",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T09:30:54.226Z",
+        "job": "jd0fd64f187be20c8",
+        "flow": "fd0fd64f187be20c8",
+        "replay_base": "238d66cfac277982331b73e949ceb29949db07f2",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T06:39:46.019Z",
-      "updated_at": "2026-11-27T06:39:46.019Z"
+      "updated_at": "2026-11-27T09:30:54.226Z"
     }
   ]
 }
