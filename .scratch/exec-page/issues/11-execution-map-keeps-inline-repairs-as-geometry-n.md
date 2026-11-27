@@ -1,0 +1,16 @@
+# 11: Execution map keeps inline repairs as geometry, never empties, and shows lease wait as current
+
+**Status:** ready-for-agent
+**Live try:** Open the Execution tab during a live queue run with a ticket in a land repair; check the repair sits on the ticket's lane after it, the ticket keeps its failed state, and a lease wait shows ◷ as the current station.
+**Blocked by:** none
+**Objective:** interaction
+
+**What to build:** Repair from milestone review jbfcf47999101544f (findings 1, 2, 3 and its 'what can be deleted'). Renderer side only (src/render/execution-metro.ts and tests); producer facts are exec-page/10. (1) inlineRepairGraph (execution-metro.ts:634–680) removes the host's repairs, sets the host state to `done`, inserts repair stations into the dependency graph and re-runs lane reduction. A failed or held first ticket with a retained repair then reports as done (Station Detail can say landed), and in a three-way branch the inline repair lands on a different lane than its host. Place inline repairs as geometry only, on the host's lane right after it (Hairline rule 5): the host keeps its state, target and logical edges. (2) resolveInlineRepairs (:783–791) converts one host per pass and returns an empty layout after eight passes; eight dependency waves with one retained repair each produce `lanes: 0, nodes: []`. Remove the fixed cutoff; each conversion consumes a known host, so termination follows from the host count (or, after (1), no re-reduction loop at all). (3) A repaired ticket requeued on the main-checkout lease (land-runner.ts:594–599) still paints the previous failed gate ahead of the current state (execution-metro.ts:943–956,1029–1034,1415–1417): collector state `lease`, frame `‹▮✗▯›` / `gate failed 2/3`. When land progress is a lease wait, show `◷` lease wait as the current station (Hairline rule 4) and keep the failed gate as history in Station Detail only. Delete: the renderer converts collector stations into a second schema (flowFromCollectorMetro) and back (toCollectorFlow) only to call reduceMetroLanes, rebuilding repair data on the way. Reduce the collector graph directly and attach presentation fields to the result, so station states have one authority. Keep the legacy queue fallback. Hairline look, keys, viewport and golden frames from /05–/09 otherwise unchanged; report the per-frame render cost at 40/62/80 columns (it was 1.775/0.907/0.990 ms after /07).
+
+- [ ] A failed (and a held) first ticket with a retained repair keeps its failed/held state and target in layout and Station Detail; its inline repair sits on the host's lane in a three-way branch.
+- [ ] Eight dependency waves of three tickets with one retained repair per wave render every station at 40 columns and stay reachable by ←/→.
+- [ ] A ticket whose land waits on the checkout lease after a failed gate and a settled repair shows ◷ lease wait as the current station, not a failed gate; Station Detail still shows the earlier failure.
+- [ ] flowFromCollectorMetro/toCollectorFlow round-trip is gone; lane reduction runs on the collector graph; legacy queue fallback still renders.
+- [ ] Every line is exactly width columns; existing golden frames match except frames this ticket changes; npm test passes.
+
+## Comments
