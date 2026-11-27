@@ -8,6 +8,7 @@ import { worktreeGit } from '../collectors/worktrees.js';
 import { readDone, readTurn, receiptForTurn } from '../roles/cli-turn.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { checkBinding, readCheckReceipt, sameChecks } from '../roles/job-checks.js';
+import { getJobIndexCache } from '../roles/job-index-cache.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
 import { cachedReportSignature, readReportMeta } from '../roles/report-meta.js';
@@ -715,20 +716,6 @@ export async function retryPendingFlakeCollections(
 const CLEAN_SETTLED_STATES = new Set(['idle_grace', 'done', 'closed']);
 const MAX_FLAKE_REPORT_BYTES = 1024 * 1024;
 
-function hasOpenQuestions(dir: string, timedOut: Job['timed_out_questions']): boolean {
-  try {
-    const names = new Set(fs.readdirSync(join(dir, jobFiles.qa)));
-    const timedOutIds = new Set(Array.isArray(timedOut) ? timedOut : []);
-    for (const name of names) {
-      const id = /^(q\d+)\.md$/.exec(name)?.[1];
-      if (id && !names.has(`${id}.answer.md`) && !timedOutIds.has(id)) return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 function declaredFlakeReport(dir: string, job: Job, status: Partial<JobStatus>): string | null {
   if (status.output_written !== true) return null;
   const sig = cachedReportSignature(dir);
@@ -784,8 +771,9 @@ export async function settleAutoLandFlakeJob(
     let job: Job;
     let status: Partial<JobStatus>;
     try {
-      job = readJsonFile(jobFile) as Job;
+      // A clean STATUS is published after Pi persists any final question timeouts.
       status = readJsonFile(statusFile) as Partial<JobStatus>;
+      job = readJsonFile(jobFile) as Job;
     } catch {
       return { action: 'noop' as const };
     }
@@ -793,9 +781,6 @@ export async function settleAutoLandFlakeJob(
     if (!job.worktree || job.worktree.root !== job.cwd) return { action: 'noop' as const };
     if (!CLEAN_SETTLED_STATES.has(status.state ?? '')) return { action: 'noop' as const };
     if (landAttempt(home, id).prior) return { action: 'noop' as const };
-    if (hasOpenQuestions(dir, job.timed_out_questions)) return { action: 'wait' as const };
-    const sonic = sonicChildren(dir);
-    if (sonic.open || sonic.uncollected.length) return { action: 'wait' as const };
 
     const persistBlock = (reason: string, sig?: string): FlakeAutoLandResult => {
       const cleanReason = oneLine(reason).slice(0, 240) || 'auto-land blocked';
@@ -815,6 +800,20 @@ export async function settleAutoLandFlakeJob(
       } catch { /* Job disappeared before block could be persisted. */ }
       return { action: 'blocked', reason: cleanReason, ...(sig ? { sig } : {}) };
     };
+
+    let openIds: readonly string[];
+    try {
+      ({ openIds } = getJobIndexCache(home).readQa(dir));
+    } catch {
+      // Bind the handback to the same signature the watcher uses for retry admission.
+      const sig = status.output_written === true ? cachedReportSignature(dir) ?? undefined : undefined;
+      if (job.auto_land_blocked && job.auto_land_blocked.sig === sig) return { action: 'noop' as const };
+      return persistBlock('questions could not be read', sig);
+    }
+    const timedOutIds = new Set(Array.isArray(job.timed_out_questions) ? job.timed_out_questions : []);
+    if (openIds.some(id => !timedOutIds.has(id))) return { action: 'wait' as const };
+    const sonic = sonicChildren(dir);
+    if (sonic.open || sonic.uncollected.length) return { action: 'wait' as const };
 
     const sig = declaredFlakeReport(dir, job, status);
     if (!sig) {

@@ -133,6 +133,8 @@ export interface Job extends PiOptions {
   stop_origin?: StopOrigin;
   answered_by?: Record<string, AnswerActor>;
   timed_out_questions?: string[];
+  /** Timed-out questions closed without a default because the report already stood. */
+  moot_timed_out_questions?: string[];
   worktree?: ManagedWorktree;
   worktree_removed_at?: string;
   worktree_kept_reason?: string;

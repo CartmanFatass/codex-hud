@@ -7,6 +7,7 @@ import {
   collectAndRecordLandFlakes, collectGateFlakes, flakeDispatchKey, retryPendingFlakeCollections, settleAutoLandFlakeJob,
 } from '../../dist/mcp/land-flakes.js';
 import { startSessionWatch } from '../../dist/cli/watch.js';
+import { installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.js';
 import { landNotice } from '../../dist/mcp/land-state.js';
 import { ensureJobWatcher } from '../../dist/mcp/watch-pid.js';
 import { workflowEvents } from '../../dist/workflows/events.js';
@@ -14,6 +15,7 @@ import { clearExhausted, markExhausted } from '../../dist/roles/exhausted.js';
 import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { runUnattendedScanStep } from '../../dist/unattended/service.js';
 import { controlPath } from '../../dist/unattended/state.js';
+import { publishQuestion } from '../../dist/worker/qa.js';
 import { cleanupFixture } from '../helpers/process-cleanup.mjs';
 import { until } from '../helpers/thin-mcp-harness.mjs';
 import { checkout, seedJsonTickets } from '../helpers/thin-mcp-land.mjs';
@@ -1536,13 +1538,49 @@ function settleDispatchedFlakeJob(f, jobId, reportText, { state = 'idle_grace', 
   // Ensure report mtime is strictly after created_at even when written within the same ms in fast tests.
   const createdMs = Date.parse(receipt.created_at);
   if (Number.isFinite(createdMs)) receipt.created_at = new Date(createdMs - 5_000).toISOString();
-  if (timedOutQuestion) {
-    fs.mkdirSync(join(dir, 'qa'), { recursive: true });
-    fs.writeFileSync(join(dir, 'qa', 'q1.md'), 'Use the existing synthetic layout?\n');
-    receipt.timed_out_questions = ['q1']; // Pi records this on the job, without an answer file.
-  }
   fs.writeFileSync(jobFile, JSON.stringify(receipt));
   const reportFile = join(dir, 'report.md');
+  if (timedOutQuestion) {
+    const handlers = new Map();
+    const statusFile = join(dir, 'STATUS.json');
+    let now = 0, timer, idle = false;
+    const tab = installTabLifecycle({
+      on: (event, fn) => handlers.set(event, fn),
+      getThinkingLevel: () => 'high',
+      sendMessage: () => assert.fail('a moot timeout must not deliver a default or start a turn'),
+    }, {
+      taskDir: dir, role: 'imp', profile: 'implementer',
+      timing: {
+        now: () => now,
+        schedule: callback => (timer = callback),
+        cancel: () => { timer = undefined; },
+      },
+    });
+    const ctx = {
+      mode: 'tui', model: { provider: 'fake', id: 'model', promptCache: { short: 60, long: 60 } },
+      sessionManager: { getSessionId: () => 'synthetic-flake-worker', getSessionFile: () => undefined },
+      isIdle: () => idle,
+    };
+    const emit = event => handlers.get(event)({}, ctx);
+    emit('session_start');
+    emit('before_agent_start');
+    const question = publishQuestion(join(dir, 'qa'), { tag: 'imp@demo', question: 'Use the synthetic layout?', default: 'Yes' });
+    tab.trackQuestion(ctx, question, 1000);
+    fs.writeFileSync(reportFile, reportText);
+    tab.reportPublished(ctx);
+    idle = true;
+    emit('agent_settled');
+    assert.equal(readJson(statusFile).state, 'waiting_orchestrator');
+    now = 1000;
+    timer();
+    assert.equal(readJson(statusFile).state, 'idle_grace');
+    assert.equal(readJson(statusFile).output_written, true);
+    assert.equal(fs.existsSync(question.qfile), true);
+    assert.equal(fs.existsSync(question.afile), false);
+    assert.deepEqual(readJson(jobFile).timed_out_questions, ['q1']);
+    assert.deepEqual(readJson(jobFile).moot_timed_out_questions, ['q1']);
+    return;
+  }
   fs.writeFileSync(reportFile, reportText);
   const reportStat = fs.statSync(reportFile);
   const settledAt = new Date(Math.max(Date.now(), Math.ceil(reportStat.mtimeMs) + 1000)).toISOString();
@@ -1614,7 +1652,7 @@ test('a caller-supplied flakes request key does not auto-land a manual worktree 
   assert.match(fs.readFileSync(join(f.main, 'tracked'), 'utf8'), /manual flake fix/);
 });
 
-test('promoted flake with a timed-out question and clean report lands automatically without a main call or completion notice', { timeout: 45_000 }, async t => {
+test('a promoted flake that asks, reports, then times out lands without a main call or completion notice', { timeout: 45_000 }, async t => {
   const f = await checkout(t, ['npm run test:sample'], { after: ['test "$WRAPPED" = yes && pwd > after-ran'] });
   setFlakesConfig(f, { feature: 'test-flakes' });
 
@@ -1669,6 +1707,25 @@ test('promoted flake with a timed-out question and clean report lands automatica
   assert.equal(mainNotices.some(line => line.includes(autoFlow) ||
     (line.includes(dispatched.job) && !line.includes('QUESTION q1:'))), false,
     `expected no completion notice on clean auto-land, got: ${JSON.stringify(mainNotices)}`);
+});
+
+test('auto-land hands back without calling startLand when QA cannot be read', async t => {
+  const f = await checkout(t, ['true'], { after: [] });
+  setFlakesConfig(f, { feature: 'test-flakes' });
+  const seeded = seedAutoFlakeJob(f, { id: 'j0000000000000a20', ticket: 'test-flakes/01' });
+  const base = f.git(f.main, 'rev-parse', 'origin/base');
+  fs.writeFileSync(join(seeded.dir, 'qa'), 'not a directory\n');
+  settleDispatchedFlakeJob(f, seeded.id, 'Fixed flake.\nBlockers: none\n');
+
+  const startLandFn = t.mock.fn();
+  const result = await settleAutoLandFlakeJob(f.home, seeded.id, { startLandFn });
+  assert.equal(result.action, 'blocked');
+  assert.equal(result.reason, 'questions could not be read');
+  assert.ok(result.sig);
+  assert.equal(readJson(seeded.jobFile).auto_land_blocked?.sig, result.sig);
+  assert.deepEqual(await settleAutoLandFlakeJob(f.home, seeded.id, { startLandFn }), { action: 'noop' });
+  assert.equal(startLandFn.mock.callCount(), 0);
+  assert.equal(f.git(f.main, 'rev-parse', 'origin/base'), base);
 });
 
 test('promoted flake auto-land notifies main on land failure', { timeout: 35_000 }, async t => {

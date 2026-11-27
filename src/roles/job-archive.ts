@@ -112,13 +112,18 @@ export function recordQuestionAnswer(dir: string, qid: string, actor: AnswerActo
   } catch { return false; }
 }
 
-/** Record once that a question timed out and its default applied. */
-export function recordQuestionTimeout(dir: string, qid: string, cache?: JobIndexCache): boolean {
+/** Ensure the timeout is recorded, distinguishing a moot decision from a proposed default. */
+export function recordQuestionTimeout(dir: string, qid: string, cache?: JobIndexCache, moot = false): boolean {
   if (!/^q\d+$/.test(qid)) return false;
   try {
     const found = readCachedJob(dir, cache);
-    if (!found || found.job.timed_out_questions?.includes(qid)) return false;
-    const next: Job = { ...found.job, timed_out_questions: [...(found.job.timed_out_questions ?? []), qid] };
+    if (!found) return false;
+    const next: Job = { ...found.job };
+    const timedOut = next.timed_out_questions ?? [];
+    const mootTimeouts = next.moot_timed_out_questions ?? [];
+    if (timedOut.includes(qid) && (!moot || mootTimeouts.includes(qid))) return true;
+    if (!timedOut.includes(qid)) next.timed_out_questions = [...timedOut, qid];
+    if (moot && !mootTimeouts.includes(qid)) next.moot_timed_out_questions = [...mootTimeouts, qid];
     found.idx.writeJsonAtomic(found.file, next as unknown as Record<string, unknown>, { indent: 2, mkdir: false });
     return true;
   } catch { return false; }
@@ -161,6 +166,7 @@ function archiveQuestions(home: string, dir: string, job: Partial<Job>, status: 
   };
   const actors = record(job.answered_by);
   const timedOutIds = new Set(Array.isArray(job.timed_out_questions) ? job.timed_out_questions.filter((q): q is string => typeof q === 'string') : []);
+  const mootTimeoutIds = new Set(Array.isArray(job.moot_timed_out_questions) ? job.moot_timed_out_questions : []);
   const settledAt = epoch(status.settled_at) ?? epoch(status.ended_at);
   const cleanSettle = ['done', 'closed', 'idle_grace'].includes(status.state ?? '');
   try {
@@ -174,7 +180,7 @@ function archiveQuestions(home: string, dir: string, job: Partial<Job>, status: 
         (!answered && cleanSettle && settledAt !== undefined && settledAt - asked.ms >= QUESTION_TIMEOUT_MS);
       let used_default: boolean | undefined;
       if (timedOut) {
-        used_default = true;
+        used_default = !mootTimeoutIds.has(id);
       } else {
         const qText = readQaText(dir, name);
         const def = qText !== undefined ? questionDefault(qText) : undefined;

@@ -778,6 +778,151 @@
       "comments": [],
       "created_at": "2026-11-27T09:55:57.004Z",
       "updated_at": "2026-11-27T10:17:44.682Z"
+    },
+    {
+      "number": 45,
+      "title": "Flake auto-land never waits on a timed-out question and never publishes on unreadable QA",
+      "status": "done",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/39",
+        "chores/41"
+      ],
+      "what": "Milestone review jdc8a41dbbf6db547 findings 1 and 4. (1) `src/harness/pi/worker/tab-lifecycle.ts:360-375`: when the report stands and the question deadline passes, Pi drops the question and `continue`s before recording its timeout, so the job settles with `qa/q1.md`, no answer and no timeout ID; `src/mcp/land-flakes.ts:718-730,796` reads that as an open question and returns `wait` forever. Persist that the unanswered question closed before settling (no default answer, no new turn). (4) `hasOpenQuestions` returns false on every `readdirSync` error, so EACCES/EIO/malformed `qa/` lets a settled flake job auto-land and push. Use `JobIndexCache.readQa` (absence vs failure); apply the recorded-timeout filter to a successful read; on a read error defer with bounded retry or hand back, never publish.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: ask -> report -> timeout order ends in auto-land (clean report + commit) or handback (Blockers), never an endless wait; the test does not supply the timeout ID itself",
+          "done": true
+        },
+        {
+          "id": 2,
+          "text": "Test: a QA read error defers or hands back and never calls startLand",
+          "done": true
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": true
+        }
+      ],
+      "landing": {
+        "at": "2026-11-27T10:43:55.304Z",
+        "job": "jdb2c67e541d03894",
+        "flow": "fdb2c67e541d03894",
+        "replay_base": "6455a6d704e0500ea0e741c40b8473e3123f00ff",
+        "gates": 5
+      },
+      "comments": [],
+      "created_at": "2026-11-27T10:29:10.239Z",
+      "updated_at": "2026-11-27T10:43:55.304Z"
+    },
+    {
+      "number": 46,
+      "title": "A partially landed flake list can be picked up again for its remaining items",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores-done/26",
+        "chores/30",
+        "chores/42"
+      ],
+      "what": "Milestone review jdc8a41dbbf6db547 finding 2. After a flake worker commits a fix and names an item under `Not done`, `src/mcp/land-records.ts:118-132` correctly sets `ready-for-agent` with the item unticked, but `src/mcp/flake-admission.ts:65-89` still claims the ticket for its closed source job, so `src/mcp/local-tickets.ts:489-491` hides it from `hud_tickets ready` and queue admission while the receipt is retained; after retention the collector treats any `record.landing` as resolved (`src/mcp/land-flakes.ts:250-258,297-304`). Distinguish a completed dispatch attempt from a completed ticket: keep duplicate-dispatch protection for an active attempt, allow follow-up work after a confirmed partial landing.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: after an actual partial flake land (item left under Not done), the ticket appears in hud_tickets ready and is admitted by a queue run",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: an active flake attempt still blocks a duplicate dispatch",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T10:29:10.239Z",
+      "updated_at": "2026-11-27T10:29:10.239Z"
+    },
+    {
+      "number": 47,
+      "title": "Recent keeps the landed count of a superseded run whose held item was landed by hand",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores-done/16",
+        "chores/43"
+      ],
+      "what": "Milestone review jdc8a41dbbf6db547 finding 3 (minor) plus its optional cleanup. Order pause on a hold -> manually land the held job -> restart: `src/mcp/ticket-queue.ts:283-302` marks the successor's copy landed, lines 325-334 mark the predecessor superseded but leave its ticket held, so `src/collectors/execution-runs.ts:490-499` projects it held and `src/render/execution-view.ts:131-145` omits `1 landed`. Preserve the verified land on the ending receipt too, without keeping the hold pinned or inferring landings from ticket status. Also delete the stale sentence at `docs/reference.md:430` about land writing unfinished IDs beside a legacy Markdown comment (land writes JSON; unmigrated Markdown is read-only).",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: in workflow-lead-acceptance manual-land-before-resume, both the successor and the predecessor Recent rows show the landed count",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "docs/reference.md no longer describes a Markdown landing writer",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "TZ=UTC node tests/run-mjs.mjs 8 passes",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T10:29:10.239Z",
+      "updated_at": "2026-11-27T10:29:10.239Z"
+    },
+    {
+      "number": 48,
+      "title": "Execution Recent folds worker-started sonic children into their parent row",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "With a ticket worker that has started three hud_sonic helpers and settled, open the panel's Execution tab: Recent shows one row for the worker with a child count, no separate rows titled \"Read-only\", and the parent's Inspector lists each helper with its ask after the leading label.",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Observed 2026-11-27: Execution's Recent list fills with sonic rows whose title reads only \"Read-only\". They are hud_sonic helpers started by a ticket worker (job.json `parent_job` = the chores/45 imp job jdb2c67e541d03894); their briefs start \"Read-only: inspect …\" / \"Read-only survey: …\" and the row shows only the part before the colon. Attention first (owner 2026-11-23): a worker's helpers are the worker's detail, not separate results. Fix: (1) In Recent (and any other ended-job list on Execution), a settled job with `parent_job` is not its own row; the parent's row carries a muted child count (e.g. `+3 sonic`) and the children stay reachable from the parent's Inspector. A failed child or one with an open question still gets its own row (same rule `src/collectors/thin-jobs.ts:533` uses for notices). A child whose parent is outside the Recent window keeps its own row. (2) A child's title skips a short leading label ending in a colon (one to three words, e.g. \"Read-only:\", \"Read-only survey:\") so the ask is shown. Title derivation: `src/collectors/thin-jobs.ts` (~854, `first`/`stripJobPrefix`); rendering: `src/render/execution-view.ts`, `src/collectors/execution-runs.ts`. Update docs/reference.md where Recent is described.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: a settled parent with three settled sonic children renders one Recent row with the child count and no child rows",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: a failed child, or a child with an open question, still renders its own row",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "Test: a child brief starting \"Read-only survey: explain X\" gets the title \"explain X\"",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "docs/reference.md describes the fold",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T10:35:37.569Z",
+      "updated_at": "2026-11-27T10:35:37.569Z"
     }
   ]
 }

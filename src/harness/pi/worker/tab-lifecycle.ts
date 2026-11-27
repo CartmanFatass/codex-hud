@@ -359,6 +359,14 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
         /* An unreadable answer is not a decision. Retry until timeout. */
       }
       if (!answer && now < qDeadline) continue;
+      if (!answer && (reportStands || timeoutMs > 0)) {
+        const recorded = recordQuestionTimeout(taskDir, requestId, undefined, reportStands);
+        if (reportStands && !recorded) {
+          // Don't publish a clean settlement that still looks like it has an open question.
+          failed = true;
+          error ??= `could not record timeout for ${requestId}`;
+        }
+      }
       if (reportStands) {
         // The worker already declared its report. Retain the reply in Pi history, but don't
         // start a new turn (or apply a timeout default) for a decision the report didn't need.
@@ -366,13 +374,6 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
         if (!answer) continue;
       } else {
         pending.sentAt = now; // Never send twice, including while queued for a busy Pi.
-      }
-      if (!answer && timeoutMs > 0) {
-        try {
-          recordQuestionTimeout(taskDir, requestId);
-        } catch {
-          /* Best-effort archive note; never block delivery. */
-        }
       }
       const content = answer
         ? `ANSWER from the orchestrator (${requestId}${reportStands ? ', moot: report already published' : ''}):\n\n${answer}`
