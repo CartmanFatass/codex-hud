@@ -2,8 +2,9 @@
 //
 // A screen is a W × H grid of one-cell glyphs. Text is `{ink text}` markup (`ink*` bold, `ink/bg` a surface); writing
 // past the given room throws, so no row can silently overflow or be clipped. Geometry follows the herdr fork:
-// sidebar.rs (sidebar, rail), tabs.rs (tab bar), dock.rs (the pane keeps at least 41 columns beside the dock) and
-// mobile.rs (64 columns or fewer).
+// agent_sidebar.rs (two-line agent rows, tree, collapsed rail), tabs.rs (tab bar), dock.rs (the pane keeps at least
+// 41 columns beside the dock) and mobile.rs (64 columns or fewer). The Execution tab copies the rows the panel draws
+// today (src/render/execution-view.ts, execution-metro.ts) for the same synthetic run.
 const RE = /\{([a-z0-9]+\*?(?:\/[a-z]+)?) ([^}]*)\}/g;
 function parse(markup) {
   const out = [];
@@ -43,16 +44,33 @@ function screen(w, h) {
 
 // ------------------------------------------------------------------------------------------- shared vocabulary
 // A state is a shape first; the ink repeats it. Role glyphs stay neutral, so colour only ever means state.
+// herdr's agent states (left side):
 const STATE_INK = { '◐': 'working', '×': 'blocked*', '✓': 'done', '○': 'idle' };
 const st = (glyph) => `{${STATE_INK[glyph]} ${glyph}}`;
+// HUD's step states (right rail, narrow header). Only what waits for the owner is filled.
+const STEP_INK = { '✓': 'done', '◐': 'working', '×': 'blocked*', '?': 'chip*', '○': 'o1' };
+const step = (glyph) => `{${STEP_INK[glyph]} ${glyph}}`;
+/** Most urgent first: the order of the project blocks, and the shape a folded line or count shows. */
+const URGENCY = ['?', '×', '◐', '○', '✓'];
+const worst = (states) => URGENCY.find((s) => states.includes(s));
+const stateOf = (run) => worst(run.waves.flat().map((n) => n.s));
 const rule = (n, ch = '─', ink = 'dim') => `{${ink} ${ch.repeat(n)}}`;
+const cut = (text, n) => (text.length > n ? `${text.slice(0, n - 1)}…` : text);
+
+// ------------------------------------------------------------------------------------------- synthetic scenarios
+// A run is its project and its graph as waves, top to bottom; the steps of one wave run in parallel.
+const ticket = (s, id) => ({ s, id });
+const named = (s, word, short = word) => ({ s, word, short });
+const queue = (project, ...waves) => ({ project, waves: [...waves, [named('○', 'review', 'rev')], [named('○', 'accept', 'acc')]] });
+const single = (project, s, word) => ({ project, waves: [[named(s, word)]] });
 
 export const calm = {
   requests: 0,
-  spaces: [['harbor-api', '✓', 'main ↑1'], ['lantern-web', '○']],
+  runs: [],
+  spaces: [['harbor-api', '✓', 'main ↑1'], ['lantern-web', '✓']],
   main: '○',
-  workers: [['⚒', 'ui-slice', '✓'], ['⚖', 'gate-check', '✓']],
-  folded: ['lantern-web', ['○', '○']],
+  workers: [['⚒', 'dock-ux/03', '✓'], ['⚖', 'dock-ux/review', '✓']],
+  folded: ['lantern-web', ['✓', '○']],
   pane: [
     '{o1 >} check the dock after the merge',
     '',
@@ -61,28 +79,63 @@ export const calm = {
   ],
   bar: ' {s harbor-api} {o1 main · ctx 18%}',
 };
+export const running = {
+  requests: 0,
+  runs: [queue('harbor-api', [ticket('✓', '01'), ticket('◐', '02'), ticket('◐', '03')]), single('lantern-web', '◐', 'audit')],
+  spaces: [['harbor-api', '◐', 'main ↑1'], ['lantern-web', '◐']],
+  main: '○',
+  workers: [['⚒', 'dock-ux/02', '◐'], ['⚒', 'dock-ux/03', '◐']],
+  folded: ['lantern-web', ['◐']],
+  pane: [
+    '{o1 >} run the dock-ux queue',
+    '',
+    '{acc ●} Queue dock-ux is running: 3 tickets.',
+    '{acc ●} 01 landed. 02 and 03 are working.',
+  ],
+  bar: ' {s harbor-api} {o1 main · ctx 31%}',
+};
 export const attention = {
   requests: 1,
-  spaces: [['harbor-api', '×', 'main ↑1'], ['lantern-web', '✓']],
+  runs: [queue('harbor-api', [ticket('✓', '01'), ticket('×', '02'), ticket('?', '03')]), single('lantern-web', '◐', 'audit')],
+  spaces: [['harbor-api', '×', 'main ↑1'], ['lantern-web', '◐']],
   main: '○',
-  workers: [['⚒', 'ui-slice', '◐'], ['⚖', 'gate-check', '×']],
-  folded: ['lantern-web', ['✓', '○']],
+  workers: [['⚒', 'dock-ux/01', '✓'], ['⚒', 'dock-ux/03', '×']],
+  folded: ['lantern-web', ['◐']],
   pane: [
-    '{o1 >} make both sides behave the same',
+    '{o1 >} how is the queue doing?',
     '',
-    '{acc ●} Read dock.rs and sidebar.rs.',
-    '{acc ●} Push leaves the harness uncovered;',
-    '  narrow screens open the dock zoomed.',
-    '{acc ●} Asked you which default to keep.',
-    '  Work waits for your answer.',
+    '{acc ●} 01 landed. 02 failed at the gate.',
+    '{acc ●} 03 asks which dock default to keep.',
+    '  The question is waiting for you.',
   ],
   bar: ' {s harbor-api} {o1 main · ctx 42% ·} {pa ?1}',
 };
-// herdr's order for the state a folded group or a workspace shows.
-const strongest = (states) => ['×', '✓', '◐', '○'].find((s) => states.includes(s));
+/** Rail close-ups: a graph taller than the rail, and more projects than a short window holds. */
+export const tall = {
+  requests: 1,
+  runs: [
+    queue('harbor-api', [ticket('✓', '01')], [ticket('✓', '02')], [ticket('✓', '03')], [ticket('✓', '04'), ticket('✓', '05'), ticket('✓', '06')],
+      [ticket('◐', '07'), ticket('×', '08'), ticket('○', '09'), ticket('○', '10'), ticket('○', '11')],
+      ...['12', '13', '14', '15', '16', '17', '18', '19'].map((id) => [ticket('○', id)])),
+    single('lantern-web', '◐', 'audit'),
+  ],
+};
+export const crowded = {
+  requests: 1,
+  runs: [
+    attention.runs[0],
+    single('lantern-web', '◐', 'audit'),
+    queue('orchard', [ticket('◐', '04')]),
+    queue('tide-lab', [ticket('◐', '02')]),
+    single('kiln', '◐', 'build'),
+  ],
+};
 
 // ------------------------------------------------------------------------------------------- herdr: left side
 export const SIDEBAR = 22, RAIL = 4;
+// herdr's order for the state a folded group shows, and the ink it gives that group's chevron and count.
+const strongest = (states) => ['×', '✓', '◐', '○'].find((s) => states.includes(s));
+const foldedInk = (states) => `${STATE_INK[strongest(states)].replace('*', '')}*`;
 
 function sidebar(scr, s) {
   const inner = SIDEBAR - 1, H = scr.h;
@@ -98,23 +151,25 @@ function sidebar(scr, s) {
   scr.put(0, 6, rule(inner));
   scr.put(0, 7, '{o0*  agents}');
   scr.right(inner, 7, '{o0* grouped}');
-  // The tree: identity before the name, state in one straight column (19), counts just left of it (17).
-  const STATE = 19, COUNT = 18;
-  const header = (y, prefix, mark, name, n, state, bold) => {
-    scr.put(0, y, `{o0 ${prefix}${mark}} {${bold ? 't*' : 's'} ${name}}`, COUNT - 2);
-    scr.right(COUNT, y, `{o0 ${n}}`);
-    if (state) scr.put(STATE, y, st(state));
+  // herdr's tree and its two-line rows: state icon and workspace, then the agent name from column 4. The one change
+  // is the role glyph glued after the state shape; a main session has no role and keeps herdr's row as it is.
+  const header = (y, prefix, mark, name, n, bold, ink = 'o0') => {
+    scr.put(0, y, `{o0 ${prefix}}{${ink} ${mark}} {${bold ? 't*' : 's'} ${name}}`, inner - 3);
+    scr.right(inner, y, `{${ink} ${n}}`);
   };
-  const agent = (y, prefix, role, name, state, ink = 's') => {
-    scr.put(0, y, `{o0 ${prefix}}{s* ${role}} {${ink} ${name}}`, STATE - 1);
-    scr.put(STATE, y, st(state));
+  const agent = (y, [first, second], state, role, space, name, ink = 's') => {
+    scr.put(0, y, `{o0 ${first}}${st(state)}${role ? `{s* ${role}}` : ''} {${ink} ${space}}`, inner);
+    scr.put(0, y + 1, `{o0 ${second}}{o1 ${name}}`, inner);
   };
-  header(9, '', '▾', 'harbor-api', 3, '', true);
-  scr.fill(0, 10, inner, 'row');
-  agent(10, '├ ', 'c', 'claude · main', s.main, 't*');
-  header(11, '└─', '▾', 'council', 2, '', false);
-  s.workers.forEach(([role, name, state], i) => agent(12 + i, i === s.workers.length - 1 ? '  └ ' : '  ├ ', role, name, state));
-  header(14, '', '▸', s.folded[0], s.folded[1].length, strongest(s.folded[1]), true);
+  header(9, '', '▾', a[0], 3, true);
+  scr.fill(0, 10, inner, 'row', 2);
+  agent(10, ['├ ', '│   '], s.main, '', a[0], 'claude', 't*');
+  header(12, '└─', '▾', 'dock-ux', s.workers.length, false);
+  s.workers.forEach(([role, name, state], i) => {
+    const last = i === s.workers.length - 1;
+    agent(13 + i * 2, last ? ['  └ ', '    '] : ['  ├ ', '  │ '], state, role, a[0], name);
+  });
+  header(17, '', '▸', s.folded[0], s.folded[1].length, true, foldedInk(s.folded[1]));
   scr.put(inner - 1, H - 1, '{o1 «}');
 }
 
@@ -124,32 +179,139 @@ function rail(scr, s) {
   scr.fill(0, 0, inner, 'row');
   s.spaces.forEach(([, state], i) => scr.put(0, i, `{${i ? 'o0' : 't'} ${i + 1}} ${st(state)}`, inner));
   scr.put(0, divider, rule(inner));
-  // Same two columns as the workspaces above: who on the left, state on the right.
   const rows = [
-    ['c', s.main],
+    ` ${st(s.main)}`,
     rule(inner, '┈'),
-    ...s.workers.map(([role, , state]) => [role, state]),
+    ...s.workers.map(([role, , state]) => ` ${st(state)}{s* ${role}}`),
     rule(inner),
-    ['▸', strongest(s.folded[1])],
+    `{${foldedInk(s.folded[1])} ▸} ${st(strongest(s.folded[1]))}`,
   ];
   rows.forEach((row, i) => {
-    const y = divider + 1 + i;
-    if (i === 0) scr.fill(0, y, inner, 'row');
-    scr.put(0, y, typeof row === 'string' ? row : `{${row[0] === '▸' ? 'o0' : 's*'} ${row[0]}} ${st(row[1])}`, inner);
+    if (i === 0) scr.fill(0, divider + 1, inner, 'row');
+    scr.put(0, divider + 1 + i, row, inner);
   });
   scr.put(1, H - 1, '{o1 »}');
 }
 
+// ------------------------------------------------------------------------------------------- HUD: the right rail
+/** Content widths the owner picks from; one more column is the divider that carries the `«` toggle. */
+export const WIDTHS = [8, 12];
+/** Where parallel steps sit. Rail 12 has room for a two-digit number behind each. */
+const LANES = { 8: [1, 3, 5], 12: [1, 5, 9] };
+
+/** The graph's rows-to-be: the landed prefix and the waiting tickets may each fold into one `+N` row. */
+function folded(waves, { done = false, queued = false } = {}) {
+  const items = waves.map((nodes) => ({ nodes }));
+  const fold = (from, to, s) => {
+    const n = items.slice(from, to).reduce((sum, item) => sum + item.nodes.length, 0);
+    if (to - from > 0 && n > 1) items.splice(from, to - from, { fold: s, n });
+  };
+  const all = (item, s) => item?.nodes?.every((node) => node.s === s && !node.word);
+  if (done) {
+    let to = 0;
+    while (all(items[to], '✓')) to++;
+    fold(0, to, '✓');
+  }
+  if (queued) {
+    const from = items.findIndex((item) => all(item, '○'));
+    let to = from;
+    while (from >= 0 && all(items[to], '○')) to++;
+    if (from >= 0) fold(from, to, '○');
+  }
+  return items;
+}
+
+/** At most three side by side: the two most urgent keep a lane, the rest share a counted one. */
+function lanes(nodes) {
+  if (nodes.length <= 3) return nodes;
+  const ranked = [...nodes].sort((a, b) => URGENCY.indexOf(a.s) - URGENCY.indexOf(b.s));
+  const kept = nodes.filter((n) => ranked.slice(0, 2).includes(n));
+  const rest = ranked.slice(2);
+  return [...kept, { s: worst(rest.map((n) => n.s)), more: rest.length }];
+}
+
+/** The graph, top to bottom, as rows of `[column, markup]`. Solid lines are travelled, dashed ones are ahead. */
+function graph(items, width) {
+  const X = LANES[width], wide = width > 8, rows = [];
+  const landed = (item) => (item.fold ? item.fold === '✓' : item.nodes.every((n) => n.s === '✓'));
+  const joint = (count, first, mid, last, solid) => {
+    let text = first;
+    for (let i = 1; i < count; i++) text += (solid ? '─' : '╌').repeat(X[i] - X[i - 1] - 1) + (i === count - 1 ? last : mid);
+    return [[X[0], `{${solid ? 'o1' : 'o0'} ${text}}`]];
+  };
+  items.forEach((item, i) => {
+    if (item.fold) {
+      const word = wide ? (item.fold === '✓' ? ' landed' : ' queued') : '';
+      rows.push([[1, `${step(item.fold)} {o1 +${item.n}${word}}`]]);
+    } else if (item.nodes.length === 1) {
+      const n = item.nodes[0];
+      const text = n.word ? ` ${wide ? n.word : n.short}` : `${wide ? '' : ' '}${n.id}`;
+      rows.push([[1, `${step(n.s)}{s ${text}}`]]);
+    } else {
+      const shown = lanes(item.nodes);
+      rows.push(joint(shown.length, i ? '├' : '╭', '┬', '╮', !i || landed(items[i - 1])));
+      rows.push(shown.map((n, lane) => [X[lane], `${step(n.s)}${n.more ? `{o1 +${n.more}}` : wide ? `{s ${n.id}}` : ''}`]));
+      rows.push(joint(shown.length, i < items.length - 1 ? '├' : '╰', '┴', '╯', landed(item)));
+    }
+  });
+  return rows;
+}
+
+/**
+ * Fits the project blocks into `room` rows, in this order: fold landed steps, fold waiting tickets, shrink projects
+ * to one line from the least urgent up, then count the ones left out. The most urgent graph gives up its shape last.
+ * Nothing scrolls.
+ */
+function plan(runs, room, width) {
+  const blocks = runs.map((run) => ({ run, done: false, queued: false, line: false }))
+    .sort((a, b) => URGENCY.indexOf(stateOf(a.run)) - URGENCY.indexOf(stateOf(b.run)));
+  const hidden = [];
+  const rows = (block) => graph(folded(block.run.waves, block), width);
+  const gap = (i) => i > 0 && !(blocks[i].line && blocks[i - 1].line);
+  const height = () => blocks.reduce((n, b, i) => n + (b.line ? 1 : 1 + rows(b).length) + (gap(i) ? 1 : 0), hidden.length ? 1 : 0);
+  for (const key of ['done', 'queued']) {
+    for (const block of [...blocks].sort((a, b) => rows(b).length - rows(a).length)) if (height() > room) block[key] = true;
+  }
+  for (let i = blocks.length - 1; i > 0 && height() > room; i--) blocks[i].line = true;
+  while (blocks.length > 1 && height() > room) hidden.unshift(blocks.pop());
+  if (height() > room) blocks[0].line = true;
+  return { blocks, hidden, rows, gap };
+}
+
+/** The rail from row 1 down; `x` is its divider column. */
+function rightRail(scr, x, s, width) {
+  for (let y = 1; y < scr.h; y++) scr.put(x, y, y === 1 ? '{o1 «}' : '{dim │}');
+  let y = 1;
+  const put = (col, markup) => scr.put(x + 1 + col, y, markup, width - col);
+  const line = (col, markup) => { put(col, markup); y++; };
+  // Row 1 belongs to the toggle and the owner requests, so no project name ever sits beside the `«`.
+  if (s.requests) {
+    line(1, `{chip* ?${s.requests}}${width > 8 ? '{t  for you}' : ''}`);
+    line(0, rule(width, '┈'));
+  } else y++;
+  const { blocks, hidden, rows, gap } = plan(s.runs, scr.h - y, width);
+  blocks.forEach((block, i) => {
+    if (gap(i)) line(0, rule(width, '┈'));
+    if (block.line) return line(1, `${step(stateOf(block.run))} {t* ${cut(block.run.project, width - 3)}}`);
+    line(1, `{t* ${cut(block.run.project, width - 1)}}`);
+    for (const row of rows(block)) {
+      for (const [col, markup] of row) put(col, markup);
+      y++;
+    }
+  });
+  if (hidden.length) line(1, `{t +${hidden.length}${width > 8 ? ' more' : ''}} ${step(worst(hidden.map((b) => stateOf(b.run))))}`);
+}
+
 // ------------------------------------------------------------------------------------------- herdr: tab bar and handle
 /** Handle A: a dim `«`; an amber `?N` chip joins it only while the owner is asked something. `«` never moves. */
-export const handle = (requests) => (requests ? `{chip*  ?${requests} }{o1  « }` : '{o0  « }');
+const handle = (requests) => (requests ? `{chip*  ?${requests} }{o1  « }` : '{o0  « }');
 
-function tabBar(scr, x, s, collapsed) {
+function tabBar(scr, x, s, withHandle) {
   scr.put(x, 0, '{tabon*/tabon   claude  }');
   scr.put(x + 11, 0, '{o1/tab   tests  }');
   scr.put(x + 21, 0, '{o1  + }');
   let end = scr.w;
-  if (collapsed) {
+  if (withHandle) {
     const mark = handle(s.requests);
     scr.right(end, 0, mark);
     end -= len(mark) + 1;
@@ -165,78 +327,90 @@ function pane(scr, x, y, width, height, s) {
   scr.put(x, y + height - 1, s.bar, width);
 }
 
-// ------------------------------------------------------------------------------------------- the HUD panel (Home excerpt)
+// ------------------------------------------------------------------------------------------- the HUD panel (Execution)
 const lr = (left, right, width) => {
   const gap = width - len(left) - len(right);
   if (gap < 1) throw new Error(`no room for ${left} | ${right} in ${width}`);
   return `${left}${' '.repeat(gap)}${right}`;
 };
-const section = (left, right, width) => `${left} ${rule(width - len(left) - len(right) - 2, '─', 'pf')} ${right}`;
 
-/** The panel's tab row: badges stay only while all four labels fit (work-view.ts). */
-function tabs(width, requests, jobs) {
-  const row = (counts) => {
-    const home = counts && requests ? `{pa/ptitle  ?${requests}}` : '';
-    const live = counts && jobs ? `{pb ·${jobs}}` : '';
-    return `{pt*/ptitle  Home}${home}{pt/ptitle  }{pm  Project }{pm  Execution}${live}{pm  }{pm  Control }`;
-  };
-  return len(row(true)) <= width ? row(true) : row(false);
-}
-
-function panel(width, height, s, { selected = false } = {}) {
-  const asked = s.requests > 0;
-  const request = asked ? [
-    { m: lr('{pa ?} {pt harbor-api} {pm ›} {pt dock-ux}', '{pa work waits} {pm 2m}', width), bg: selected ? 'psel' : '' },
-    { m: '  {pt Make push the default dock mode?}', bg: selected ? 'psel' : '' },
-  ] : [];
+/** The Execution tab at 40 columns for the `attention` run, its cursor on step 02: the station just clicked. */
+function execution(width) {
+  const section = (title, n) => `{pt ${title}} ${rule(width - title.length - String(n).length - 2, '─', 'pf')} {pm ${n}}`;
+  const card = (text) => `{pf │} ${text}${' '.repeat(width - 3 - len(text))}{pf │}`;
   const rows = [
-    { m: tabs(width, s.requests, asked ? 3 : 0) },
-    ...request,
-    ...[
-      section('{pt Active today}', '{pm 2}', width),
-      asked ? section('{pa ?} {pt harbor-api}', '{imp ⚒1} {rev ⚖1} {son ϟ1} {pm 2m}', width)
-        : section('{pm ○} {pm harbor-api}', '{pm idle} {pm 4m}', width),
-      '  {pb ▸} {pt dock-ux}  {pm Same chrome both sides}',
-      asked ? lr('  {pg ✓} {pt Dock keeps width on reload}', '{pm 1h}', width)
-        : lr('  {pg ✓} {pt Both sides toggle cold}', '{pm 4m}', width),
-      section('{pm ○} {pm lantern-web}', '{pm idle} {pm 1h}', width),
-      '  {pb ▸} {pt export-csv}  {pm Header and quoting}',
-      lr('{pt ▸ 3 other projects}', '{pm a expand}', width),
-    ].map((m) => ({ m })),
+    '{pm  Home }{pa ?1}{pm  }{pm  Project }{pt/ptitle  Execution·1 }{pm  Control }',
+    '',
+    '  {pm 0 running}   {pa 1} {pm waiting}   {pm 0 queued}',
+    '',
+    section('Workflow', 1),
+    lr('  {pb* ◉} {pm* Queue} {pt* dock-ux}', '{pm running 47m}', width),
+    '  {pt ●}{pm ─────╮}',
+    ' {pt/psel  }{pd*/psel ✗}{pf/psel ╌}{pf ╌╌╌╌}{pm ┼}{pf ╌}{pm ◇}{pf ╌╌╌╌╌╌╌}{pm ☆}',
+    '  {chip* ?}{pf ╌╌╌╌╌╯}',
+    lr('  {pd* ✗} {pt 02 Push dock}', '{pd ⚒ failed 6m}', width),
+    '  {chip* ?} {pm asking}  {pd* ✗} {pm failed}  {pm ◇◈◆ review}',
+    '  {pm ☆✪★ accept}',
+    '',
+    section('Workers', 1),
+    '{pf ┌─} {pa ?} {imp imp} {pm ·} {pt opus} {pf ──────────} {pa asking} {pm 14m} {pf ─┐}',
+    card('{pt dock-ux/03}'),
+    card('{pa ? Keep push as the default?}'),
+    '{pf └─} {pm from Claude a1b2c3d4} {pf ────} {pm j03aaaaa} {pf ─┘}',
   ];
-  while (rows.length < height - 1) rows.push({ m: '' });
-  rows.push({ m: lr('', '{pm ⏎ open  v jobs  q hide  ? help}', width) });
-  return rows;
-}
-
-function paintPanel(scr, x, y, width, height, s, options) {
-  panel(width, height, s, options).forEach(({ m, bg }, i) => {
-    if (bg) scr.fill(x, y + i, width, bg);
-    scr.put(x, y + i, m, width);
-  });
+  return [...rows, lr('', '{pm ⏎ details  ←→ station  q hide  ? help}', width)];
 }
 
 // ------------------------------------------------------------------------------------------- whole screens
-export const ROWS = 16;
-/** 100 columns. `left` is 'open' or 'rail'; `dock` is its inner width, 0 when collapsed. */
-export function desktop(s, { left, dock }) {
+export const ROWS = 20;
+/** 100 columns. `left` is 'open' or 'rail'; `dock` is its inner width, 0 when hidden; `rail` the right rail's. */
+export function desktop(s, { left = 'rail', dock = 0, rail: width = 8 } = {}) {
   const scr = screen(100, ROWS), x = left === 'open' ? SIDEBAR : RAIL;
-  const main = scr.w - x - (dock ? dock + 1 : 0);
+  const railed = !dock && s.runs.length > 0;
+  const side = dock ? dock + 1 : railed ? width + 1 : 0;
+  const main = scr.w - x - side;
   if (main < 41) throw new Error(`herdr keeps the pane at 41 columns or more, not ${main}`);
   (left === 'open' ? sidebar : rail)(scr, s);
-  tabBar(scr, x, s, !dock);
+  tabBar(scr, x, s, !dock && !railed);
   pane(scr, x, 1, main, ROWS - 1, s);
+  if (railed) rightRail(scr, scr.w - side, s, width);
   if (dock) {
-    const border = scr.w - dock - 1;
+    const border = scr.w - side;
     for (let y = 1; y < ROWS; y++) scr.put(border, y, y === 1 ? '{o1 »}' : '{dim │}');
-    paintPanel(scr, border + 1, 1, dock, ROWS - 1, s);
+    const rows = execution(dock);
+    if (rows.length !== ROWS - 1) throw new Error(`the panel is ${rows.length} rows, not ${ROWS - 1}`);
+    rows.forEach((markup, i) => scr.put(border + 1, 1 + i, markup, dock));
   }
   return scr;
 }
 
 export const NARROW = 60;
+/** One run on one row: order left to right, parallel steps in brackets, the rail's folds and `+N`. */
+function strip(run, folds) {
+  const nodes = (list) => lanes(list).map((n) => `${step(n.s)}${n.more ? `{o1 +${n.more}}` : ''}`).join('');
+  const parts = folded(run.waves, folds).map((item) => {
+    if (item.fold) return `${step(item.fold)}{o1 +${item.n}}`;
+    return item.nodes.length > 1 ? `{o1 [}${nodes(item.nodes)}{o1 ]}` : nodes(item.nodes);
+  });
+  return `{t* ${cut(run.project, 7)}} ${parts.join('{o0 ─}')}`;
+}
+
+/** The runs that fit `room` cells: folded first, then the least urgent counted. */
+function strips(runs, room) {
+  const ordered = [...runs].sort((a, b) => URGENCY.indexOf(stateOf(a)) - URGENCY.indexOf(stateOf(b)));
+  for (let shown = ordered.length; shown >= 0; shown--) {
+    const rest = ordered.slice(shown);
+    const more = rest.length ? `  {t +${rest.length}} ${step(worst(rest.map(stateOf)))}` : '';
+    for (const folds of [{}, { done: true }, { done: true, queued: true }]) {
+      const row = ordered.slice(0, shown).map((run) => strip(run, folds)).join('  ') + more;
+      if (len(row) <= room) return row;
+    }
+  }
+  throw new Error(`no room for the runs in ${room}`);
+}
+
 /** herdr's two-row mobile header; the handle sits where the tab bar's right end would be, left of `switch`. */
-function mobileHeader(scr, s, open) {
+function mobileHeader(scr, s) {
   const button = NARROW - 10;
   scr.fill(button, 0, 10, 'tab', 2);
   scr.put(button, 0, '{dim │}');
@@ -244,35 +418,48 @@ function mobileHeader(scr, s, open) {
   scr.put(button + 2, 1, '{t* switch}');
   const states = [s.main, ...s.workers.map((w) => w[2]), ...s.folded[1]];
   if (states.includes('×')) scr.put(NARROW - 1, 0, st('×'));
-  const mark = open ? '{o1  » }' : handle(s.requests);
+  const mark = handle(s.requests);
   scr.right(button - 1, 0, mark);
   const tab = '{o1 tab claude · 1/2 · 2 hidden}', tabX = button - 2 - len(mark) - len(tab);
   scr.put(0, 0, ` ${st(s.spaces[0][1])} {t* ${s.spaces[0][0]}}`, tabX - 1);
   scr.put(tabX, 0, tab);
-  const summary = [['×', 'blocked'], ['✓', 'done'], ['◐', 'working'], ['○', 'idle']]
+  const counts = [['×', 'blocked'], ['✓', 'done'], ['◐', 'working'], ['○', 'idle']]
     .map(([glyph, word]) => [glyph, word, states.filter((v) => v === glyph).length])
-    .filter(([, , n]) => n)
-    .map(([glyph, word, n], i) => `{${i ? 'o1' : STATE_INK[glyph]} ${glyph} ${n} ${word}}`);
-  scr.put(0, 1, ` ${summary.join('{o0  · }')}`, button - 1);
+    .filter(([, , n]) => n);
+  if (!s.runs.length) {
+    // No run: herdr's agent counts as they are today.
+    const words = counts.map(([glyph, word, n], i) => `{${i ? 'o1' : STATE_INK[glyph]} ${glyph} ${n} ${word}}`);
+    scr.put(0, 1, ` ${words.join('{o0  · }')}`, button - 1);
+    return;
+  }
+  // A run: the counts drop their words, and the running graphs take the rest of the row.
+  const short = ` ${counts.map(([glyph, , n]) => `{${STATE_INK[glyph]} ${glyph}}{o1 ${n}}`).join(' ')} {dim │} `;
+  scr.put(0, 1, `${short}${strips(s.runs, button - 1 - len(short))}`, button - 1);
 }
 
-/** 60 columns with the dock open: it is zoomed over the whole pane area, so there is no divider. */
+/** 60 columns, dock hidden: no sidebar, no tab bar and no rail. */
 export function narrow(s) {
   const scr = screen(NARROW, ROWS);
-  mobileHeader(scr, s, true);
-  paintPanel(scr, 0, 2, NARROW, ROWS - 2, s, { selected: s.requests > 0 });
+  mobileHeader(scr, s);
+  pane(scr, 0, 2, NARROW, ROWS - 2, s);
   return scr;
 }
 
-// ------------------------------------------------------------------------------------------- handle close-ups
-/** The right end of the tab bar, dock collapsed: 40 cells cut from the real 100-column screen. */
-export function tabBarEnd(s) {
-  const full = desktop(s, { left: 'rail', dock: 0 });
-  return { w: 40, h: 1, cells: [full.cells[0].slice(-40)] };
+// ------------------------------------------------------------------------------------------- close-ups
+const crop = (cells) => ({ w: cells[0].length, h: cells.length, cells });
+/** The right rail alone, divider included, as it sits under the tab bar of a window `rows` high. */
+export function railOnly(s, width, rows = ROWS) {
+  const scr = screen(width + 1, rows);
+  rightRail(scr, 0, s, width);
+  return crop(scr.cells.slice(1));
 }
-/** The narrow header with the dock collapsed. */
+/** The left side alone, cut from the real screen. */
+export const leftOnly = (s, left) => crop(desktop(s, { left }).cells.map((row) => row.slice(0, left === 'open' ? SIDEBAR : RAIL)));
+/** The right end of the tab bar, no run and dock hidden: 40 cells cut from the real screen. */
+export const tabBarEnd = (s) => crop([desktop(s).cells[0].slice(-40)]);
+/** The narrow header. */
 export function narrowTop(s) {
   const scr = screen(NARROW, 2);
-  mobileHeader(scr, s, false);
+  mobileHeader(scr, s);
   return scr;
 }
