@@ -425,6 +425,9 @@ export async function executeLand(home: string, own: LandFlow, cleanup: string[]
         const records = tracker === mainRoot ? entries : entries.map(entry => ({ ...entry, commit: trainTips?.get(entry.row) ?? landed }));
         await checkLandingRecords(tracker, home, records, target, c.gate.length, trackerFilters.get(tracker)!, at, { locked: true });
       }
+      // The judged head or report can change while waiting for the ticket locks.
+      const fenced = members.filter(row => row.approval);
+      if (fenced.length) await Promise.all(fenced.map(checkSource));
       publishing = true;
       for (const row of members) { row.publish_pending = landed; writeLand(home, row); }
       try {

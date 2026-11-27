@@ -1,6 +1,7 @@
 /** Ticket-queue workflow steps on the workflow driver. Job, review, lead and land receipts fence every effect. */
 import * as fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { readObjectives } from '../collectors/objectives.js';
 import { failedAttempt } from '../collectors/thin-jobs.js';
@@ -144,6 +145,9 @@ function judgeSettlement(root: string, item: TicketQueueItem, job: Job, sourceJo
   if (!sig) return { kind: 'worker', reason: 'settled without a declared report for this turn' };
   const report = readFileBounded(join(dir, jobFiles.report), 1024 * 1024);
   if (report.truncated) return { kind: 'worker', reason: 'report is too large to verify' };
+  // Triage must parse the bytes signed by this settlement, not a replacement report.
+  if (sig !== `${report.stat.mtimeMs}:${report.bytes.length}:${createHash('sha256').update(report.bytes).digest('hex')}`)
+    return { waitMs: ANSWER_RETRY_MS };
   const text = report.bytes.toString('utf8');
   const { lines: assumed, scopeAssumptions } = extractAssumedLines(text);
   const { blockers, tries } = extractReportNotes(text);
@@ -1088,7 +1092,7 @@ function tickTicketQueue(
   const deferAssumptions = q.handback_to !== 'main';
   let problem: TicketProblem | undefined, changed = false, recheck: number | undefined;
   const note = (p: TicketProblem) => { problem ??= p; };
-  const clean: { item: TicketQueueItem; source: Job; state: JobStatus['state']; retry?: string; approval?: LandApproval }[] = [];
+  const clean: { item: TicketQueueItem; source: Job; state: JobStatus['state']; retry?: string; approval: LandApproval }[] = [];
   let pendingQuestion: { item: TicketQueueItem; job: Job; question: string } | undefined;
   let pendingAmbiguity: { item: TicketQueueItem; job: Job; head: string; sig: string; detail: string } | undefined;
   let pendingAssumption: ReportLeadInput | undefined;
@@ -1198,9 +1202,10 @@ function tickTicketQueue(
       ]) || changed;
       if ('ok' in verdict) {
         const { trigger, sig, assumed, blockers, reportText } = verdict;
-        const fenced = blockers.length || trigger || (landEach && (q.unattended || item.approved_assumptions_head || land?.approval));
-        const head = verdict.head ?? (fenced ? verifiedSourceHead(sourceJob) : undefined);
-        if (fenced && !head) { flag('worker', 'Verified worker commit unavailable'); continue; }
+        // Clearance without a lead or owner decision still binds the automatic land to this evidence.
+        const needsHead = landEach || blockers.length || trigger;
+        const head = verdict.head ?? (needsHead ? verifiedSourceHead(sourceJob) : undefined);
+        if (needsHead && !head) { flag('worker', 'Verified worker commit unavailable'); continue; }
         if (blockers.length && head) {
           if (item.approved_assumptions_head !== head || item.approved_assumptions_sig !== sig) {
             if (q.handback_to === 'main' && !leadEnabled(q.root)) {
@@ -1237,10 +1242,9 @@ function tickTicketQueue(
           item.approved_report_sig = sig;
           changed = true;
         }
-        if (landEach) {
-          const approval = head ? { head, report_sig: sig, job: job.job } : undefined;
-          clean.push({ item, source: sourceJob, state: status.state, retry, approval });
-        } else { const at = new Date().toISOString(); item.landed = true; item.landed_at = at; item.changed_at = at; changed = true; }
+        if (landEach && head) {
+          clean.push({ item, source: sourceJob, state: status.state, retry, approval: { head, report_sig: sig, job: job.job } });
+        } else if (!landEach) { const at = new Date().toISOString(); item.landed = true; item.landed_at = at; item.changed_at = at; changed = true; }
       } else if ('waitMs' in verdict) {
         recheck = Math.min(recheck ?? verdict.waitMs, verdict.waitMs);
       } else {

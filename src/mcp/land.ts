@@ -94,7 +94,10 @@ export async function startLand(
   const source_sha = tree.head;
   if (approval && (source_sha !== approval.head || cachedReportSignature(join(home, 'jobs', approval.job)) !== approval.report_sig))
     throw Error(LAND_APPROVAL_CHANGED);
-  const approvalRepairs = prior?.error === LAND_APPROVAL_CHANGED ? (prior.approval_repairs ?? 0) + (prior.repairs?.length ?? 0) : 0;
+  const retriaged = prior?.error === LAND_APPROVAL_CHANGED ? prior : undefined;
+  // A queue retry continues the same repair rounds even though it needs a new land receipt.
+  const repairs = ticketQueue && approval ? retriaged?.repairs : undefined;
+  const approvalRepairs = (retriaged?.approval_repairs ?? 0) + (repairs ? 0 : retriaged?.repairs?.length ?? 0);
   const graph = loadGraph(fs.readFileSync(join(BUNDLED_ROOT, 'workflows/land.toml'), 'utf8'), 'toml', {
     roles: new Map(), bindings: { job: id }, landSource: id,
   });
@@ -105,7 +108,8 @@ export async function startLand(
     const f: LandFlow = { flow, job: id, pane, task, ...(ticketQueue && { ticket_queue: ticketQueue }),
       ...(autoLand && { auto_land: true as const }),
       ...(ticketQueue && ownerQueue?.unattended && { protected_spec: true, single: true }),
-      ...(approval && { approval }), ...(approvalRepairs && { approval_repairs: approvalRepairs }), wt, config: c, source_sha, pid, start,
+      ...(approval && { approval }), ...(repairs && { repairs }), ...(approvalRepairs && { approval_repairs: approvalRepairs }),
+      wt, config: c, source_sha, pid, start,
       state: loaded ? 'queued' : 'failed', step: loaded ? 'main-checkout lease' : 'load land helper', created_at: now, updated_at: now,
       workflow: { flow, pane: pane ?? '', ...(autoLand && { project_root: wt.main_root }), state: 'working', epoch: 0, streak: 0, settled: 0, failures: 0,
         steps: { land: { state: 'waiting' } }, notices: {} } };

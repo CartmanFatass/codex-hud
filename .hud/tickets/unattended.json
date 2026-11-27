@@ -732,7 +732,7 @@
     {
       "number": 18,
       "title": "Repair unattended/11: every automatic queue land is fenced to the judged head and report, including clean ones",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -746,22 +746,29 @@
         {
           "id": 1,
           "text": "Test: an ordinary-run item with a clean first report whose land repair report adds a Blockers line goes back to triage instead of publishing",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "Test: a land repair whose report stays clean still publishes after triage passes it",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Existing land-repair and manual hud_land tests unchanged",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T13:11:51.044Z",
+        "job": "jd80b609e2a77065c",
+        "flow": "fd80b609e2a77065c-2",
+        "replay_base": "9ee0d241bbf6e74a595d1bdad516d919194e3320",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T12:37:30.226Z",
-      "updated_at": "2026-11-27T12:37:30.226Z"
+      "updated_at": "2026-11-27T13:11:51.044Z"
     },
     {
       "number": 19,

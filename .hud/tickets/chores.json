@@ -1209,6 +1209,57 @@
       ],
       "created_at": "2026-11-27T12:17:08.264Z",
       "updated_at": "2026-11-27T12:57:30.086Z"
+    },
+    {
+      "number": 55,
+      "title": "Deliver flake refusals past the 200-job window",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/53"
+      ],
+      "what": "Review jbce97a18f5eb2838 #1: `flakeBlockEvents` (`src/workflows/events.ts`) only sees the 200 most recent job dirs, so a pane-less task client can miss a refusal, and it stats every job dir each tick. Record pending refusals in a bounded private source when persisted (`src/mcp/land-flakes.ts`) and read that; keep `.noticed`, recipient and land-flow rules. In `docs/reference.md`, make the no-`hud watch` handback sentence cover every refusal, not just `qa/`.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: refusal behind 200 newer job dirs: one notice next drain, none after, no land flow",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "Test: quiet drain lists no job dirs",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T13:07:36.037Z",
+      "updated_at": "2026-11-27T13:07:36.037Z"
+    },
+    {
+      "number": 56,
+      "title": "Fold graph helpers onto the owning node",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/52"
+      ],
+      "what": "Review jbce97a18f5eb2838 #2: a graph land node reuses its input worker's job ID (`src/collectors/execution-runs.ts` ~1227); the fold in `src/collectors/execution.ts` ~473 picks the last node per ID, so `build`'s helpers show on waiting `publish`. Prefer the owning (non-land) node. Drop the tautological `.length === 4` assert in `tests/unit/execution-runs.test.mjs` ~954.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Test: build->verify->review->accept->publish: build shows +1 sonic and opens the Inspector; waiting publish has none",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T13:07:36.037Z",
+      "updated_at": "2026-11-27T13:07:36.037Z"
     }
   ]
 }

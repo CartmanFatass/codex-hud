@@ -334,6 +334,54 @@ test('Execution collects a future same-feature dependency and keeps repair round
   assert.deepEqual(landed.repairs.map(r => [r.id, r.jobId]), [['sample/01↻', repairs[0]], ['sample/01↻2', repairs[1]]]);
 });
 
+for (const blocker of [true, false]) {
+  test(`ordinary ticket queue re-judges a land repair report ${blocker ? 'with a new blocker' : 'that stays clean'}`, { timeout: 45_000 }, async t => {
+    const f = await setupWorkflowProject(t, { count: 1 });
+    const config = '.hud/project.json', path = join(f.root, config);
+    const projectConfig = read(path);
+    // Exercise a report-only repair for the blocker case and a new commit for the clean case.
+    projectConfig.land.gate = [blocker ? 'test -f "$HUD_HOME/fixed.txt"' : 'test -f fixed.txt'];
+    writeFixtureFile(path, JSON.stringify(projectConfig));
+    f.git(f.root, 'commit', '-qm', 'Synthetic gate', '--', config);
+    const base = f.git(f.root, 'rev-parse', 'HEAD');
+    const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root });
+    const [first] = await f.jobs(flow, 1);
+    await f.settle(first, { report: 'Blockers: none\nRemoves: none\n' });
+    const firstHead = f.git(f.job(first).cwd, 'rev-parse', 'HEAD');
+    const firstSig = reportSignature(f.dir(first));
+    const item = () => f.flow(flow).tickets[0];
+    await until(() => item().land && f.flow(item().land).repairs?.[0]?.outcome === 'waiting for worker', t.signal);
+    const attempt = f.flow(item().land), repair = attempt.repairs[0].job;
+    const cwd = f.job(repair).cwd;
+    fs.writeFileSync(join(blocker ? f.home : cwd, 'fixed.txt'), 'Synthetic repair.\n');
+    if (!blocker) { f.git(cwd, 'add', 'fixed.txt'); f.git(cwd, 'commit', '-qm', 'Synthetic repair'); }
+    const head = f.git(cwd, 'rev-parse', 'HEAD');
+    await f.settleReport(repair, `Synthetic repair complete.\nBlockers: ${blocker ? 'Owner must choose the output format.' : 'none'}\nRemoves: none\n`);
+    const sig = reportSignature(f.dir(repair));
+    await until(() => f.flow(flow).active_lead?.kind === 'blocker' || item().landed, t.signal);
+
+    if (blocker) {
+      assert.equal(head, firstHead);
+      const lead = f.flow(flow).active_lead;
+      assert.equal(lead?.kind, 'blocker', 'the new blocker must go to triage before publication');
+      assert.deepEqual([lead.worker_job, lead.head, lead.report_sig], [repair, head, sig]);
+      assert.equal(item().land, attempt.flow);
+      assert.equal(f.git(f.root, 'rev-parse', 'HEAD'), base);
+    } else {
+      assert.notEqual(item().land, attempt.flow, 'the clean repair must land under a fresh judgement');
+      const landed = f.flow(item().land);
+      assert.equal(landed.state, 'completed');
+      assert.deepEqual(landed.approval, { head, report_sig: sig, job: repair });
+      assert.equal(f.git(f.root, 'show', 'base:fixed.txt'), 'Synthetic repair.');
+    }
+    assert.deepEqual(attempt.approval, { head: firstHead, report_sig: firstSig, job: first });
+    const oldLand = f.flow(attempt.flow);
+    assert.equal(oldLand.state, 'failed');
+    assert.equal(oldLand.source_sha, firstHead);
+    assert.equal(oldLand.repairs[0].outcome, 'settled; returned to approval triage');
+  });
+}
+
 test('ticket queue runs ready work and releases a queued ticket when another feature lands', { timeout: 60_000 }, async t => {
   const f = await project(t, { thirdBlocker: 'upstream/01', done: [2], upstream: ['ready-for-agent'] });
   const { flow, queued } = await f.start(1);
