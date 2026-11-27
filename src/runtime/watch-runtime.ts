@@ -20,8 +20,8 @@ import type { CouncilRun } from '../mcp/council-state.js';
 import { settleMainCouncil } from '../mcp/council-settle.js';
 import { wakeWorkflow } from '../workflows/wake.js';
 import { composedActive, isComposedId, type ComposedRun } from '../workflows/composed-state.js';
-import { directRecipient } from '../workflows/scope.js';
-import { noticeEvents, runDir } from '../workflows/store.js';
+import { directRecipient, jobNoticeOrigin } from '../workflows/scope.js';
+import { currentNoticeKey, noticeEvents, runDir } from '../workflows/store.js';
 import type { PrewalkRun } from '../mcp/prewalk-flow.js';
 import { workflowHeaders } from '../workflows/header-scan.js';
 import { batchActive, isBatchId, type Batch } from '../mcp/batch-state.js';
@@ -33,11 +33,9 @@ import { isGenericNoReportReason, lastTurnError, missingRunnerEvidence, missingR
 import { headlessDeadline, killSonicRoot, sonicExit } from '../mcp/sonic-process.js';
 import { piTurnUnfinished, settleStoppedPi } from '../mcp/pi-stop-settlement.js';
 import { getJobIndexCache, JOB_ID_RE } from '../roles/job-index-cache.js';
-import { claimPermissionNotice, observeWorkerPermission, permissionNotice, permissionNoticeable, permissionNoticeMarker, permissionStatus, permissionTarget, type PermissionEntry } from '../mcp/worker-permissions.js';
-import { jobCallerPane } from '../roles/job-pane.js';
+import { claimPermissionNotice, observeWorkerPermission, permissionNoticeable, permissionNoticeMarker, permissionStatus, permissionTarget, type PermissionEntry } from '../mcp/worker-permissions.js';
 import { notify as notifyPane, notifyOutcome, watching as paneWatching } from '../roles/notify.js';
-import { loadLivePanes, resolveRecipient, type LivePaneSnapshot } from '../roles/select-send.js';
-import { jobProjectRoot } from '../roles/selection-excerpts.js';
+import { noticeResolver, type NoticeOrigin } from '../roles/select-send.js';
 import { jobChangePublisher } from '../collectors/job-changes.js';
 import { createWorkSummaryPublisher } from '../collectors/work-summary-snapshot.js';
 import type { Job, JobSession, JobStatus, WorkerTreeSnapshot } from '../mcp/job-contracts.js';
@@ -58,7 +56,7 @@ import { JOB_RETENTION_MS, pruneJobLogs, pruneLandFlows, pruneProjectScratch } f
 import { pinnedQueueJobs } from '../unattended/state.js';
 import { pruneLegacyTrustBackups } from '../utils/trust-backups.js';
 import { readJsonBounded, writeJsonPrivate, writePrivateFile } from '../utils/atomic-fs.js';
-import { isDeliveryActive, isDeliveryClaimable, markDeliveryAccepted, markDeliverySending, markDeliveryUnknown, releaseDelivery } from '../utils/delivery-record.js';
+import { beginNotice, isDeliveryActive, isDeliveryClaimable, settleNotice, type DeliveryNotice } from '../utils/delivery-record.js';
 
 const bundled = BUNDLED_ROOT;
 
@@ -246,47 +244,39 @@ function enqueueNoticeDelivery(
   checks: Map<string, { controller: AbortController; promise: Promise<void> }>,
   retries: Map<string, { at: number; attempts: number }>,
   marker: string,
+  epoch: string | number,
   now: number,
   seenMarkers: Set<string>,
-  target: { originPane?: string; originMcp?: { pid: number; start: string }; projectRoot?: string | null },
-  getScanPanes: () => Promise<LivePaneSnapshot>,
-  claim: () => { line: string; marker: string } | null,
+  target: NoticeOrigin,
+  resolve: ReturnType<typeof noticeResolver>,
+  claim: () => DeliveryNotice | null,
 ): number {
   seenMarkers.add(marker);
-  if (checks.has(marker) || !isDeliveryClaimable(marker, now)) return Infinity;
+  if (checks.has(marker) || !isDeliveryClaimable(marker, now, epoch)) return Infinity;
   const retry = retries.get(marker);
   if (retry && retry.at > now) return retry.attempts > 0 ? retry.at : Infinity;
   const controller = new AbortController();
   let shouldSchedule = false;
   const promise = (async () => {
-    const { panes, workerPanes } = await getScanPanes();
+    const resolved = await resolve(target);
     if (controller.signal.aborted) return;
-    const resolved = resolveRecipient({ home, ...target, panes, workerPanes });
     if (resolved.kind !== 'pane' || resolved.watching) {
       retries.set(marker, { at: Date.now() + 2_000, attempts: 0 });
       return;
     }
     const claimed = claim();
-    if (!claimed || !markDeliverySending(claimed.marker)) return;
+    if (!claimed || !beginNotice(claimed)) return;
     shouldSchedule = true;
     try {
       const sent = await notifyPane(resolved.pane, claimed.line, home, { signal: controller.signal });
       const outcome = notifyOutcome(sent);
-      if (outcome === 'sent') {
-        markDeliveryAccepted(claimed.marker, sent.via ?? 'herdr-prompt');
-        retries.delete(marker);
-      } else if (outcome === 'refused') {
-        releaseDelivery(claimed.marker);
-        if (!controller.signal.aborted && herdrEndpoint()) {
-          const attempts = (retries.get(marker)?.attempts ?? 0) + 1;
-          retries.set(marker, { at: Date.now() + Math.min(30_000, 500 * 2 ** Math.min(attempts - 1, 6)), attempts });
-        }
-      } else {
-        markDeliveryUnknown(claimed.marker, sent.detail || sent.error?.message || 'indeterminate');
-        retries.delete(marker);
-      }
+      settleNotice(claimed, outcome, sent.via ?? 'herdr-prompt', sent.detail || sent.error?.message);
+      if (outcome === 'refused' && !controller.signal.aborted && herdrEndpoint()) {
+        const attempts = (retries.get(marker)?.attempts ?? 0) + 1;
+        retries.set(marker, { at: Date.now() + Math.min(30_000, 500 * 2 ** Math.min(attempts - 1, 6)), attempts });
+      } else retries.delete(marker);
     } catch (err) {
-      markDeliveryUnknown(claimed.marker, String(err));
+      settleNotice(claimed, 'indeterminate', 'herdr-prompt', String(err));
       retries.delete(marker);
     }
   })().finally(() => {
@@ -299,21 +289,21 @@ function enqueueNoticeDelivery(
 }
 function deliverFlowNotices(
   id: string,
-  run: { pane: string; origin_mcp?: { pid: number; start: string }; project_root?: string; root?: string; epoch?: number; notices?: Record<string, string> },
+  run: NoticeOrigin & { root?: string; epoch?: number; notices?: Record<string, string> },
   now: number,
   seenMarkers: Set<string>,
-  getScanPanes: () => Promise<LivePaneSnapshot>,
+  resolve: ReturnType<typeof noticeResolver>,
 ): number {
   let nextAt = Infinity;
   const endpoint = herdrEndpoint();
-  if (!endpoint || !fs.existsSync(endpoint) || !run.notices || (run.pane && directRecipient(run) && paneWatching(run.pane, home))) return nextAt;
+  if (!endpoint || !fs.existsSync(endpoint) || !run.notices) return nextAt;
   for (const [key, text] of Object.entries(run.notices)) {
-    if (!WAITING_FLOW_NOTICE.test(key)) continue;
+    if (!WAITING_FLOW_NOTICE.test(key) || !currentNoticeKey({ ...run, flow: id }, key)) continue;
     const marker = join(runDir(home, id), `${key}.noticed`);
     nextAt = Math.min(nextAt, enqueueNoticeDelivery(
-      flowNoticeChecks, flowNoticeRetries, marker, now, seenMarkers,
-      { originPane: run.pane, originMcp: run.origin_mcp, projectRoot: run.project_root ?? run.root },
-      getScanPanes, () => noticeEvents(home, { flow: id, epoch: run.epoch, notices: { [key]: text } })[0] ?? null,
+      flowNoticeChecks, flowNoticeRetries, marker, run.epoch ?? key, now, seenMarkers,
+      { ...run, project_root: run.project_root ?? run.root },
+      resolve, () => noticeEvents(home, { flow: id, epoch: run.epoch, notices: { [key]: text } })[0] ?? null,
     ));
   }
   return nextAt;
@@ -324,17 +314,12 @@ function deliverPermissionNotice(
   entry: PermissionEntry,
   now: number,
   seenMarkers: Set<string>,
-  getScanPanes: () => Promise<LivePaneSnapshot>,
+  resolve: ReturnType<typeof noticeResolver>,
 ): number {
   const endpoint = herdrEndpoint();
-  const origin = jobCallerPane(job);
-  if (!endpoint || !fs.existsSync(endpoint) || (origin && paneWatching(origin, home)) || !permissionNoticeable(entry)) return Infinity;
-  const marker = permissionNoticeMarker(dir, entry.id);
-  return enqueueNoticeDelivery(
-    permissionNoticeChecks, permissionNoticeRetries, marker, now, seenMarkers,
-    { originPane: origin, projectRoot: jobProjectRoot(job) },
-    getScanPanes, () => claimPermissionNotice(dir, entry) ? { line: permissionNotice(job.job, entry), marker } : null,
-  );
+  if (!endpoint || !fs.existsSync(endpoint) || !permissionNoticeable(entry)) return Infinity;
+  return enqueueNoticeDelivery(permissionNoticeChecks, permissionNoticeRetries, permissionNoticeMarker(dir, entry.id), entry.id, now,
+    seenMarkers, jobNoticeOrigin(home, job), resolve, () => claimPermissionNotice(dir, entry));
 }
 function checkPermission(dir: string, job: Job, status: Partial<JobStatus> | null, session: SessionEntry) {
   const controller = new AbortController();
@@ -916,8 +901,7 @@ function scan(retryWatch = false) {
   }
   const orphans = new Set<string>();
   const seenPermissionNoticeMarkers = new Set<string>();
-  let scanPanes: Promise<LivePaneSnapshot> | undefined;
-  const getScanPanes = () => (scanPanes ??= loadLivePanes(home, process.env));
+  const resolveNotice = noticeResolver(home);
   const watch = (dir: string, pid: number) => { nearest = Math.min(nearest, runners.watch(dir, pid)); };
   for (const id of listedIds) {
     const dir = join(jobs, id);
@@ -1019,7 +1003,7 @@ function scan(retryWatch = false) {
       if (job && !job.headless && !job.bro && !job.jev && !job.reaped_at && !paneExit &&
           ['working', 'waiting_orchestrator', 'blocked'].includes(status?.state ?? '')) {
         const activePerm = permissionStatus(dir, jobCache).active;
-        if (activePerm) nearest = Math.min(nearest, deliverPermissionNotice(dir, job, activePerm, nowMs, seenPermissionNoticeMarkers, getScanPanes));
+        if (activePerm) nearest = Math.min(nearest, deliverPermissionNotice(dir, job, activePerm, nowMs, seenPermissionNoticeMarkers, resolveNotice));
       }
       if (direct && directKey && directRoot && !job?.reaped_at && !['done', 'closed', 'failed', 'stopped'].includes(status?.state ?? '')) {
         nearest = Math.min(nearest, nextPiExitCheck);
@@ -1413,7 +1397,7 @@ function scan(retryWatch = false) {
         const run = header<ComposedRun>(file);
         if (run?.template !== 'composed') continue;
         if (run.state === 'paused' || run.state === 'working') {
-          nearest = Math.min(nearest, deliverFlowNotices(id, run, flowScanNow, seenFlowNoticeMarkers, getScanPanes));
+          nearest = Math.min(nearest, deliverFlowNotices(id, run, flowScanNow, seenFlowNoticeMarkers, resolveNotice));
         }
         if (!composedActive(run)) continue;
         wakeWorkflow(home, run, true);
@@ -1422,7 +1406,7 @@ function scan(retryWatch = false) {
         if (!q) continue;
         const taskMarker = q.state === 'paused' ? liveQueueTask(home, q, flowScanNow) : null;
         if (q.state === 'working' || (q.state === 'paused' && !taskMarker)) {
-          nearest = Math.min(nearest, deliverFlowNotices(id, q, flowScanNow, seenFlowNoticeMarkers, getScanPanes));
+          nearest = Math.min(nearest, deliverFlowNotices(id, q, flowScanNow, seenFlowNoticeMarkers, resolveNotice));
         } else if (taskMarker && q.pane && q.notices && directRecipient(q) && !paneWatching(q.pane, home) && hasUnclaimedWaitingNotice(id, q.notices)) {
           const endpoint = herdrEndpoint();
           if (endpoint && fs.existsSync(endpoint)) nearest = Math.min(nearest, taskMarker.expires);

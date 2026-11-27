@@ -875,8 +875,8 @@ for (const fails of [false, true]) test(`a composed hand-back push ${fails ? 're
   const calls = [];
   const delivery = panelDelivery(home, pane, f.root, () => false, async text => {
     calls.push(text);
-    return !fails || calls.length > 1;
-  }, taskNoticeSource(home, pane, f.root));
+    return { outcome: !fails || calls.length > 1 ? 'sent' : 'refused' };
+  }, () => taskNoticeSource(home, pane, f.root)());
   t.after(() => delivery.stop());
   const expected = fails ? [line, line] : [line];
   await until(() => calls.length >= expected.length, t.signal);
@@ -894,14 +894,14 @@ test('a quiet composed notice tick claims a marker released by another reader', 
   saveHeader(home, run);
   const [claim] = noticeEvents(home, run);
   const tick = taskNoticeSource(home, pane, f.root);
-  assert.deepEqual(tick(), [], 'prime the quiet cache while another reader holds the claim');
+  assert.deepEqual(await tick(), [], 'prime the quiet cache while another reader holds the claim');
   const stamp = fs.statSync(flows, { bigint: true });
   fs.unlinkSync(claim.marker);
   const unchanged = fs.statSync(flows, { bigint: true });
   assert.equal(unchanged.mtimeNs, stamp.mtimeNs);
   assert.equal(unchanged.ctimeNs, stamp.ctimeNs);
-  assert.deepEqual(tick(), [{ line, marker: claim.marker }]);
-  assert.deepEqual(tick(), []);
+  assert.deepEqual((await tick()).map(({ line, marker }) => ({ line, marker })), [{ line, marker: claim.marker }]);
+  assert.deepEqual(await tick(), []);
 });
 
 test('the default lead hand-back closes its decision session before selecting a branch', { timeout: 30_000 }, async t => {

@@ -21,8 +21,10 @@ import { setLanguage } from '../../dist/render/i18n.js';
 import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js';
 import { machineWorkForms } from '../../dist/render/work-summary.js';
 import { procStat } from '../../dist/utils/proc.js';
+import { beginNotice, readDeliveryRecord, settleNotice } from '../../dist/utils/delivery-record.js';
+import { noticeResolver } from '../../dist/roles/select-send.js';
 import { taskNoticeSource, workflowEvents } from '../../dist/workflows/events.js';
-import { runNoticeRecipient, runVisible } from '../../dist/workflows/scope.js';
+import { runVisible } from '../../dist/workflows/scope.js';
 import { fixture as watchFixture, until } from '../helpers/job-retention-fixture.mjs';
 import { stopChild } from '../helpers/process-cleanup.mjs';
 import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
@@ -192,15 +194,17 @@ test('taskNoticeSource and panelDelivery retry a failed push without touching fl
   const unatt = seedPausedRun(f.home, root, {
     flow: 'q00000000000000b1', kind: 'blocker', reason: 'unattended blocker pause', unattended: true, pane: '',
   });
+  const herdr = await syntheticPromptHerdr(t, dirname(f.home));
+  const resolveNotice = noticeResolver(f.home, { ...process.env, HERDR_SOCKET_PATH: herdr.endpoint });
   const source = taskNoticeSource(f.home, MAIN_PANE, root);
   let calls = 0;
   const pushed = [];
   const delivery = panelDelivery(f.home, MAIN_PANE, root, () => false, async (msg) => {
     calls++;
-    if (calls === 1) return false;
+    if (calls === 1) return { outcome: 'refused' };
     pushed.push(msg);
-    return true;
-  }, source);
+    return { outcome: 'sent' };
+  }, () => source(origin => resolveNotice(origin, { pane: MAIN_PANE, cwd: root })));
   t.after(() => delivery.stop());
 
   // Tick 1 fails and releases the marker; tick 2 retries cleanly even though flows/ mtime did not change.
@@ -507,7 +511,7 @@ test('typed pause notice releases marker on expiry or cancellation for later del
   assert.equal(await run2, 0);
   assert.equal(fs.existsSync(cancelledMarker), false, 'cancelled pending typed pause notice must release its marker');
   // Consume so it doesn't interfere with subcase 3.
-  assert.equal(workflowEvents(f.home, MAIN_PANE, false, f.root).lines.length, 1);
+  assert.equal((await workflowEvents(f.home, MAIN_PANE, false, f.root)).lines.length, 1);
 
   // 3. Uncertain send on retry keeps the marker and is never repeated on later watcher passes.
   mode = 'draft_present';
@@ -532,9 +536,34 @@ test('typed pause notice releases marker on expiry or cancellation for later del
   await new Promise((r) => setTimeout(r, 220));
   assert.equal(attempts.length, attemptsBeforeUncertain + 2, 'uncertain send must never be repeated by later watcher passes');
   assert.equal(delivered.length, 1, 'uncertain pause notice must not be re-delivered');
-  assert.deepEqual(workflowEvents(f.home, MAIN_PANE, false, f.root).lines, []);
+  assert.deepEqual((await workflowEvents(f.home, MAIN_PANE, false, f.root)).lines, []);
   ac3.abort();
   assert.equal(await run3, 0);
+});
+
+test('the send gate rejects a buffered notice from the old epoch or without its claim', async t => {
+  const f = watchFixture(t);
+  const run = seedPausedRun(f.home, f.root, { flow: 'q0000000000000f00', kind: 'blocker', reason: 'synthetic pause' });
+  const file = join(f.home, 'flows', `${run.flow}.json`);
+  const save = () => writeFixtureFile(file, JSON.stringify(run));
+  const read = async () => (await workflowEvents(f.home, MAIN_PANE, false, f.root)).events;
+  run.notices = { 'handback-demo': 'Before resume' };
+  save();
+  const [old] = await read();
+  run.epoch++;
+  run.notices['handback-demo'] = 'After resume';
+  save();
+  assert.equal(beginNotice(old), false);
+  assert.equal(readDeliveryRecord(old.marker).state, 'abandoned');
+  const [current] = await read();
+  assert.equal(current.epoch, run.epoch);
+  assert.equal(current.marker, old.marker);
+  assert.equal(beginNotice(old), false, 'the current epoch claim does not authorize the old item');
+  fs.unlinkSync(current.marker);
+  assert.equal(beginNotice(current), false, 'a current source on its own does not authorize sending');
+  const [retry] = await read();
+  assert.equal(beginNotice(retry), true);
+  assert.equal(settleNotice(retry, 'sent', 'watch-stdout'), true);
 });
 
 test('with live origin pane a second project main does not claim its pause notice; with dead origin project fallback delivers', { timeout: 20_000 }, async (t) => {
@@ -564,20 +593,25 @@ test('with live origin pane a second project main does not claim its pause notic
 
   // Project-wide read/control visibility stays enabled for another main in the same project.
   assert.equal(runVisible(liveRun, OTHER_PANE, root), true);
-  assert.equal(runNoticeRecipient(liveRun, OTHER_PANE, root), false);
-  assert.equal(runNoticeRecipient(liveRun, MAIN_PANE, root), true);
+  const snapshot = async () => ({ panes: [{ pane_id: MAIN_PANE, agent: 'claude', cwd: root },
+    { pane_id: OTHER_PANE, agent: 'pi', cwd: root }], workerPanes: new Set() });
+  const resolver = noticeResolver(f.home, process.env, snapshot);
+  const read = origin => resolver(origin, { pane: OTHER_PANE, cwd: root });
+  const watchEvents = () => workflowEvents(f.home, OTHER_PANE, false, root, false, read);
+  assert.equal((await read(liveRun)).kind, 'none');
+  assert.equal((await resolver(liveRun, { pane: MAIN_PANE, cwd: root })).kind, 'pane');
 
   // Prime second main's taskNoticeSource and scan workflowEvents while origin is alive -> claims nothing.
   const otherTaskSource = taskNoticeSource(f.home, OTHER_PANE, root);
-  assert.deepEqual(otherTaskSource(), []);
-  assert.deepEqual(workflowEvents(f.home, OTHER_PANE, false, root).lines, []);
-  assert.deepEqual(workflowEvents(f.home, null, false, root).lines, []);
+  assert.deepEqual(await otherTaskSource(read), []);
+  assert.deepEqual((await watchEvents()).lines, []);
+  assert.deepEqual((await workflowEvents(f.home, null, false, root)).lines, []);
   for (const run of [liveRun, fallbackTaskRun, fallbackWatchRun]) {
     assert.equal(fs.existsSync(join(f.home, 'flows', run.flow, 'pause-0.noticed')), false, `other main must not claim ${run.flow}`);
   }
 
   // Origin pane claims its own pause notice (leave f2 and f3 unclaimed by simulating origin only claiming f1 via marker or direct scan).
-  const originClaimed = workflowEvents(f.home, MAIN_PANE, false, root);
+  const originClaimed = await workflowEvents(f.home, MAIN_PANE, false, root);
   assert.equal(originClaimed.lines.length, 3);
   assert.ok(originClaimed.lines.some((line) => line.includes(liveRun.flow)));
   // Release f2 and f3 markers to test fallback after origin dies (as if origin died before claiming them).
@@ -585,8 +619,8 @@ test('with live origin pane a second project main does not claim its pause notic
   fs.rmSync(join(f.home, 'flows', fallbackWatchRun.flow, 'pause-0.noticed'), { force: true });
 
   // While origin is still alive, second main still cannot claim f2 or f3.
-  assert.deepEqual(otherTaskSource(), []);
-  assert.deepEqual(workflowEvents(f.home, OTHER_PANE, false, root).lines, []);
+  assert.deepEqual(await otherTaskSource(read), []);
+  assert.deepEqual((await watchEvents()).lines, []);
 
   // Origin dies without touching flows/ mtime.
   const flowsDir = join(f.home, 'flows');
@@ -597,12 +631,12 @@ test('with live origin pane a second project main does not claim its pause notic
   assert.equal(afterStamp.mtimeNs, beforeStamp.mtimeNs);
 
   // Unrelated project main still does not claim.
-  assert.deepEqual(workflowEvents(f.home, OTHER_PANE, false, unrelated).lines, []);
+  assert.deepEqual((await workflowEvents(f.home, OTHER_PANE, false, unrelated)).lines, []);
   assert.equal(fs.existsSync(join(f.home, 'flows', fallbackTaskRun.flow, 'pause-0.noticed')), false);
 
   // Second main in the same project now claims via project fallback (even through already-primed taskNoticeSource).
   // Claim f2 via workflowEvents first after confirming f3 stays unclaimed until taskNoticeSource runs, or verify both!
-  const claimedByTaskSource = otherTaskSource();
+  const claimedByTaskSource = await otherTaskSource(read);
   assert.equal(claimedByTaskSource.length, 2);
   assert.ok(claimedByTaskSource.some((e) => e.line.includes(fallbackTaskRun.flow)));
   assert.ok(claimedByTaskSource.some((e) => e.line.includes(fallbackWatchRun.flow)));
@@ -611,10 +645,10 @@ test('with live origin pane a second project main does not claim its pause notic
 
   // Release f3 marker and verify workflowEvents fallback also delivers once.
   fs.rmSync(join(f.home, 'flows', fallbackWatchRun.flow, 'pause-0.noticed'), { force: true });
-  const claimedByEvents = workflowEvents(f.home, OTHER_PANE, false, root);
+  const claimedByEvents = await watchEvents();
   assert.equal(claimedByEvents.lines.length, 1);
   assert.match(claimedByEvents.lines[0], new RegExp(`${fallbackWatchRun.flow}.*dead origin fallback via workflowEvents`));
-  assert.deepEqual(workflowEvents(f.home, OTHER_PANE, false, root).lines, []);
+  assert.deepEqual((await watchEvents()).lines, []);
 });
 
 test('batch resume on a task run and task expiry fall back to bound-origin delivery while origin MCP stays alive', { timeout: 60_000 }, async (t) => {
@@ -654,8 +688,8 @@ test('batch resume on a task run and task expiry fall back to bound-origin deliv
 
   // While epoch 0 has a live task, fallback sources reserve pause-0 for tasks/get.
   const originSource = taskNoticeSource(f.home, pane, f.root);
-  assert.deepEqual(originSource(), []);
-  assert.deepEqual(workflowEvents(f.home, pane, false, f.root).lines, []);
+  assert.deepEqual(await originSource(), []);
+  assert.deepEqual((await workflowEvents(f.home, pane, false, f.root)).lines, []);
   const get0 = await rpc('tasks/get', { taskId: taskFlow });
   assert.equal(get0.status, 'completed');
   assert.match(get0.result.content[0].text, /hand-back at accept/);
@@ -686,7 +720,8 @@ test('batch resume on a task run and task expiry fall back to bound-origin deliv
   assert.ok(pause1.notices['pause-1']);
 
   // Origin MCP is still alive, yet epoch 1 has no live task -> bound-origin fallback delivers pause-1 (never suppressed).
-  await until(() => fs.existsSync(join(f.home, 'flows', taskFlow, 'pause-1.noticed')) || originSource().length > 0, 10_000);
+  await originSource();
+  await until(() => fs.existsSync(join(f.home, 'flows', taskFlow, 'pause-1.noticed')), 10_000);
   assert.equal(fs.existsSync(join(f.home, 'flows', taskFlow, 'pause-1.noticed')), true, 'pause-1 delivered via fallback');
 
   // 2. Task expiry while origin MCP stays alive: reserved before expiry, then watch-runtime + taskNoticeSource fall back at expiry.
@@ -711,8 +746,8 @@ test('batch resume on a task run and task expiry fall back to bound-origin deliv
   claimQueueTask(wf.home, sourceExpired, soon);
   // Prime taskNoticeSource before expiry so we verify expiry works without changing flows/ mtime.
   const primedOrigin = taskNoticeSource(wf.home, MAIN_PANE, root);
-  assert.deepEqual(primedOrigin(), []);
-  assert.deepEqual(workflowEvents(wf.home, MAIN_PANE, false, root).lines, []);
+  assert.deepEqual(await primedOrigin(), []);
+  assert.deepEqual((await workflowEvents(wf.home, MAIN_PANE, false, root)).lines, []);
 
   // Start watch-runtime before expiry: must not type before expiry, then wakes at expiry and delivers g1 once.
   const preload = `process.env.HERDR_SOCKET_PATH = ${JSON.stringify(herdr.endpoint)};`;
@@ -729,8 +764,8 @@ test('batch resume on a task run and task expiry fall back to bound-origin deliv
 
   // After g2 expires: primed taskNoticeSource claims g2 (or watch delivers both); verify other pane still cannot claim while origin is live.
   await until(() => Date.now() > soon + 50, 2_000);
-  assert.deepEqual(workflowEvents(wf.home, OTHER_PANE, false, root).lines, [], 'second main must not steal while origin is live');
-  const fromSource = primedOrigin();
+  assert.deepEqual((await workflowEvents(wf.home, OTHER_PANE, false, root)).lines, [], 'second main must not steal while origin is live');
+  const fromSource = await primedOrigin();
   await until(() => herdr.delivered.length + fromSource.length >= 2, 8_000);
   const allTexts = [...herdr.delivered.map((d) => d.text), ...fromSource.map((e) => e.line)];
   assert.ok(allTexts.some((text) => text.includes(watchExpired.flow)), 'expired task g1 delivered to bound origin');

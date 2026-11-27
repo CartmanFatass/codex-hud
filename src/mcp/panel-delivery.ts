@@ -6,9 +6,8 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { panelActionLine, PANEL_ACTIONS_FILE } from '../collectors/panel-actions.js';
 import { liveTryLine, TRIES_FILE } from '../collectors/try-records.js';
-import type { NotifyOutcome } from '../roles/notify.js';
 import { writePrivateFile } from '../utils/atomic-fs.js';
-import { markDeliveryAccepted, markDeliverySending, markDeliveryUnknown, releaseDelivery, type DeliveryVia } from '../utils/delivery-record.js';
+import { beginNotice, releaseDelivery, settleNotice, type DeliveryNotice, type DeliveryOutcome, type DeliveryVia } from '../utils/delivery-record.js';
 
 const files = [TRIES_FILE, PANEL_ACTIONS_FILE] as const;
 const maxBytes = 256 * 1024;
@@ -17,10 +16,9 @@ const size = (file: string) => {
   return st?.isFile() ? st.size : 0;
 };
 
-type Notice = { line: string; marker: string };
-type PushResult = boolean | { outcome: NotifyOutcome; via?: DeliveryVia; reason?: string };
+type PushResult = { outcome: DeliveryOutcome; via?: DeliveryVia; reason?: string };
 export function panelDelivery(home: string, pane: string | null, cwd: string, owns: (id: string) => boolean,
-  push: (text: string) => Promise<PushResult>, extraEvents?: () => Notice[] | Promise<Notice[]>) {
+  push: (text: string) => Promise<PushResult>, extraEvents?: (notify: boolean) => Promise<DeliveryNotice[]>) {
   const logs = files.map(name => join(home, name));
   const scope = createHash('sha256').update(JSON.stringify([pane, cwd, process.env.CLAUDE_CODE_SESSION_ID])).digest('hex');
   const dir = join(home, 'panel-cursors', scope), cursor = join(dir, 'offsets.json');
@@ -35,10 +33,10 @@ export function panelDelivery(home: string, pane: string | null, cwd: string, ow
   let sending: Promise<string[]> | undefined;
   async function drain(notify: boolean): Promise<string[]> {
     let lock: number | undefined;
-    let extra: Notice[] = [];
+    let extra: DeliveryNotice[] = [];
     try {
       if (sending || stopped) return [];
-      extra = await extraEvents?.() ?? [];
+      extra = await extraEvents?.(notify) ?? [];
       const hasLogs = logs.some((file, i) => size(file) !== offsets[i]);
       if (!hasLogs && !extra.length) return [];
       // Reconnects (and hot reloads) can overlap. Lock the stable directory, not the replaced cursor.
@@ -68,22 +66,15 @@ export function panelDelivery(home: string, pane: string | null, cwd: string, ow
           }
         } finally { fs.closeSync(fd); }
       }
+      if (stopped) return [];
+      extra = extra.filter(beginNotice);
       lines.push(...extra.map(e => e.line));
-      if (lines.length && notify) {
-        for (const { marker } of extra) markDeliverySending(marker);
-        const res = await push(lines.join('\n'));
-        const outcome: NotifyOutcome = typeof res === 'boolean' ? (res ? 'sent' : 'refused') : res.outcome;
-        if (outcome === 'refused') return [];
-        const via: DeliveryVia = typeof res === 'boolean' ? 'herdr-prompt' : (res.via ?? 'herdr-prompt');
-        const reason = typeof res === 'boolean' ? 'indeterminate' : (res.reason ?? 'indeterminate');
-        for (const { marker } of extra) {
-          if (outcome === 'sent') markDeliveryAccepted(marker, via);
-          else markDeliveryUnknown(marker, reason);
-        }
-      } else if (extra.length) {
-        for (const { marker } of extra) markDeliveryAccepted(marker, 'mcp-changes');
-      }
-      extra = []; // Leave committed notice records in place, even if updating the log cursor fails.
+      const result: PushResult = notify && lines.length
+        ? await push(lines.join('\n')).catch(error => ({ outcome: 'indeterminate', reason: String(error) }))
+        : { outcome: 'sent', via: 'mcp-changes' };
+      for (const event of extra) settleNotice(event, result.outcome, result.via ?? 'herdr-prompt', result.reason);
+      extra = [];
+      if (result.outcome === 'refused') return [];
       if (after.some((at, i) => at !== offsets[i])) {
         if (pane) writePrivateFile(cursor, JSON.stringify(after));
         offsets = after;
@@ -91,7 +82,7 @@ export function panelDelivery(home: string, pane: string | null, cwd: string, ow
       return lines;
     } catch { return []; } // A failed read or push leaves the previous cursor for the next call/tick.
     finally {
-      for (const { marker } of extra) releaseDelivery(marker);
+      for (const event of extra) releaseDelivery(event);
       if (lock !== undefined) fs.closeSync(lock);
     }
   }

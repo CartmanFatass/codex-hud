@@ -1,13 +1,13 @@
 import { join } from 'node:path';
-import { notify, notifyOutcome, watching } from '../roles/notify.js';
-import { loadLivePanes, resolveRecipient } from '../roles/select-send.js';
-import { isDeliveryClaimable, markDeliveryAccepted, markDeliverySending, markDeliveryUnknown, releaseDelivery } from '../utils/delivery-record.js';
+import { notify, notifyOutcome } from '../roles/notify.js';
+import { noticeResolver } from '../roles/select-send.js';
+import { beginNotice, isDeliveryClaimable, settleNotice } from '../utils/delivery-record.js';
 import { waitUntilFs, type WatchTarget } from '../utils/fs-wait.js';
 import { procStat } from '../utils/proc.js';
 import { advance, pauseRun, type Run, type Tick } from './engine.js';
 import type { Graph, Step } from './graph.js';
-import { directRecipient, type RunScope } from './scope.js';
-import { driverLock, isNoticeKey, noticeEvents, runDir, runLock } from './store.js';
+import type { RunScope } from './scope.js';
+import { currentNoticeKey, driverLock, noticeEvents, runDir, runLock } from './store.js';
 
 type Plan = Pick<Graph, 'steps' | 'policy'>;
 export interface DriverProfile<S> {
@@ -55,24 +55,16 @@ export async function driveWorkflow<S>(home: string, id: string, profile: Driver
         if (!turn) return { done: true, value: undefined };
         const { run, active, effect, recheckMs } = turn;
         const hasClaimable = !profile.readerNotices && Object.keys(run.notices).some(key =>
-          isNoticeKey(key) && isDeliveryClaimable(join(runDir(home, run.flow), `${key}.noticed`)));
-        if (hasClaimable && !(run.pane && directRecipient(run) && watching(run.pane, home))) {
-          const { panes, workerPanes } = await loadLivePanes(home);
-          const resolved = resolveRecipient({
-            home, originPane: run.pane, originMcp: run.origin_mcp, projectRoot: run.project_root, panes, workerPanes,
-          });
+          currentNoticeKey(run, key) && isDeliveryClaimable(join(runDir(home, run.flow), `${key}.noticed`), undefined, run.epoch));
+        if (hasClaimable) {
+          const resolved = await noticeResolver(home)(run);
           if (resolved.kind === 'pane' && !resolved.watching) {
-            for (const { line, marker } of noticeEvents(home, run)) {
-              if (!markDeliverySending(marker)) continue;
+            for (const event of noticeEvents(home, run)) {
+              if (!beginNotice(event)) continue;
               try {
-                const sent = await notify(resolved.pane, line, home);
-                const outcome = notifyOutcome(sent);
-                if (outcome === 'sent') markDeliveryAccepted(marker, sent.via ?? 'herdr-prompt');
-                else if (outcome === 'refused') releaseDelivery(marker);
-                else markDeliveryUnknown(marker, sent.detail || sent.error?.message || 'indeterminate');
-              } catch (err) {
-                markDeliveryUnknown(marker, String(err));
-              }
+                const sent = await notify(resolved.pane, event.line, home);
+                settleNotice(event, notifyOutcome(sent), sent.via ?? 'herdr-prompt', sent.detail || sent.error?.message);
+              } catch (err) { settleNotice(event, 'indeterminate', 'herdr-prompt', String(err)); }
             }
           }
         }

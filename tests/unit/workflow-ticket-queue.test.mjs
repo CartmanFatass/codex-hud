@@ -17,7 +17,7 @@ import { initialMonitorState, renderMonitor } from '../../dist/render/monitor.js
 import { machineWorkForms } from '../../dist/render/work-summary.js';
 import { stripAnsi, visualLength } from '../../dist/render/colors.js';
 import { loadGraph } from '../../dist/workflows/graph.js';
-import { taskNoticeSource, workflowEvents } from '../../dist/workflows/events.js';
+import { noticeReader, permissionEvents, workflowEvents } from '../../dist/workflows/events.js';
 import { permissionStatus } from '../../dist/mcp/worker-permissions.js';
 import { pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { MAX_TICKET_BYTES, readJsonTicketFeature, serializeTicketFeature, ticketFeaturePath } from '../../dist/tickets/store.js';
@@ -189,6 +189,9 @@ test('ticket queue keeps going after origin MCP and pane exit; lead opens in pro
   assert.ok(!stranger.changes?.includes(line));
   assert.ok(!fs.existsSync(marker));
 
+  writeFixtureFile(join(f.env.HOME, 'pane-list.json'), JSON.stringify({ result: { panes: [
+    { pane_id: 'w4E:p8', agent: 'claude', cwd: f.root },
+  ] } }));
   const readMain = nextMain(f.root), firstRead = await readMain();
   assert.deepEqual(firstRead.landed, ['sample/01', 'sample/02']);
   assert.equal(firstRead.verdict, 'finish: Verified checks and review.');
@@ -281,12 +284,15 @@ for (const mode of ['ordinary', 'unattended']) {
     assert.deepEqual(keys(), []);
     if (u) {
       assert.equal(f.flow(flow).notices?.[`handback-${entry.id}`], undefined);
-      assert.deepEqual(workflowEvents(f.home, null, false, tmpdir()).lines, []);
-      const notices = taskNoticeSource(f.home, f.env.HERDR_PANE_ID, f.root)();
+      assert.deepEqual((await workflowEvents(f.home, null, false, tmpdir())).lines, []);
+      const pull = noticeReader(f.home, f.env.HERDR_PANE_ID, f.root, f.env, async () => ({
+        panes: [{ pane_id: f.env.HERDR_PANE_ID, agent: 'claude', cwd: f.root }], workerPanes: new Set(),
+      }));
+      const { events: notices } = await permissionEvents(f.home, pull);
       assert.equal(notices.length, 1);
       assert.ok(notices[0].line.includes(`Open pane ${entry.pane}`), notices[0].line);
       assert.doesNotMatch(notices[0].line, /hud_respond/);
-      assert.deepEqual(workflowEvents(f.home, f.env.HERDR_PANE_ID, false, f.root).lines, []);
+      assert.deepEqual((await permissionEvents(f.home, pull)).events, []);
     }
     stillWorking();
 
@@ -418,7 +424,10 @@ for (const mode of ['bound', 'paneless']) {
     assert.equal(landState().state, 'running');
     if (mode === 'paneless') {
       assert.equal(f.flow(flow).notices?.[`handback-${entry.id}`], undefined);
-      const delivered = taskNoticeSource(f.home, f.env.HERDR_PANE_ID, f.root)();
+      const pull = noticeReader(f.home, f.env.HERDR_PANE_ID, f.root, f.env, async () => ({
+        panes: [{ pane_id: f.env.HERDR_PANE_ID, agent: 'claude', cwd: f.root }], workerPanes: new Set(),
+      }));
+      const { events: delivered } = await permissionEvents(f.home, pull);
       assert.equal(delivered.length, 1);
       assert.ok(delivered[0].line.includes(repairId));
       assert.ok(delivered[0].line.includes(`Open pane ${entry.pane}`));
@@ -1367,10 +1376,15 @@ test('pane-less successor after dead origin still publishes permission hand-off 
   assert.equal(f.flow(flow).notices?.[`handback-${permId}`], undefined);
 
   // Project main (different pane in the same project) claims the permission hand-off once from job-level perm-<id>.noticed with approve/decline preserved.
-  const otherEvents = workflowEvents(f.home, 'w9:p9', false, f.root);
-  assert.ok(otherEvents.lines.some(line => line.includes(job2) && line.includes('hud_respond') && line.includes('"answer":"approve"')));
+  writeFixtureFile(join(f.env.HOME, 'pane-list.json'), JSON.stringify({ result: { panes: [
+    { pane_id: f.env.HERDR_PANE_ID, agent: 'claude', cwd: f.root }, // The pane remains; only the originating MCP exited.
+    { pane_id: 'w9:p9', agent: 'pi', cwd: f.root },
+  ] } }));
+  const pull = noticeReader(f.home, 'w9:p9', f.root, f.env);
+  const { events } = await permissionEvents(f.home, pull);
+  assert.ok(events.some(({ line }) => line.includes(job2) && line.includes('hud_respond') && line.includes('"answer":"approve"')));
   assert.ok(fs.existsSync(join(f.dir(job2), `${permId}.noticed`)));
-  assert.deepEqual(workflowEvents(f.home, 'w9:p9', false, f.root).lines, []);
+  assert.deepEqual((await permissionEvents(f.home, pull)).events, []);
 });
 
 test('rewritten report after settlement cannot wait forever in judgeSettlement or ticket queue', { timeout: 45_000 }, async t => {

@@ -298,7 +298,7 @@ function asLivePanes(raw: unknown): LivePane[] | null {
   if (!Array.isArray(raw)) return null;
   const panes: LivePane[] = [];
   for (const row of raw) {
-    if (!isRecord(row) || !herdrId(row.pane_id)) continue;
+    if (!isRecord(row) || !herdrId(row.pane_id)) return null;
     panes.push({
       pane_id: row.pane_id,
       tab_id: herdrId(row.tab_id) ? row.tab_id : undefined,
@@ -1015,71 +1015,32 @@ export async function loadLivePanes(home: string, env: NodeJS.ProcessEnv = proce
 const isMainAgentPane = (p: LivePane, workerPanes: ReadonlySet<string>) =>
   !!p.agent && MAIN_AGENTS.has(p.agent) && p.label !== 'hud panel' && !workerPanes.has(p.pane_id);
 
-export function isOriginPaneLive(
-  home: string,
-  originPane: string | null | undefined,
-  panes: readonly LivePane[] | null,
-  workerPanes?: ReadonlySet<string>,
-  originMcp?: { pid: number; start: string } | null,
-): boolean | null {
-  if (originMcp && !isProcAlive(originMcp.pid, originMcp.start)) return false;
-  const origin = originPane && herdrId(originPane) ? originPane : null;
-  if (!origin) return false;
-  if (!panes) return null;
-  const workers = workerPanes ?? liveWorkerPanes(home, panes);
-  const found = panes.find((p) => p.pane_id === origin);
-  return !!found && isMainAgentPane(found, workers);
-}
+export type NoticeOrigin = {
+  pane?: string | null; origin_mcp?: { pid: number; start: string }; project_root?: string | null; workspace?: string;
+};
 
-/** Call-time recipient lookup for pushers: live origin pane, else best live main in project_root. */
-export function resolveRecipient(input: {
-  home: string;
-  originPane?: string | null;
-  originMcp?: { pid: number; start: string } | null;
-  projectRoot?: string | null;
-  workspaceId?: string | null;
-  panes: readonly LivePane[] | null;
-  workerPanes?: ReadonlySet<string>;
-}): RecipientResolution {
-  if (!input.panes) return { kind: 'unknown' };
-  const workers = input.workerPanes ?? liveWorkerPanes(input.home, input.panes);
-  const originLive = isOriginPaneLive(input.home, input.originPane, input.panes, workers, input.originMcp);
-  if (originLive === true) {
-    const pane = input.originPane!;
-    return { kind: 'pane', pane, originLive: true, watching: watching(pane, input.home) };
-  }
-  if (!input.projectRoot) return { kind: 'none', originLive: false };
-  const root = sharedRoot(input.projectRoot);
-  const rootCache = new Map<string, string>();
-  const rootOf = (cwd?: string) => {
-    if (!cwd) return null;
-    if (!rootCache.has(cwd)) rootCache.set(cwd, sharedRoot(cwd));
-    return rootCache.get(cwd)!;
+/** Share one lazy snapshot across a scan. Pull/answer can take the own-origin fast path. */
+export function noticeResolver(home: string, env = process.env, load = () => loadLivePanes(home, env)) {
+  let snapshot: Promise<LivePaneSnapshot> | undefined;
+  return async (origin: NoticeOrigin, reader?: { pane: string | null; cwd: string }): Promise<RecipientResolution> => {
+    const pane = herdrId(origin.pane) && (!origin.origin_mcp || isProcAlive(origin.origin_mcp.pid, origin.origin_mcp.start)) ? origin.pane : null;
+    const target = (pane: string, originLive: boolean): RecipientResolution =>
+      ({ kind: 'pane', pane, originLive, watching: !reader && watching(pane, home) });
+    if (pane && reader?.pane === pane) return target(pane, true);
+    const none = { kind: 'none', originLive: false } as const;
+    const root = origin.project_root && sharedRoot(origin.project_root);
+    if (reader && (!reader.pane || !root || (root !== reader.cwd && root !== sharedRoot(reader.cwd)))) return none;
+    const live = await (snapshot ??= load()).catch(() => null);
+    if (!live?.panes) return { kind: 'unknown' };
+    const { panes, workerPanes } = live;
+    const mains = panes.filter(p => isMainAgentPane(p, workerPanes));
+    if (pane && mains.some(p => p.pane_id === pane)) return reader ? none : target(pane, true);
+    const candidates = mains.filter(p => {
+      const cwd = p.foreground_cwd ?? p.cwd;
+      return (!reader || p.pane_id === reader.pane) && root && cwd && (cwd === root || sharedRoot(cwd) === root);
+    });
+    const score = (p: LivePane) => (watching(p.pane_id, home) ? 4 : 0) + (origin.workspace && p.workspace_id === origin.workspace ? 2 : 0);
+    const best = candidates.sort((a, b) => score(b) - score(a) || a.pane_id.localeCompare(b.pane_id))[0];
+    return best ? target(best.pane_id, false) : none;
   };
-  const candidates = input.panes.filter((p) => isMainAgentPane(p, workers) && rootOf(p.foreground_cwd ?? p.cwd) === root);
-  if (!candidates.length) return { kind: 'none', originLive: false };
-  const score = (p: LivePane) =>
-    (watching(p.pane_id, input.home) ? 4 : 0) + (input.workspaceId && p.workspace_id === input.workspaceId ? 2 : 0);
-  const best = [...candidates].sort((a, b) => score(b) - score(a) || a.pane_id.localeCompare(b.pane_id))[0]!;
-  return { kind: 'pane', pane: best.pane_id, originLive: false, watching: watching(best.pane_id, input.home) };
-}
-
-/** Call-time eligibility for pull readers: fast-path own pane, else project fallback only when origin is gone/empty. */
-export function isPullRecipientEligible(input: {
-  home: string;
-  callerPane: string | null;
-  cwd: string;
-  originPane?: string | null;
-  originMcp?: { pid: number; start: string } | null;
-  projectRoot?: string | null;
-  panes?: readonly LivePane[] | null;
-  workerPanes?: ReadonlySet<string>;
-}): boolean {
-  const origin = input.originPane && herdrId(input.originPane) ? input.originPane : null;
-  const originMcpAlive = !input.originMcp || isProcAlive(input.originMcp.pid, input.originMcp.start);
-  if (origin && origin === input.callerPane && originMcpAlive) return true;
-  if (!input.projectRoot) return false;
-  if (input.projectRoot !== input.cwd && input.projectRoot !== sharedRoot(input.cwd)) return false;
-  if (!origin || !originMcpAlive) return true;
-  return isOriginPaneLive(input.home, origin, input.panes ?? null, input.workerPanes, input.originMcp) === false;
 }

@@ -179,6 +179,7 @@ Failures (including failed checks), stalls and requests for input still arrive i
 Batch tracking belongs to the watch: after a restart, the three-live-job threshold is evaluated against its current snapshot.
 On start the watch catches up pending questions, unread settled reports and unread failures/blocks.
 It scopes to `HERDR_PANE_ID` (`--all`: every pane), reading nothing at rest beyond a 30 s rescan.
+If the dispatching pane or its recorded MCP process is gone, pending workflow, auto-land and permission notices can go to a listed main agent in the same project. A project shell does not claim them, and a failed pane lookup leaves them pending.
 Claude Code without tasks or mod-owned wake runs it under Monitor; re-arm after expiry.
 Codex receives the same quiet events automatically through `codex queue`: create/send starts a detached `hud watch --queue`, with catch-up and no event lines on stdout.
 The watcher exits when the pane disappears or changes agent, or after 10 minutes with no unsettled job, unread attention/report or unanswered question.

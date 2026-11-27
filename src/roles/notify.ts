@@ -1,6 +1,6 @@
 /** Shared question/event delivery: watch, Codex queue, Antigravity mailbox, or typing. */
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
-import type { DeliveryVia } from '../utils/delivery-record.js';
+import type { DeliveryOutcome, DeliveryVia } from '../utils/delivery-record.js';
 import { isProcAlive, isValidPid, procStat, readProcCmdline, readProcEnviron } from '../utils/proc.js';
 import { runHerdr, runCommand, type HerdrOutcome } from './herdr-run.js';
 import type { McpTaskMarker } from '../mcp/job-contracts.js';
@@ -15,26 +15,17 @@ import { pushAgyEvents, type Delivery } from '../../packages/hud-mcp/bin/agy-eve
 
 export { hasAgyEvents } from '../../packages/hud-mcp/bin/agy-events.mjs';
 
-export type NotifyOutcome = 'sent' | 'refused' | 'indeterminate';
+export type NotifyOutcome = DeliveryOutcome;
 
 export type NotifyResult = Delivery & {
   stdout?: string; stderr?: string; skipped?: boolean;
   retryPrompt?: (text: string, signal?: AbortSignal) => Promise<NotifyResult>;
   uncertain?: true;
-  outcome?: NotifyOutcome;
+  outcome: NotifyOutcome;
   via?: DeliveryVia;
 };
 
-export function notifyOutcome(
-  result: Pick<NotifyResult, 'outcome' | 'status' | 'skipped' | 'uncertain' | 'retry' | 'retryPrompt'>,
-): NotifyOutcome {
-  if (result.outcome) return result.outcome;
-  if (result.skipped) return 'refused';
-  if (result.status === 0) return 'sent';
-  if (result.uncertain) return 'indeterminate';
-  if (result.retry || result.retryPrompt) return 'refused';
-  return 'indeterminate';
-}
+export const notifyOutcome = (result: NotifyResult) => result.outcome;
 type Pane = { agent?: string; agent_status?: string; agent_session?: { kind?: string; value?: string } };
 type Options = { signal?: AbortSignal };
 
@@ -96,7 +87,8 @@ export function taskDelivery(dir: string, pane: string) {
 
 function deliveryResult(outcome: HerdrOutcome): NotifyResult {
   const { exitCode: status, stdout, stderr, reason } = outcome;
-  return { status, stdout, stderr, ...(status === null ? { error: new Error(stderr || reason) } : {}) };
+  return { status, stdout, stderr, outcome: outcome.ok ? 'sent' : 'indeterminate',
+    ...(status === null ? { error: new Error(stderr || reason) } : {}) };
 }
 
 export async function paneInfo(pane: string | null, env = process.env, { signal }: Options = {}): Promise<Pane | null> {
@@ -177,17 +169,18 @@ async function typeMainNotice(pane: string | null, text: string, env: NodeJS.Pro
   return sent;
 }
 
-export function notifyAgy(pane: string, messages: string[], home: string, env: NodeJS.ProcessEnv, info: Pane | null, { signal }: Options = {}) {
+export function notifyAgy(pane: string, messages: string[], home: string, env: NodeJS.ProcessEnv, info: Pane | null,
+  { signal, published }: Options & { published?: (accepted: number) => void } = {}) {
   return pushAgyEvents(pane, home, messages, env, writePrivateFile, agyIdle(info) ? async (text) => {
     if (signal?.aborted) return { status: 0, retry: true, detail: 'pending for Antigravity delivery' };
     // The fork's guarded prompt rechecks readiness when it writes input.
     const sent = await typeMainNotice(pane, text, env, signal);
     return sent.retryPrompt ? { status: 0, retry: true, guardPending: true, detail: 'pending for Antigravity delivery' } : sent;
-  } : null);
+  } : null, published);
 }
 
 export async function notify(pane: string | null, message: string, home?: string, { queue = false, env = process.env, signal }: Options & { queue?: boolean; env?: NodeJS.ProcessEnv } = {}): Promise<NotifyResult> {
-  if (!queue && watching(pane, home)) return { status: 0, skipped: true };
+  if (!queue && watching(pane, home)) return { status: 0, skipped: true, outcome: 'refused' };
   const info = await paneInfo(pane, env, { signal });
   const aborted = (): NotifyResult => ({ status: null, stdout: '', stderr: '', error: new Error('aborted'), outcome: 'refused' });
   if (signal?.aborted) return aborted();

@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join } from 'node:path';
 import { hasLocalHerdrTarget, request } from '../runtime/herdr-socket.js';
 import { withAbstractLock } from '../utils/abstract-lock.js';
 import { readDirSafe, readJsonBounded, writeJsonPrivate } from '../utils/atomic-fs.js';
-import { claimDelivery, releaseDelivery } from '../utils/delivery-record.js';
+import { claimDelivery, type DeliveryNotice } from '../utils/delivery-record.js';
 import { isProcAlive, readProcCwd, readProcEnviron } from '../utils/proc.js';
 import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.js';
 import type { Job, JobStatus } from './job-contracts.js';
@@ -344,29 +344,18 @@ export function permissionNoticeable(entry: PermissionEntry | undefined): entry 
 export const permissionNoticeMarker = (dir: string, id: string, all = false) =>
   join(dir, `${id}.${all ? 'observed' : 'noticed'}`);
 
-export function claimPermissionNotice(dir: string, entry: PermissionEntry, all = false): string | null {
-  if (!permissionNoticeable(entry)) return null;
-  const marker = permissionNoticeMarker(dir, entry.id, all);
-  return claimDelivery(marker, entry.id) ? marker : null;
-}
-
-export function releasePermissionNotice(marker: string) {
-  releaseDelivery(marker);
-}
-
-export function permissionNoticeEvents(
-  home: string,
-  rows: readonly { job: string; permission?: PermissionEntry }[],
-  all = false,
-): { line: string; marker: string }[] {
-  const claimed: { line: string; marker: string }[] = [];
-  for (const row of rows) {
-    if (!row.permission) continue;
-    const marker = claimPermissionNotice(join(home, 'jobs', row.job), row.permission, all);
-    if (!marker) continue;
-    claimed.push({ line: permissionNotice(row.job, row.permission).replace(/[\x00-\x1f\x7f-\x9f]/g, ' '), marker });
-  }
-  return claimed;
+export function claimPermissionNotice(dir: string, entry: PermissionEntry, all = false): DeliveryNotice | null {
+  const epoch = entry.id, marker = permissionNoticeMarker(dir, epoch, all);
+  if (!permissionNoticeable(entry) || !claimDelivery(marker, epoch)) return null;
+  const id = basename(dir), cache = getJobIndexCache(dirname(dirname(dir))), session = cache.readSession(id)?.stamp;
+  const text = permissionNotice(id, entry);
+  return { line: text.replace(/[\x00-\x1f\x7f-\x9f]/g, ' '), marker, epoch, current: () => {
+    const latest = current(ledger(dir, true));
+    const status = cache.readStatus<JobStatus>(id);
+    if (status.status === 'error') throw status.error;
+    return permissionNoticeable(latest) && latest.id === epoch && permissionNotice(id, latest) === text &&
+      cache.readSession(id)?.stamp === session && status.status === 'ok' && ['working', 'waiting_orchestrator', 'blocked'].includes(status.value.state);
+  } };
 }
 
 export function permissionNotice(job: string, entry: PermissionEntry) {

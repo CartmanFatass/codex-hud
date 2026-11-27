@@ -17,8 +17,8 @@ import { targetKey } from '../../dist/collectors/ticket-evidence.js';
 import { installTabLifecycle } from '../../dist/harness/pi/worker/tab-lifecycle.js';
 import { landNotice } from '../../dist/mcp/land-state.js';
 import { ensureJobWatcher } from '../../dist/mcp/watch-pid.js';
-import { taskNoticeSource, workflowEvents } from '../../dist/workflows/events.js';
-import { markDeliveryAccepted, markDeliverySending, markDeliveryUnknown, readDeliveryRecord } from '../../dist/utils/delivery-record.js';
+import { noticeReader, taskNoticeSource, workflowEvents } from '../../dist/workflows/events.js';
+import { beginNotice, readDeliveryRecord, settleNotice } from '../../dist/utils/delivery-record.js';
 import { clearExhausted, markExhausted } from '../../dist/roles/exhausted.js';
 import { JOB_RETENTION_MS, pruneLandFlows } from '../../dist/runtime/work-retention.js';
 import { runUnattendedScanStep } from '../../dist/unattended/service.js';
@@ -1715,7 +1715,7 @@ test('a promoted flake that asks, reports, then times out lands without a main c
   assert.equal(f.git(f.main, 'rev-parse', 'origin/base'), landedFlow.landed_sha);
   assert.equal(fs.existsSync(join(f.main, 'after-ran')), true, 'project land after command ran');
   assert.equal(listFlakeRecords(f).find(r => r.number === 1)?.status, 'done');
-  assert.deepEqual(workflowEvents(f.home, f.env.HERDR_PANE_ID, false, f.main).lines, [], 'no completion notice for auto-landed flake');
+  assert.deepEqual((await workflowEvents(f.home, f.env.HERDR_PANE_ID, false, f.main)).lines, [], 'no completion notice for auto-landed flake');
   // The question itself can be announced before it times out; the clean land is silent.
   assert.equal(mainNotices.some(line => line.includes(autoFlow) ||
     (line.includes(dispatched.job) && !line.includes('QUESTION q1:'))), false,
@@ -1792,9 +1792,7 @@ test('unreadable QA yields one auto-land handback to main without calling startL
   assert.equal(f.git(f.main, 'rev-parse', 'origin/base'), base);
 });
 
-test('a pane-less Claude task client receives a flake refusal behind 200 newer jobs once', { timeout: 10_000 }, async t => {
-  // No pane means the collector dispatches for the project and the MCP client
-  // collects changes on tool calls, with no timer competing to type the notice.
+test('a listed main, not a pane-less Claude task client, receives a flake refusal behind 200 newer jobs once', { timeout: 10_000 }, async t => {
   const f = await checkout(t, ['true'], { after: [], inHerdr: false });
   const rpc = taskRpc(f.rpc);
   await rpc('initialize', { clientInfo: { name: 'claude-code' } });
@@ -1816,17 +1814,23 @@ test('a pane-less Claude task client receives a flake refusal behind 200 newer j
     fs.mkdirSync(join(f.home, 'jobs', `j${(0x1000 + i).toString(16).padStart(16, '0')}`));
   }
 
-  const notices = await scan();
-  assert.equal(notices.length, 1);
-  assert.ok(notices[0].includes(`${seeded.id}: auto-land blocked: questions could not be read`), notices[0]);
-  assert.ok(notices[0].includes(`hud_read job=${seeded.id}`), notices[0]);
-  assert.deepEqual(await scan(), []);
+  assert.deepEqual(await scan(), [], 'a pane-less tool call leaves the foreign obligation pending');
+  const pane = 'w4E:p1';
+  const source = taskNoticeSource(f.home, pane, f.main);
+  const pull = noticeReader(f.home, pane, f.main, f.env, async () => ({
+    panes: [{ pane_id: pane, agent: 'claude', cwd: f.main }], workerPanes: new Set(),
+  }));
+  const [notice] = await source(pull);
+  assert.match(notice.line, new RegExp(`${seeded.id}: auto-land blocked: questions could not be read.*hud_read job=${seeded.id}`));
+  assert.equal(beginNotice(notice), true);
+  assert.equal(settleNotice(notice, 'sent', 'mcp-changes'), true);
+  assert.deepEqual(await source(pull), []);
   assert.equal(startLandFn.mock.callCount(), 0);
   assert.equal(fs.existsSync(join(f.home, 'flows', `f${seeded.id.slice(1)}.json`)), false);
 });
 
 test('an indexed flake refusal on a job.json larger than 64 KiB is delivered once, suppressed by a land flow, and pruned', { timeout: 10_000 }, async t => {
-  const f = await checkout(t, ['true'], { after: [], inHerdr: false });
+  const f = await checkout(t, ['true'], { after: [] });
   const rpc = taskRpc(f.rpc);
   await rpc('initialize', { clientInfo: { name: 'claude-code' } });
   await rpc('server/discover');
@@ -1875,7 +1879,7 @@ test('an indexed flake refusal on a job.json larger than 64 KiB is delivered onc
   assert.equal(fs.readdirSync(landed.dir).some(name => name.endsWith('.noticed')), false);
 });
 
-test('a quiet task notice drain neither lists nor stats job directories, and prunes noticed and vanished entries', t => {
+test('a quiet task notice drain neither lists nor stats job directories, and prunes noticed and vanished entries', async t => {
   const home = fs.mkdtempSync(join(tmpdir(), 'hud-flake-notices-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const jobsRoot = join(home, 'jobs');
@@ -1891,6 +1895,7 @@ test('a quiet task notice drain neither lists nor stats job directories, and pru
     job: noticedId,
     role: 'imp',
     request_key: 'flakes:test:01',
+    caller_pane: 'w1:p1',
     cwd: join(home, 'wt-1'),
     created_at: now,
     dispatch_exit_code: 0,
@@ -1916,41 +1921,42 @@ test('a quiet task notice drain neither lists nor stats job directories, and pru
   indexFlakeBlockJob(home, noticedId);
   indexFlakeBlockJob(home, foreignId);
 
-  const drain = taskNoticeSource(home, null, home);
+  const drain = taskNoticeSource(home, 'w1:p1', home);
   // First drain claims noticedId (keeping it indexed until a subsequent tick confirms delivery),
   // prunes vanishedId immediately, and leaves foreignId pending for its pane.
-  const first = drain();
+  const first = await drain();
   assert.equal(first.length, 1);
   assert.ok(first[0].line.includes(`${noticedId}: auto-land blocked: questions could not be read`));
   assert.deepEqual(readFlakeBlockJobs(home), [foreignId, noticedId]);
 
   // Simulate failed delivery releasing the marker: noticedId stays indexed and retries.
   fs.unlinkSync(first[0].marker);
-  const retry = drain();
+  const retry = await drain();
   assert.equal(retry.length, 1);
   assert.equal(retry[0].marker, first[0].marker);
   assert.equal(readDeliveryRecord(retry[0].marker).state, 'claimed');
 
   // While a claim is in flight (claimed or sending), or unknown, noticedId MUST NOT be pruned.
-  assert.deepEqual(drain(), []);
+  assert.deepEqual(await drain(), []);
   assert.deepEqual(readFlakeBlockJobs(home), [foreignId, noticedId]);
-  assert.equal(markDeliverySending(retry[0].marker), true);
-  assert.deepEqual(drain(), []);
+  assert.equal(beginNotice(retry[0]), true);
+  assert.deepEqual(await drain(), []);
   assert.deepEqual(readFlakeBlockJobs(home), [foreignId, noticedId]);
 
   // Once accepted, the next tick prunes noticedId immediately without any timer.
-  assert.equal(markDeliveryAccepted(retry[0].marker, 'herdr-prompt'), true);
-  assert.deepEqual(drain(), []);
+  assert.equal(settleNotice(retry[0], 'sent', 'herdr-prompt'), true);
+  assert.deepEqual(await drain(), []);
   assert.deepEqual(readFlakeBlockJobs(home), [foreignId]);
 
   // A foreign claim stays indexed while in flight, and prunes immediately (even from a non-owner drain) once accepted.
   const foreignDrain = taskNoticeSource(home, 'w1:p9', home);
-  const foreignEvents = foreignDrain();
+  const foreignEvents = await foreignDrain();
   assert.equal(foreignEvents.length, 1);
-  assert.deepEqual(drain(), []);
+  assert.deepEqual(await drain(), []);
   assert.deepEqual(readFlakeBlockJobs(home), [foreignId]);
-  assert.equal(markDeliveryAccepted(foreignEvents[0].marker, 'herdr-prompt'), true);
-  assert.deepEqual(drain(), []);
+  assert.equal(beginNotice(foreignEvents[0]), true);
+  assert.equal(settleNotice(foreignEvents[0], 'sent', 'herdr-prompt'), true);
+  assert.deepEqual(await drain(), []);
   assert.deepEqual(readFlakeBlockJobs(home), []);
 
   const accesses = [];
@@ -1965,8 +1971,8 @@ test('a quiet task notice drain neither lists nor stats job directories, and pru
   });
   syncBuiltinESMExports();
   try {
-    assert.deepEqual(drain(), []);
-    assert.deepEqual(drain(), []);
+    assert.deepEqual(await drain(), []);
+    assert.deepEqual(await drain(), []);
     assert.deepEqual(accesses, []);
   } finally {
     for (const mock of mocks) mock.mock.restore();

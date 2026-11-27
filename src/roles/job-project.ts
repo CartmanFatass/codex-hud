@@ -3,6 +3,7 @@ import { tryAbstractLock } from '../utils/abstract-lock.js';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { herdrId, listedPanes, runHerdr } from './herdr-run.js';
+import type { listLivePanes } from './select-send.js';
 import { jobCallerPane } from './job-pane.js';
 import { sharedRoot } from './projects.js';
 import { JOB_ID_RE, type JobIndexCache } from './job-index-cache.js';
@@ -33,16 +34,17 @@ export function packageJobFilter(cwd: string, label: string, preset?: string) {
 
 /** Missing/malformed herdr evidence cannot transfer ownership. Never use a workspace-filtered list. */
 export async function adoptProjectJobs(home: string, pane: string, cwd: string, jobs: JobOwner[], env: NodeJS.ProcessEnv,
-  owesCaller: (dir: string, job: Record<string, unknown>) => boolean, cache?: JobIndexCache, onAdopt?: (id: string) => void) {
+  owesCaller: (dir: string, job: Record<string, unknown>) => boolean, cache?: JobIndexCache, onAdopt?: (id: string) => void,
+  list?: () => ReturnType<typeof listLivePanes>) {
   const other = jobs.filter((job) => herdrId(jobCallerPane(job)) && jobCallerPane(job) !== pane);
   if (!other.length) return false;
   const matches = projectJobFilter(cwd);
   const candidates = other.filter(matches);
   if (!candidates.length) return false;
-  const result = await runHerdr(['pane', 'list'], env, { budgetMs: 1000 });
-  const listed = result.ok ? listedPanes(result.stdout) : null;
+  const listed = list ? (await list())?.map(row => row.pane_id)
+    : await runHerdr(['pane', 'list'], env, { budgetMs: 1000 }).then(result => result.ok ? listedPanes(result.stdout)?.map(row => row.paneId) : null);
   if (!listed) return false;
-  const live = new Set(listed.map((row) => row.paneId));
+  const live = new Set(listed);
   if (!live.has(pane)) return false;
   const orphans = candidates.filter((job) => !live.has(jobCallerPane(job)));
   if (!orphans.length) return false;

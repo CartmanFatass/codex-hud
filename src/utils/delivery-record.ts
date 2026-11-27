@@ -9,6 +9,10 @@ export type DeliveryVia =
   | 'codex-queue' | 'agy-mailbox' | 'herdr-prompt' | 'watch-stdout'
   | 'claude-mod' | 'pi-steer' | 'mcp-task' | 'mcp-changes' | 'legacy';
 
+export type DeliveryOutcome = 'sent' | 'refused' | 'indeterminate';
+type NoticeIdentity = { marker: string; epoch: string | number };
+export type DeliveryNotice = NoticeIdentity & { line: string; current: () => boolean };
+
 export interface DeliveryRecord {
   v: 1;
   state: Exclude<DeliveryState, 'pending'>;
@@ -60,10 +64,16 @@ export function readDeliveryRecord(file: string, now = Date.now()): { state: Del
   return { state: record.state, record, reclaimable: false };
 }
 
-export const isDeliveryClaimable = (file: string, now = Date.now()): boolean => readDeliveryRecord(file, now).reclaimable;
-export const isDeliveryActive = (file: string, now = Date.now()): boolean => {
-  const { state } = readDeliveryRecord(file, now);
-  return state === 'pending' || state === 'claimed' || state === 'sending';
+// A reused key can name a new obligation in a later epoch. Never displace a live send or a legacy receipt.
+const otherEpoch = ({ state, record }: ReturnType<typeof readDeliveryRecord>, epoch?: string | number) =>
+  epoch !== undefined && !!record && record.epoch !== epoch && record.via !== 'legacy' && state !== 'claimed' && state !== 'sending';
+export const isDeliveryClaimable = (file: string, now = Date.now(), epoch?: string | number): boolean => {
+  const view = readDeliveryRecord(file, now);
+  return view.reclaimable || otherEpoch(view, epoch);
+};
+export const isDeliveryActive = (file: string, now = Date.now(), epoch?: string | number): boolean => {
+  const view = readDeliveryRecord(file, now);
+  return view.state === 'pending' || view.state === 'claimed' || view.state === 'sending' || otherEpoch(view, epoch);
 };
 
 function ownedRecord(file: string, states: readonly DeliveryRecord['state'][]): DeliveryRecord | null {
@@ -76,11 +86,18 @@ function ownedRecord(file: string, states: readonly DeliveryRecord['state'][]): 
   } catch { return null; }
 }
 
-function transitionOwned(file: string, states: readonly DeliveryRecord['state'][], next: (cur: DeliveryRecord) => DeliveryRecord): boolean {
+function transitionOwned(file: string, states: readonly DeliveryRecord['state'][], next: (cur: DeliveryRecord) => DeliveryRecord | null): boolean {
   const cur = ownedRecord(file, states);
   if (!cur) return false;
-  try { writeJsonPrivate(file, next(cur), { mkdir: false }); return true; }
-  catch { return false; }
+  try {
+    const record = next(cur);
+    if (!record) return false;
+    writeJsonPrivate(file, record, { mkdir: false, beforeRename: () => {
+      const fresh = ownedRecord(file, [cur.state]);
+      if (fresh?.at !== cur.at || fresh.epoch !== cur.epoch) throw Error('notice claim changed');
+    } });
+    return true;
+  } catch { return false; }
 }
 
 export function claimDelivery(file: string, epoch: string | number, { leaseMs = DEFAULT_CLAIM_LEASE_MS, now = Date.now() } = {}): DeliveryRecord | null {
@@ -99,18 +116,17 @@ export function claimDelivery(file: string, epoch: string | number, { leaseMs = 
   const first = tryCreate();
   if (first !== 'exists') return first === 'ok' ? record : null;
   const existing = readDeliveryRecord(file, now);
-  if (!existing.reclaimable) return null;
-  if (existing.state === 'pending') return tryCreate() === 'ok' ? record : null;
-  if (existing.state !== 'claimed' || !existing.record) return null;
-
+  if (!existing.reclaimable && !otherEpoch(existing, epoch)) return null;
   const prior = existing.record;
+  if (!prior) return tryCreate() === 'ok' ? record : null;
   const tmp = `${file}.reclaim.${process.pid}.${randomUUID()}.tmp`;
   try { fs.renameSync(file, tmp); }
   catch (error) { return (error as NodeJS.ErrnoException).code === 'ENOENT' && tryCreate() === 'ok' ? record : null; }
   try {
     const moved = readRegularNoFollow(tmp);
     const rec = moved ? parseRecord(moved.data, moved.stat.mtimeMs) : null;
-    if (rec?.state !== 'claimed' || rec.pid !== prior.pid || rec.start !== prior.start || rec.at !== prior.at) {
+    if (!rec || rec.epoch !== prior.epoch || rec.pid !== prior.pid || rec.start !== prior.start || rec.at !== prior.at ||
+        (rec.state !== prior.state && !(rec.state === 'sending' && prior.reason === 'sender_exited'))) {
       try { fs.linkSync(tmp, file); } catch { /* Replaced concurrently. */ }
       return null;
     }
@@ -118,25 +134,35 @@ export function claimDelivery(file: string, epoch: string | number, { leaseMs = 
   return tryCreate() === 'ok' ? record : null;
 }
 
-export const markDeliverySending = (file: string, now = Date.now()) =>
-  transitionOwned(file, ['claimed'], cur => ({ v: 1, state: 'sending', epoch: cur.epoch, pid: cur.pid, start: cur.start, at: now }));
+export const revertDeliveryClaim = ({ marker, epoch }: NoticeIdentity, now = Date.now()) =>
+  transitionOwned(marker, ['sending'], cur => cur.epoch !== epoch ? null
+    : { ...cur, state: 'claimed', at: now, expires: now + DEFAULT_CLAIM_LEASE_MS });
 
-export const revertDeliveryClaim = (file: string, { leaseMs = DEFAULT_CLAIM_LEASE_MS, now = Date.now() } = {}) =>
-  transitionOwned(file, ['sending', 'claimed'], cur => ({ v: 1, state: 'claimed', epoch: cur.epoch, pid: cur.pid, start: cur.start, at: now, expires: now + leaseMs }));
-
-export const markDeliveryAccepted = (file: string, via: DeliveryVia, now = Date.now()) =>
-  transitionOwned(file, ['claimed', 'sending'], cur => ({ v: 1, state: 'accepted', epoch: cur.epoch, via, at: now }));
-
-export const markDeliveryUnknown = (file: string, reason: string, now = Date.now()) =>
-  transitionOwned(file, ['claimed', 'sending'], cur => ({ v: 1, state: 'unknown', epoch: cur.epoch, reason: reason.slice(0, 200), at: now }));
-
-export function markDeliveryAbandoned(file: string, reason: string, epoch: string | number, now = Date.now()): boolean {
-  try { writeJsonPrivate(file, { v: 1, state: 'abandoned', epoch, reason: reason.slice(0, 200), at: now } satisfies DeliveryRecord, { mkdir: false }); return true; }
-  catch { return false; }
+// The send gate is shared by all transports, including pull responses and mailbox publication.
+export function beginNotice({ marker, epoch, current }: DeliveryNotice): boolean {
+  let sending = false, unavailable = false;
+  const transitioned = transitionOwned(marker, ['claimed'], cur => {
+    const at = Date.now();
+    if (cur.epoch !== epoch || (cur.expires ?? 0) <= at) return null;
+    try { sending = current(); }
+    catch { unavailable = true; return null; }
+    return sending ? { v: 1, state: 'sending', epoch, at, pid: cur.pid, start: cur.start }
+      : { v: 1, state: 'abandoned', epoch, at, reason: 'source_changed' };
+  });
+  if (unavailable) releaseDelivery({ marker, epoch });
+  return transitioned && sending;
 }
 
-export function releaseDelivery(file: string): boolean {
-  if (!ownedRecord(file, ['claimed', 'sending'])) return false;
-  try { fs.unlinkSync(file); return true; }
+export function settleNotice(notice: NoticeIdentity, outcome: DeliveryOutcome, via: DeliveryVia, reason = 'indeterminate') {
+  if (outcome === 'refused') return releaseDelivery(notice, 'sending');
+  const { marker, epoch } = notice;
+  return transitionOwned(marker, ['sending'], cur => cur.epoch !== epoch ? null : outcome === 'sent'
+    ? { v: 1, state: 'accepted', epoch, via, at: Date.now() }
+    : { v: 1, state: 'unknown', epoch, reason: reason.slice(0, 200), at: Date.now() });
+}
+
+export function releaseDelivery({ marker, epoch }: NoticeIdentity, state: 'claimed' | 'sending' = 'claimed'): boolean {
+  if (ownedRecord(marker, [state])?.epoch !== epoch) return false;
+  try { fs.unlinkSync(marker); return true; }
   catch { return false; }
 }

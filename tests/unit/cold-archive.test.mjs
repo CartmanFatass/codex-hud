@@ -645,7 +645,7 @@ test('orphan gate logs survive notice scans and failed retention writes, then ar
     fs.utimesSync(source, at / 1000, at / 1000);
     return { job, flow, name, data, source };
   });
-  assert.deepEqual(workflowEvents(f.home, null, true).lines, []);
+  assert.deepEqual((await workflowEvents(f.home, null, true)).lines, []);
   for (const { source, data } of cases) assert.deepEqual(fs.readFileSync(source), data, 'notice scan leaves log alone');
 
   const blocker = put(join(f.home, 'archive', 'cold'), 'block the cold directory');

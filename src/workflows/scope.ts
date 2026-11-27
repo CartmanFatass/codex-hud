@@ -1,4 +1,10 @@
+import { join } from 'node:path';
+import type { Job } from '../mcp/job-contracts.js';
+import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
+import { jobProjectRoot } from '../roles/selection-excerpts.js';
+import type { NoticeOrigin } from '../roles/select-send.js';
+import { readJsonFile } from '../utils/atomic-fs.js';
 import { isProcAlive } from '../utils/proc.js';
 
 export interface RunScope {
@@ -13,8 +19,13 @@ export function runVisible(run: RunScope, pane: string | null, cwd = process.cwd
   return run.project_root === cwd || (!!run.pane && run.pane === pane && directRecipient(run)) ||
     (!!run.project_root && run.project_root === sharedRoot(cwd));
 }
-/** Deliver run notices to the bound live origin; use the project fallback only when the origin is absent or dead. */
-export function runNoticeRecipient(run: RunScope, pane: string | null, cwd = process.cwd()) {
-  if (run.pane && directRecipient(run)) return run.pane === pane;
-  return run.project_root === cwd || (!!run.project_root && run.project_root === sharedRoot(cwd));
+export function jobNoticeOrigin(home: string, job: Job): NoticeOrigin {
+  const id = job.ticket_queue ?? job.batch_flow ?? job.workflow ?? job.land_turn;
+  let run: (NoticeOrigin & { workflow?: NoticeOrigin; root?: string }) | undefined;
+  if (id && /^[bqwf][a-f0-9]{16}(?:-\d+)?$/.test(id)) {
+    try { run = readJsonFile(join(home, 'flows', `${id}.json`)) as typeof run; } catch { /* Legacy/unbound job. */ }
+  }
+  return { pane: run?.pane ?? jobCallerPane(job), origin_mcp: run?.origin_mcp ?? run?.workflow?.origin_mcp ?? job.origin_mcp,
+    project_root: job.project_root ?? job.worktree?.main_root ?? run?.project_root ?? run?.root ?? jobProjectRoot(job),
+    workspace: job.herdr_workspace ?? run?.workspace };
 }

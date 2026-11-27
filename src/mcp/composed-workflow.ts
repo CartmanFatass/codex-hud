@@ -164,7 +164,9 @@ export async function callWorkflow(home: string, pane: string | null, args: Args
         }
         if (run.state === 'stopped') {
           const stoppedAt = new Date().toISOString();
-          for (const c of Object.values(run.steps)) if (c.state === 'asking') { c.state = 'cancelled'; c.changed_at = stoppedAt; }
+          for (const [key, c] of Object.entries(run.steps)) if (c.state === 'asking') {
+            c.state = 'cancelled'; c.changed_at = stoppedAt; delete run.notices[`handback-${key}`];
+          }
           run.notices[`end-${run.epoch}`] = `${id} workflow stopped`;
           if (run.grant && !run.input_admitted) await workflowGrants.releaseUnused(home, id);
         }
@@ -189,6 +191,7 @@ export async function answerComposed(home: string, pane: string | null, args: Ar
     if (!h.choices.includes(answer)) return { value: { ok: false, code: 'invalid_answer', choices: h.choices } };
     const at = new Date().toISOString();
     run.answers[request] = answer; run.steps[h.step].answer = answer; run.steps[h.step].state = 'done'; run.steps[h.step].changed_at = at;
+    delete run.notices[`handback-${h.step}`];
     delete run.handback; delete run.reason; run.state = 'working'; saveHeader(home, run);
     return { run, value: { ok: true, written: true, answer } };
   });

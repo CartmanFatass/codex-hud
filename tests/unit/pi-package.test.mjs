@@ -880,6 +880,41 @@ test('pi watches at the next model boundary or wakes when idle, and drops stale 
   assert.equal(messages.length, 4);
 });
 
+test('Pi leaves a durable notice pending when steering refuses or the session is stale', async t => {
+  const { readDeliveryRecord } = await import('../../dist/utils/delivery-record.js');
+  const f = setup(t), h = host(), p = ports(f), current = context(f, h);
+  await listenDock(t, f.env.HERDR_SOCKET_PATH);
+  const home = f.binding.hudHome, pane = f.env.HERDR_PANE_ID;
+  const watcher = path.join(home, 'watchers', `${pane}.pid`);
+  const flow = 'w00000000000000a1', dir = path.join(home, 'flows', flow);
+  const marker = path.join(dir, 'pause-0.noticed');
+  let attempts = 0;
+  h.pi.sendMessage = () => { attempts++; throw Error('synthetic pre-send error'); };
+  await load(f, h, p);
+  await h.emit('session_start', current.ctx);
+  current.setId('stale');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(`${dir}.json`, JSON.stringify({ flow, pane, template: 'composed', state: 'paused', epoch: 0, steps: {},
+    notices: { 'pause-0': 'Synthetic pause' } }));
+  await until(() => !fs.existsSync(watcher));
+  assert.equal(attempts, 0);
+  assert.equal(readDeliveryRecord(marker).state, 'pending');
+
+  const next = context(f, h, 'session-b');
+  await h.emit('session_tree', next.ctx);
+  await until(() => attempts === 1 && !fs.existsSync(watcher));
+  assert.equal(readDeliveryRecord(marker).state, 'pending');
+
+  const delivered = [];
+  h.pi.sendMessage = msg => delivered.push(msg.content);
+  const last = context(f, h, 'session-c');
+  await h.emit('session_tree', last.ctx);
+  await until(() => readDeliveryRecord(marker).state === 'accepted');
+  assert.equal(delivered.length, 1);
+  assert.match(delivered[0], /Synthetic pause/);
+  await h.emit('session_shutdown', last.ctx);
+});
+
 test('pi refuses delegation in a resumed worker before starting its main-session watcher', async (t) => {
   const f = setup(t), h = host(), p = ports(f);
   const dock = await listenDock(t, f.env.HERDR_SOCKET_PATH);

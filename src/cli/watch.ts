@@ -9,14 +9,14 @@ import { PANEL_ACTIONS_FILE, PanelActionLog } from '../collectors/panel-actions.
 import { getHudHome } from '../hud-home.js';
 import { watchJobChanges } from '../collectors/job-changes.js';
 import { collectSessionJobRows, watchJobsInBackground } from '../collectors/job-snapshot.js';
-import { workflowEvents } from '../workflows/events.js';
+import { noticeReader, permissionEvents, workflowEvents } from '../workflows/events.js';
 import { notifyOutcome, PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, recordPromptExpiry, registerWatcher, type NotifyResult } from '../roles/notify.js';
 import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { reportMainPaneGroup } from '../runtime/pane-group.js';
 import { herdrId } from '../roles/herdr-run.js';
 import { getJobIndexCache } from '../roles/job-index-cache.js';
-import { permissionNoticeable, permissionNoticeEvents, permissionNoticeMarker } from '../mcp/worker-permissions.js';
-import { isDeliveryActive, markDeliveryAccepted, markDeliverySending, markDeliveryUnknown, releaseDelivery, revertDeliveryClaim, type DeliveryVia } from '../utils/delivery-record.js';
+import { liveWorkerPanes, type LivePaneSnapshot } from '../roles/select-send.js';
+import { beginNotice, releaseDelivery, revertDeliveryClaim, settleNotice, type DeliveryNotice, type DeliveryOutcome, type DeliveryVia } from '../utils/delivery-record.js';
 import type { HudIO } from './hud.js';
 import { CliError } from './private-home.js';
 import { bandReader } from './watch-band.js';
@@ -43,23 +43,32 @@ function settlementWindow(env: NodeJS.ProcessEnv): number {
   return Number.isInteger(ms) && ms > 0 ? ms : SETTLEMENT_WINDOW_MS;
 }
 
-function joinPendingNotices(pending: string, incoming: string): { text: string; keptPending: boolean } {
-  // If the coalesced notice would grow unbounded, keep the latest batch. The original records stay readable.
-  return Buffer.byteLength(pending) + Buffer.byteLength(incoming) < 16 * 1024
-    ? { text: `${pending}\n${incoming}`, keptPending: true }
-    : { text: incoming, keptPending: false };
-}
-
 const isBrokenPipe = (error: unknown): boolean => {
   const code = (error as NodeJS.ErrnoException | null)?.code;
   return code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED';
 };
 
 const settled = (row: JobRow) => ['idle_grace', 'closed', 'done', 'failed', 'stopped'].includes(row.state ?? '');
-type BatchItem = { line: string; claims: string[] };
-function hasActivePermissionNotice(home: string, rows: readonly WatchJobRow[], all = false): boolean {
-  return rows.some((row) => permissionNoticeable(row.permission) &&
-    isDeliveryActive(permissionNoticeMarker(join(home, 'jobs', row.job), row.permission.id, all)));
+type BatchItem = { line: string; marker?: undefined } | DeliveryNotice;
+const textOf = (items: readonly BatchItem[]) => items.map(item => item.line).join('\n');
+const prepare = (items: readonly BatchItem[]) => items.filter(item => !item.marker || beginNotice(item));
+const release = (items: readonly BatchItem[]) => { for (const item of items) if (item.marker) releaseDelivery(item); };
+function finish(items: readonly BatchItem[], outcome: DeliveryOutcome, via: DeliveryVia, reason?: string) {
+  for (const item of items) if (item.marker) settleNotice(item, outcome, via, reason);
+}
+function appendBuffered(held: BatchItem[], incoming: BatchItem[]) {
+  if (!incoming.length) return held;
+  if (Buffer.byteLength(textOf(held)) + Buffer.byteLength(textOf(incoming)) < 16 * 1024) return held.concat(incoming);
+  release(held);
+  return incoming;
+}
+async function collectObligations(home: string, pane: string | null, cwd: string, env: NodeJS.ProcessEnv, all = false, modStartedAt: number | false = false,
+  panes?: LivePaneSnapshot['panes']) {
+  const pull = noticeReader(home, pane, cwd, env, panes === undefined ? undefined
+    : async () => ({ panes, workerPanes: panes ? liveWorkerPanes(home, panes, env) : new Set() }));
+  const flows = await workflowEvents(home, pane, all, cwd, modStartedAt, pull);
+  const perms = await permissionEvents(home, pull, all);
+  return { events: [...flows.events, ...perms.events], pending: flows.pending || perms.pending };
 }
 // A numeric catch-up value is the Claude mod's cutoff for individual report notices.
 function actionable(home: string, prev: ReadonlyMap<string, JobRow>, rows: WatchJobRow[], catchup: boolean | number = false, lastScanAt = -Infinity): Notice[] {
@@ -155,29 +164,26 @@ function sonicCheckpointNotices() {
 
 // A fixed window from the first settlement, not a debounce that slides with each arrival.
 function settlementNotices(windowMs: number) {
-  let held: string[] = [], deadline = Infinity;
+  let held: BatchItem[] = [], deadline = Infinity;
   return {
     get pending() { return held.length > 0; },
     get delay() { return Math.max(0, Math.ceil(deadline - performance.now())); },
-    collect(events: Notice[], other: readonly BatchItem[]): BatchItem[] {
-      const ready: BatchItem[] = [], now = performance.now();
+    collect(events: Notice[], other: readonly BatchItem[]): BatchItem[][] {
+      const ready: BatchItem[][] = [], now = performance.now();
       const flush = (items: readonly BatchItem[] = []) => {
-        ready.push({
-          line: held.concat(items.map((item) => item.line)).join('\n'),
-          claims: items.flatMap((item) => item.claims),
-        });
+        ready.push(held.concat(items));
         held = [];
         deadline = Infinity;
       };
       if (now >= deadline) flush();
-      const items: BatchItem[] = [...events.map((event) => ({ line: event.line, claims: [] })), ...other];
+      const items = [...events.map(({ line }) => ({ line })), ...other];
       if (!items.length) return ready;
-      if (other.length || events.some((event) => !event.defer)) {
-        if (held.length || events.some((event) => event.defer)) flush(items);
-        else ready.push(...items);
+      if (other.length || events.some(event => !event.defer)) {
+        if (held.length || events.some(event => event.defer)) flush(items);
+        else ready.push(...items.map(item => [item]));
       } else {
         if (!held.length) deadline = now + windowMs;
-        held.push(...items.map((item) => item.line));
+        held.push(...items);
       }
       return ready;
     },
@@ -237,7 +243,7 @@ function watchInputs(home: string, changed: () => void, persistent = true) {
 }
 
 /** In-process, pane-scoped quiet events; no CLI signal hooks or transport. */
-export function startSessionWatch(home: string, pane: string, cwd: string, deliver: (lines: string[]) => void, settlementWindowMs = settlementWindow(process.env)) {
+export function startSessionWatch(home: string, pane: string, cwd: string, deliver: (lines: string[]) => DeliveryOutcome, settlementWindowMs = settlementWindow(process.env)) {
   const tries = new TryLog(home), answers = new PanelActionLog(home);
   let prev = new Map<string, JobRow>();
   let first = true, stopped = false, scanning = false, dirty = false, lastScanAt = -Infinity;
@@ -257,36 +263,27 @@ export function startSessionWatch(home: string, pane: string, cwd: string, deliv
     scanning = true;
     dirty = false;
     const scanAt = Date.now();
-    let rows;
-    try { rows = await collectSessionJobRows(home, pane, cwd, process.env); }
-    catch { if (!stopped) schedule(DEFAULT_RESCAN_MS); return; }
-    finally { scanning = false; }
-    if (stopped) return;
-    const flows = workflowEvents(home, pane, false, cwd);
-    const perms = permissionNoticeEvents(home, rows, false);
-    const { events, progress } = notices.select(home, prev, rows, first, lastScanAt);
-    const other: BatchItem[] = [
-      ...tries.changes(cwd).map((line) => ({ line, claims: [] })),
-      ...answers.changes(new Set(rows.map((row) => row.job)), cwd, pane).map((line) => ({ line, claims: [] })),
-      ...flows.events.map(({ line, marker }) => ({ line, claims: [marker] })),
-      ...perms.map(({ line, marker }) => ({ line, claims: [marker] })),
-      ...progress.map((line) => ({ line, claims: [] })),
-    ];
-    const items = notices.collect(events, other);
-    const lines = items.map((item) => item.line);
-    const markers = [...flows.events, ...perms].map((e) => e.marker);
-    first = false;
-    lastScanAt = scanAt;
-    prev = new Map(rows.map((row) => [row.job, row]));
-    schedule(dirty ? DEBOUNCE_MS : DEFAULT_RESCAN_MS);
-    if (lines.length) {
-      try {
-        deliver(lines);
-        for (const marker of markers) markDeliveryAccepted(marker, 'pi-steer');
-      } catch (error) {
-        for (const marker of markers) releaseDelivery(marker);
-        throw error;
+    try {
+      const { rows, panes } = await collectSessionJobRows(home, pane, cwd, process.env);
+      if (stopped) return;
+      const obligations = await collectObligations(home, pane, cwd, process.env, false, false, panes);
+      if (stopped) { release(obligations.events); return; }
+      const { events, progress } = notices.select(home, prev, rows, first, lastScanAt);
+      const other = [...obligations.events, ...[...tries.changes(cwd),
+        ...answers.changes(new Set(rows.map(row => row.job)), cwd, pane), ...progress].map(line => ({ line }))];
+      const items = notices.collect(events, other).map(prepare).filter(batch => batch.length);
+      first = false;
+      lastScanAt = scanAt;
+      prev = new Map(rows.map(row => [row.job, row]));
+      if (items.length) {
+        let outcome: DeliveryOutcome = 'indeterminate';
+        try { outcome = deliver(items.map(textOf)); }
+        finally { finish(items.flat(), outcome, 'pi-steer'); }
       }
+    } catch { /* Retry collection on the next wake. */ }
+    finally {
+      scanning = false;
+      schedule(dirty ? DEBOUNCE_MS : DEFAULT_RESCAN_MS);
     }
   }
   inputs.attach();
@@ -434,33 +431,16 @@ export async function watchCommand(
     // Attach before catch-up so events during the scan are not lost.
     inputs.attach();
     let prev = new Map<string, JobRow>();
-    let first = true, lastScanAt = -Infinity;
+    let first = true, lastScanAt = -Infinity, modStartedAt: number | false = false;
     let queueAgent: 'codex' | 'agy' | undefined;
-    const agyBacklog: BatchItem[] = [];
-    let agyGuardUntil: number | undefined;
-    let typedPending: { retry: NonNullable<NotifyResult['retryPrompt']>; text: string; until: number; claims: string[] } | undefined;
-    const releaseClaims = (claims: readonly string[]) => {
-      for (const marker of claims) releaseDelivery(marker);
+    let agyBacklog: BatchItem[] = [], agyGuardUntil: number | undefined;
+    let typedPending: { retry: NonNullable<NotifyResult['retryPrompt']>; items: BatchItem[]; until: number } | undefined;
+    const retryReleased = (items: BatchItem[]) => {
+      if (!items.some(item => item.marker)) return;
+      idleSince = null;
+      flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
     };
-    const commitAccepted = (claims: readonly string[], via: DeliveryVia) => {
-      for (const marker of claims) markDeliveryAccepted(marker, via);
-    };
-    const commitUnknown = (claims: readonly string[], reason: string) => {
-      for (const marker of claims) markDeliveryUnknown(marker, reason);
-    };
-    const markSending = (claims: readonly string[]) => {
-      for (const marker of claims) markDeliverySending(marker);
-    };
-    const revertClaims = (claims: readonly string[]) => {
-      for (const marker of claims) revertDeliveryClaim(marker);
-    };
-    const releaseAllClaims = () => {
-      if (typedPending) {
-        releaseClaims(typedPending.claims);
-        typedPending = undefined;
-      }
-      for (const item of agyBacklog.splice(0)) releaseClaims(item.claims);
-    };
+    const bufferAgain = (items: BatchItem[]) => items.filter(item => !item.marker || revertDeliveryClaim(item));
     try {
     while (!stopped) {
       if (!first) await wait();
@@ -476,29 +456,27 @@ export async function watchCommand(
       }
       const agyPending = queueAgent === 'agy' && delivery!.hasAgyEvents(callerPane, home);
       const scanAt = Date.now();
-      const rows = all ? readThinJobRows(home, { pane: null }) : await readSessionJobRows(home, callerPane!, process.cwd(), io.env);
+      const { rows, panes } = all ? { rows: readThinJobRows(home, { pane: null }), panes: undefined }
+        : await readSessionJobRows(home, callerPane!, process.cwd(), io.env);
       if (stopped) break;
       // The owner's answers from the panel are events of the jobs this watch follows, never catch-up: the question is gone.
       const modCatchup = first && freshMod;
-      const flows = workflowEvents(home, callerPane, all, process.cwd(), modCatchup);
-      const perms = permissionNoticeEvents(home, rows, all);
+      if (modCatchup) modStartedAt = scanAt;
+      const obligations = await collectObligations(home, callerPane, process.cwd(), io.env, all, modStartedAt, panes);
+      if (stopped) { release(obligations.events); break; }
       const trySize = modHandshake ? fs.lstatSync(join(home, TRIES_FILE), { throwIfNoEntry: false })?.size ?? 0 : 0;
       const modCutoff = Number.isSafeInteger(lastDelivery) && lastDelivery > 0 && lastDelivery <= scanAt
         ? lastDelivery : scanAt - MOD_REPORT_LOOKBACK_MS;
       const { events, progress } = notices.select(home, prev, rows, first && mod ? modCutoff : first, lastScanAt, verbose);
-      const otherItems: BatchItem[] = [
-        ...tries.changes(queue || mod ? process.cwd() : undefined).map((line) => ({ line, claims: [] })),
-        ...answers.changes(new Set(rows.map((row) => row.job)), all ? undefined : process.cwd(), callerPane ?? undefined).map((line) => ({ line, claims: [] })),
-        ...flows.events.map(({ line, marker }) => ({ line, claims: [marker] })),
-        ...perms.map(({ line, marker }) => ({ line, claims: [marker] })),
-        ...(modCatchup ? [] : progress.map((line) => ({ line, claims: [] }))),
-      ];
+      const otherItems = [...[...tries.changes(queue || mod ? process.cwd() : undefined),
+        ...answers.changes(new Set(rows.map(row => row.job)), all ? undefined : process.cwd(), callerPane ?? undefined)].map(line => ({ line })),
+        ...obligations.events, ...(modCatchup ? [] : progress.map(line => ({ line })))];
       // Release the mod's first HUD call only after capturing its pre-call baseline.
       if (first && modHandshake) await io.stdout('{"type":"ready"}\n');
       const band = readBand && await readBand(scanAt);
       if (band) await io.stdout(JSON.stringify(band) + '\n');
       if (queue || mod) {
-        const pending = (mod && events.length > 0) || flows.pending || hasActivePermissionNotice(home, rows, all) || agyPending || agyBacklog.length > 0 || typedPending !== undefined || Number.isFinite(flowRetryAt) || notices.pending || otherItems.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread && (!row.auto_land || Boolean(row.auto_land_blocked))) || row.checks?.state === 'running')))) ||
+        const pending = (mod && events.length > 0) || obligations.pending || agyPending || agyBacklog.length > 0 || typedPending !== undefined || Number.isFinite(flowRetryAt) || notices.pending || otherItems.length > 0 || rows.some((row) => !row.ticket_queue && !row.workflow && !row.batch_flow && (row.open_questions || (!row.land_turn && (!settled(row) || (!row.parent_job && row.report_unread && (!row.auto_land || Boolean(row.auto_land_blocked))) || row.checks?.state === 'running')))) ||
           actionable(home, new Map(), rows, true).length > 0;
         if (pending) idleSince = null;
         else {
@@ -509,158 +487,89 @@ export async function watchCommand(
           }
         }
       }
-      const lines: BatchItem[] = verbose
-        ? [...(first ? events.map((event): BatchItem => ({ line: event.line, claims: [] })) : jobChanges(prev, rows).map((line): BatchItem => ({ line, claims: [] }))), ...otherItems]
+      let batches: BatchItem[][] = verbose
+        ? [...(first ? events.map(e => e.line) : jobChanges(prev, rows)).map(line => [{ line }]), ...otherItems.map(item => [item])]
         : notices.collect(events, otherItems);
       first = false;
       lastScanAt = scanAt;
-      prev = new Map(rows.map((row) => [row.job, row]));
+      prev = new Map(rows.map(row => [row.job, row]));
       if (queueAgent === 'agy') {
-        for (const batch of lines) {
-          if (batch.claims.length) agyBacklog.push(batch);
-          else for (const line of batch.line.split('\n')) agyBacklog.push({ line, claims: [] });
+        for (const item of batches.flat()) {
+          if (item.marker) agyBacklog.push(item);
+          else for (const line of item.line.split('\n')) agyBacklog.push({ line });
         }
-        // A regular filesystem wake or safety rescan also flushes old events
-        // when the caller returns to its prompt without any new job events.
+        if (stopped) break;
         if (!agyPending) agyGuardUntil = undefined;
         if (agyGuardUntil && performance.now() >= agyGuardUntil) {
           recordPromptExpiry(home);
           agyGuardUntil = 0;
         }
-        if (!stopped && (agyBacklog.length || agyPending)) {
-          // After expiry the ordinary PreInvocation hook can still claim the mailbox.
-          const sent = await delivery!.notifyAgy(callerPane, agyBacklog.map((item) => item.line), home, io.env, agyGuardUntil === 0 ? null : pane, { signal });
-          const accepted = agyBacklog.splice(0, sent.accepted);
-          for (const item of accepted) commitAccepted(item.claims, 'agy-mailbox');
-          if (stopped) { releaseAllClaims(); break; }
-          if (sent.guardPending) {
-            agyGuardUntil ??= performance.now() + PROMPT_RETRY_TTL_MS;
-            waitForPrompt();
-          } else noPendingPrompt();
-          if (sent.status !== 0) io.stderr(`${sent.detail || sent.error?.message || 'Antigravity event delivery failed; will retry'}\n`);
+        const sending = prepare(agyBacklog);
+        agyBacklog = [];
+        if (!sending.length && !agyPending) { noPendingPrompt(); continue; }
+        // Acknowledge the mailbox before waiting on the prompt; only overflow or a pre-write failure can retry.
+        let acknowledged = false;
+        const published = (accepted: number) => {
+          acknowledged = true;
+          finish(sending.slice(0, accepted), 'sent', 'agy-mailbox');
+          agyBacklog = bufferAgain(sending.slice(accepted));
+        };
+        const sent = await delivery!.notifyAgy(callerPane, sending.map(item => item.line), home, io.env, agyGuardUntil === 0 ? null : pane, { signal, published });
+        if (!acknowledged) published(sent.accepted);
+        if (sent.guardPending && !stopped) {
+          agyGuardUntil ??= performance.now() + PROMPT_RETRY_TTL_MS;
+          waitForPrompt();
         } else noPendingPrompt();
+        if (sent.status !== 0) io.stderr(`${sent.detail || sent.error?.message || 'Antigravity event delivery failed; will retry'}\n`);
         continue;
       }
-      // One pending Codex fallback per pane. Never run the native queue again for it.
-      if (typedPending) {
-        if (performance.now() >= typedPending.until) {
+      const fallback = typedPending;
+      typedPending = undefined;
+      const retry = fallback && performance.now() < fallback.until ? fallback.retry : undefined;
+      if (fallback) {
+        noPendingPrompt();
+        if (retry) batches = [appendBuffered(fallback.items, batches.flat())];
+        else {
           recordPromptExpiry(home);
-          const released = typedPending.claims;
-          releaseClaims(released);
-          if (released.length) {
-            idleSince = null;
-            flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
-          }
-          typedPending = undefined;
-          noPendingPrompt();
-        } else {
-          const incoming = lines.map((item) => item.line).join('\n');
-          if (incoming) {
-            const incomingClaims = lines.flatMap((item) => item.claims);
-            const joined = joinPendingNotices(typedPending.text, incoming);
-            if (!joined.keptPending) {
-              releaseClaims(typedPending.claims);
-              typedPending.claims = incomingClaims;
-            } else {
-              typedPending.claims.push(...incomingClaims);
-            }
-            typedPending.text = joined.text;
-          }
-          markSending(typedPending.claims);
-          const sent = await typedPending.retry(typedPending.text, signal);
-          const outcome = notifyOutcome(sent);
-          if (stopped) {
-            if (outcome === 'sent') commitAccepted(typedPending.claims, sent.via ?? 'herdr-prompt');
-            else if (outcome === 'refused') releaseClaims(typedPending.claims);
-            else commitUnknown(typedPending.claims, sent.detail || sent.error?.message || 'indeterminate');
-            typedPending = undefined;
-            noPendingPrompt();
-            break;
-          }
-          if (sent.retryPrompt) {
-            revertClaims(typedPending.claims);
-            typedPending.retry = sent.retryPrompt;
-            waitForPrompt();
-          } else {
-            if (outcome === 'sent') commitAccepted(typedPending.claims, sent.via ?? 'herdr-prompt');
-            else if (outcome === 'refused') {
-              releaseClaims(typedPending.claims);
-              if (typedPending.claims.length) {
-                idleSince = null;
-                flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
-              }
-            } else commitUnknown(typedPending.claims, sent.detail || sent.error?.message || 'indeterminate');
-            typedPending = undefined;
-            noPendingPrompt();
-          }
-          continue;
+          release(fallback.items);
+          retryReleased(fallback.items);
         }
       }
-      const batches: BatchItem[] = first && mod && lines.length
-        ? [{ line: lines.map((item) => item.line).join('\n'), claims: lines.flatMap((item) => item.claims) }]
-        : lines;
       for (const [i, batch] of batches.entries()) {
-        if (stopped) {
-          for (const rest of batches.slice(i)) releaseClaims(rest.claims);
-          break;
-        }
-        const { line, claims } = batch;
+        if (stopped) { release(batches.slice(i).flat()); break; }
+        const items = prepare(batch);
+        if (!items.length) continue;
+        const line = textOf(items), via = queue ? (retry ? 'herdr-prompt' : 'codex-queue') : mod ? 'claude-mod' : 'watch-stdout';
         try {
           if (queue) {
-            markSending(claims);
-            const sent = await delivery!.notify(callerPane, line, home, { queue: true, env: io.env, signal });
+            const sent: NotifyResult = retry ? await retry(line, signal)
+              : await delivery!.notify(callerPane, line, home, { queue: true, env: io.env, signal });
             const outcome = notifyOutcome(sent);
-            if (stopped) {
-              if (outcome === 'sent') commitAccepted(claims, sent.via ?? 'codex-queue');
-              else if (outcome === 'refused') releaseClaims(claims);
-              else commitUnknown(claims, sent.detail || sent.error?.message || 'indeterminate');
-              for (const rest of batches.slice(i + 1)) releaseClaims(rest.claims);
-              break;
-            }
-            if (sent.retryPrompt) {
-              revertClaims(claims);
-              const restItems = batches.slice(i + 1);
-              const rest = restItems.map((item) => item.line).join('\n');
-              const restClaims = restItems.flatMap((item) => item.claims);
-              const joined = rest ? joinPendingNotices(line, rest) : { text: line, keptPending: true };
-              if (!joined.keptPending) releaseClaims(claims);
-              const keptClaims = joined.keptPending ? [...claims, ...restClaims] : restClaims;
-              typedPending = { retry: sent.retryPrompt, text: joined.text, until: performance.now() + PROMPT_RETRY_TTL_MS, claims: keptClaims };
+            if (!stopped && outcome === 'refused' && sent.retryPrompt) {
+              typedPending = { retry: sent.retryPrompt, items: appendBuffered(bufferAgain(items), batches.slice(i + 1).flat()),
+                until: retry ? fallback!.until : performance.now() + PROMPT_RETRY_TTL_MS };
               waitForPrompt();
               break;
             }
-            if (outcome === 'sent') commitAccepted(claims, sent.via ?? 'codex-queue');
-            else if (outcome === 'refused') {
-              releaseClaims(claims);
-              if (claims.length) {
-                idleSince = null;
-                flowRetryAt = performance.now() + Math.min(rescanMs, PROMPT_QUIET_MS);
-              }
-            } else commitUnknown(claims, sent.detail || sent.error?.message || 'indeterminate');
-            if (sent.detail?.includes('failed') || sent.status !== 0) io.stderr(`${sent.detail || 'event delivery failed'}\n`);
-          } else if (mod) {
-            // Checkpoint only after the whole scan's batch, and leave changes racing the scan eligible on reload.
+            finish(items, outcome, sent.via ?? via, sent.detail || sent.error?.message);
+            if (outcome === 'refused') retryReleased(items);
+            if (!stopped && (sent.detail?.includes('failed') || sent.status !== 0)) io.stderr(`${sent.detail || 'event delivery failed'}\n`);
+          } else {
             const at = i === batches.length - 1 && !notices.pending ? scanAt : undefined;
             const wakeLines = line.startsWith('[HUD selection]\n') ? [line] : line.split('\n');
-            await io.stdout(JSON.stringify({ type: 'wake', lines: wakeLines, at }) + '\n');
-            commitAccepted(claims, 'claude-mod');
-          } else {
-            await io.stdout(`${line}\n`);
-            commitAccepted(claims, 'watch-stdout');
+            await io.stdout(mod ? JSON.stringify({ type: 'wake', lines: wakeLines, at }) + '\n' : `${line}\n`);
+            finish(items, 'sent', via);
           }
         } catch (error) {
-          releaseClaims(claims);
-          for (const rest of batches.slice(i + 1)) releaseClaims(rest.claims);
-          if (isBrokenPipe(error)) {
-            stop();
-            break;
-          }
+          finish(items, !queue && isBrokenPipe(error) ? 'refused' : 'indeterminate', via, String(error));
+          release(batches.slice(i + 1).flat());
           throw error;
         }
       }
     }
     } finally {
-      releaseAllClaims();
+      release(typedPending?.items ?? []);
+      release(agyBacklog);
     }
     return 0;
   } catch (error) {

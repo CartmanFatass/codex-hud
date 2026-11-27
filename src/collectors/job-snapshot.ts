@@ -1,6 +1,6 @@
 /** Client for the process's background collector. No job tree I/O on the caller's thread. */
 import { Worker } from 'node:worker_threads';
-import type { ThinJobScope, WatchJobRow } from './thin-jobs.js';
+import type { readSessionJobRows, ThinJobScope } from './thin-jobs.js';
 import type { WorkBatch, WorkLane } from './workboard-types.js';
 import type { resumedWorkerRefusal } from '../roles/resume-guard.js';
 import { herdrId } from '../roles/herdr-run.js';
@@ -15,7 +15,8 @@ export type Request =
   | { kind: 'rows'; home: string; pane: string; cwd: string; env: NodeJS.ProcessEnv }
   | { kind: 'resume'; args: Parameters<typeof resumedWorkerRefusal> };
 export type Lanes = { lanes: WorkLane[]; complete: boolean; batches?: WorkBatch[] };
-type Result = Lanes | string[] | WatchJobRow[] | string | undefined;
+type SessionRows = Awaited<ReturnType<typeof readSessionJobRows>>;
+type Result = Lanes | string[] | SessionRows | string | undefined;
 
 let worker: Worker | undefined;
 let serial = 0, views = 0;
@@ -85,7 +86,7 @@ export async function collectJobLanes(home: string, scope: ThinJobScope, options
 }
 export const codexJobSnapshot = (home: string) => snapshot<string[]>({ kind: 'codex', home });
 export const collectSessionJobRows = (home: string, pane: string, cwd: string, env: NodeJS.ProcessEnv) =>
-  send({ kind: 'rows', home, pane, cwd, env }) as Promise<WatchJobRow[]>;
+  send({ kind: 'rows', home, pane, cwd, env }) as Promise<SessionRows>;
 export const collectResumeRefusal = (...args: Parameters<typeof resumedWorkerRefusal>) => send({ kind: 'resume', args }) as Promise<string | undefined>;
 
 export function watchJobsInBackground(home: string, changed: () => void) {

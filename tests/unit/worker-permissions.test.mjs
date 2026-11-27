@@ -1122,6 +1122,22 @@ if (args[0] === 'pane' && args[1] === 'get') {
   assert.equal(fs.existsSync(marker), true, 'delivered permission notice keeps its claim');
   await new Promise(r => setTimeout(r, 250));
   assert.equal(delivered.length, 1, 'delivered permission notice must not repeat');
+
+  // 3. A retired menu must not leave its old instruction in the typed fallback buffer.
+  mode = 'draft_present';
+  const ledgerFile = join(dir, 'permissions.json');
+  const timedOutId = 'perm-00000000000008a2';
+  const [original] = JSON.parse(fs.readFileSync(ledgerFile, 'utf8')).entries;
+  const next = { ...original, id: timedOutId };
+  const nextMarker = join(dir, `${timedOutId}.noticed`);
+  writeFixtureFile(ledgerFile, JSON.stringify({ active: timedOutId, entries: [original, next] }));
+  await until(() => readDeliveryRecord(nextMarker).state === 'claimed' && subscription && !subscription.destroyed, 8_000);
+  writeFixtureFile(ledgerFile, JSON.stringify({ entries: [original, { ...next, outcome: 'gone' }] }));
+  mode = 'ok';
+  subscription.write(JSON.stringify({ event: 'pane.scroll_changed', data: { pane_id: main } }) + '\n');
+  await until(() => readDeliveryRecord(nextMarker).state === 'abandoned', 8_000);
+  assert.equal(attempts.filter(text => text.includes(timedOutId)).length, 1, 'only the guarded refusal, no stale retry');
+  assert.ok(delivered.every(text => !text.includes(timedOutId)));
   ac.abort();
   assert.equal(await running, 0);
 
@@ -1152,8 +1168,8 @@ if (args[0] === 'pane' && args[1] === 'get') {
   assert.equal(fs.existsSync(join(permDir, `${seenIds.at(-1)}.noticed`)), true, 'latest entry marker kept');
 });
 
-test('worker started before origin pane exits routes approve/decline permission to another live project main and allows hud_respond', { timeout: 25_000 }, async t => {
-  const otherMain = 'w1:p9';
+for (const gone of ['pane', 'queue MCP']) test(`worker permission falls back when its origin ${gone} exits, and the new main can answer`, { timeout: 25_000 }, async t => {
+  const otherMain = 'w0:p9';
   let originAlive = true;
   let projectRoot = '';
   const { f, herdr, dir, job, env, wait, unblocked, startWatch } = await permissionWorker(t, {
@@ -1165,6 +1181,18 @@ test('worker started before origin pane exits routes approve/decline permission 
     ],
   });
   projectRoot = dirname(f.home);
+  let origin, originExit;
+  if (gone === 'queue MCP') {
+    origin = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });
+    originExit = once(origin, 'exit');
+    t.after(() => stopChild(origin, originExit));
+    const flow = 'q00000000000000a1';
+    fs.mkdirSync(join(f.home, 'flows'), { recursive: true });
+    writeFixtureFile(join(f.home, 'flows', `${flow}.json`), JSON.stringify({ flow, pane: main, root: projectRoot,
+      template: 'ticket-queue', state: 'paused', epoch: 0, notices: {}, tickets: [],
+      origin_mcp: { pid: origin.pid, start: procStat(origin.pid).start } }));
+    writeFixtureFile(join(dir, 'job.json'), JSON.stringify({ ...job, ticket_queue: flow }));
+  }
   assert.doesNotMatch(fs.readFileSync(resolve('src/mcp/ticket-queue-step.ts'), 'utf8'), /syncPermissionNotices/);
   startWatch();
 
@@ -1185,9 +1213,10 @@ test('worker started before origin pane exits routes approve/decline permission 
   };
   assert.equal((await respondOther(firstPerm.id, 'approve')).code, 'permission_not_open');
 
-  // Now origin pane exits; a new permission routes to otherMain with approve/decline options and hud_respond succeeds.
+  // A new permission routes to otherMain with approve/decline options and hud_respond succeeds.
   await unblocked();
-  originAlive = false;
+  if (origin) { origin.kill('SIGKILL'); await originExit; } // Its pane stays listed.
+  else originAlive = false;
   herdr.update('blocked', prompt('curl -X POST https://example.invalid'));
   await wait(() => {
     const active = permissionStatus(dir).active;

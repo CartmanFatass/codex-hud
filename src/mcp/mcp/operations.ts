@@ -18,12 +18,12 @@ import { JOB_ID_RE } from '../../roles/job-index-cache.js';
 import { packageJobFilter, projectJobFilter } from '../../roles/job-project.js';
 import { takeLease } from '../../roles/lease.js';
 import { ensureQueueWatcher, notifyOutcome, paneInfo, watching, notify } from '../../roles/notify.js';
-import { isOriginPaneLive, loadLivePanes } from '../../roles/select-send.js';
+import { noticeResolver } from '../../roles/select-send.js';
 import { piSwitches } from '../../roles/roster.js';
 import { ROLE_TOOLS as tools } from '../../roles/tool-definitions.js';
 import { reapWorkerTree, tabTreeGrant } from '../../roles/worker-tree.js';
 import { readFileBounded, writePrivateFile } from '../../utils/atomic-fs.js';
-import { isDeliveryClaimable, markDeliveryAccepted } from '../../utils/delivery-record.js';
+import { beginNotice, settleNotice } from '../../utils/delivery-record.js';
 import { waitUntilFs, type WatchTarget } from '../../utils/fs-wait.js';
 import { reportReadHint } from '../../utils/report-summary.js';
 import { required, jobCwd, type Args } from '../dispatch/context.js';
@@ -37,11 +37,10 @@ import { jobCallerPane } from '../../roles/job-pane.js';
 import type { AnswerActor, Job, JobStatus } from '../job-contracts.js';
 import { wakeWorkflow } from '../../workflows/wake.js';
 import { batchView, controlBatch, startBatch } from '../batch.js';
-import { runNoticeRecipient, runVisible } from '../../workflows/scope.js';
-import { headerScanner } from '../../workflows/header-scan.js';
-import { batchEvents, isBatchId, type Batch } from '../batch-state.js';
+import { jobNoticeOrigin, runVisible } from '../../workflows/scope.js';
+import { isBatchId } from '../batch-state.js';
 import { landView, isFlowId, recoverLand } from '../land-state.js';
-import { taskNoticeSource, workflowEvents } from '../../workflows/events.js';
+import { noticeReader, permissionEvents, taskNoticeSource, workflowEvents } from '../../workflows/events.js';
 import { isComposedId } from '../../workflows/composed-state.js';
 import { answerComposed, callWorkflow } from '../composed-workflow.js';
 import { startLand, landTask } from '../land.js';
@@ -54,7 +53,7 @@ import { claimQueueTask, isTicketQueueId, liveQueueTask, readTicketQueue, ticket
 import { gitSummary } from '../managed-worktree.js';
 import { panelDelivery } from '../panel-delivery.js';
 import { binScript, jobFiles } from '../paths.js';
-import { answerWorkerPermission, PERMISSION_ID, permissionNotice, permissionNoticeable, permissionNoticeEvents, permissionNoticeMarker, permissionStatus } from '../worker-permissions.js';
+import { answerWorkerPermission, PERMISSION_ID, permissionNotice, permissionStatus } from '../worker-permissions.js';
 import { settleStoppedPi } from '../pi-stop-settlement.js';
 import { stopSonic } from '../sonic-process.js';
 import { SALVAGED_SONIC_DETAIL, SALVAGED_SONIC_REASON } from '../../worker/sonic-jobs.js';
@@ -928,14 +927,8 @@ async function respondJob(args: Args, batch: boolean, loadedJobs?: readonly Job[
   const request = required(args, 'request_id');
   if (PERMISSION_ID.test(request)) {
     if (isWorker || answeredBy !== 'orchestrator') return { ok: false, code: 'permission_not_open' };
-    if (!ownsJob(job)) {
-      if (!projectJobFilter(process.cwd())(job)) return { ok: false, code: 'permission_not_open' };
-      const origin = jobCallerPane(job);
-      if (origin) {
-        const { panes, workerPanes } = await loadLivePanes(hudHome, process.env);
-        if (isOriginPaneLive(hudHome, origin, panes, workerPanes) !== false) return { ok: false, code: 'permission_not_open' };
-      }
-    }
+    const recipient = await noticeResolver(hudHome)(jobNoticeOrigin(hudHome, job), { pane: callerPane, cwd: process.cwd() });
+    if (job.scout_only || recipient.kind !== 'pane') return { ok: false, code: 'permission_not_open' };
     return answerWorkerPermission(hudHome, dir, job, request, required(args, 'answer'));
   }
   if (!/^q\d+$/.test(request)) throw new Error('invalid_arguments: request_id');
@@ -1180,19 +1173,12 @@ export async function syncPanelDelivery() {
       }, async message => {
         const sent = await notify(callerPane, message, hudHome);
         return { outcome: notifyOutcome(sent), via: sent.via, reason: sent.detail || sent.error?.message };
-      }, async () => {
-        if (watching(callerPane, hudHome)) return [];
-        const fast = taskNotices();
-        if (fast.length) return fast;
-        // Only query herdr panes if a foreign-origin project job has a claimable permission notice.
-        const foreignPerm = jobs().some(job =>
-          !job.scout_only && !job.council && !job.headless && !job.bro && !job.jev && !job.reaped_at &&
-          jobCallerPane(job) && jobCallerPane(job) !== callerPane && matches(job) && (() => {
-            const entry = permissionStatus(directory(job.job), jobCache).active;
-            return permissionNoticeable(entry) && isDeliveryClaimable(permissionNoticeMarker(directory(job.job), entry.id));
-          })(),
-        );
-        return foreignPerm ? taskNotices(await loadLivePanes(hudHome, process.env)) : [];
+      }, async push => {
+        const watched = watching(callerPane, hudHome);
+        if (watched && push) return [];
+        const pull = noticeReader(hudHome, callerPane, cwd);
+        const flows = await taskNotices(pull, watched ? 'batch' : push ? 'task' : 'task-read');
+        return watched ? flows : [...flows, ...(await permissionEvents(hudHome, pull)).events];
       });
     }
     ensureBatchTimer();
@@ -1213,46 +1199,23 @@ export async function checkModTakeover() {
   }
   return live;
 }
-const scanTaskRuns = headerScanner();
 export async function withChanges(value: unknown, markExhaustion: boolean, scan: JobScan): Promise<unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value) || await checkModTakeover()) return value;
   if (session.taskClient) {
-    const { files, header } = scanTaskRuns(hudHome);
-    const batchNotices = files.flatMap(file => {
-      if (!file.endsWith('.json') || !isBatchId(file.slice(0, -5))) return [];
-      const b = header<Batch>(file);
-      return b && runNoticeRecipient(b, callerPane) ? batchEvents(hudHome, b) : [];
-    });
-    for (const { marker } of batchNotices) markDeliveryAccepted(marker, 'mcp-changes');
-    const changes = [...(await ownerDelivery?.changes() ?? []), ...(await drainBatchChanges()), ...batchNotices.map(e => e.line)];
+    const changes = [...(await ownerDelivery?.changes() ?? []), ...await drainBatchChanges()];
     return changes.length ? { ...value, changes } : value;
   }
-  const cwd = process.cwd();
+  const cwd = process.cwd(), pull = noticeReader(hudHome, callerPane, cwd);
+  const flows = await workflowEvents(hudHome, callerPane, false, cwd, false, pull);
   const rows = sessionRows(markExhaustion, scan);
-  const permRows: { job: string; permission?: JobRow['permission'] }[] = [...rows];
-  const matches = projectJobFilter(cwd);
-  const ownedIds = new Set(rows.map(r => r.job));
-  const foreignPerms: { job: Job; entry: NonNullable<JobRow['permission']> }[] = [];
-  for (const job of scan.all()) {
-    if (ownedIds.has(job.job) || job.scout_only || job.council || job.headless || job.bro || job.jev || job.reaped_at || !matches(job)) continue;
-    const entry = permissionStatus(directory(job.job), jobCache).active;
-    if (!permissionNoticeable(entry) || !isDeliveryClaimable(permissionNoticeMarker(directory(job.job), entry.id))) continue;
-    if (!jobCallerPane(job)) permRows.push({ job: job.job, permission: entry });
-    else foreignPerms.push({ job, entry });
+  const changes = [...jobChanges(session.cursor, rows), ...tries.changes(cwd), ...answers.changes(new Set(rows.map(row => row.job)), cwd)];
+  session.cursor = new Map(rows.map(row => [row.job, row]));
+  const perms = watching(callerPane, hudHome) ? [] : (await permissionEvents(hudHome, pull)).events;
+  for (const event of [...flows.events, ...perms].filter(beginNotice)) {
+    changes.push(event.line);
+    settleNotice(event, 'sent', 'mcp-changes');
   }
-  const live = foreignPerms.length ? await loadLivePanes(hudHome, process.env) : undefined;
-  for (const { job, entry } of foreignPerms) {
-    if (live && isOriginPaneLive(hudHome, jobCallerPane(job), live.panes, live.workerPanes) === false) {
-      permRows.push({ job: job.job, permission: entry });
-    }
-  }
-  const watched = watching(callerPane, hudHome);
-  const perms = watched ? [] : permissionNoticeEvents(hudHome, permRows);
-  const flows = workflowEvents(hudHome, callerPane, false, cwd, false, live);
-  for (const { marker } of [...perms, ...flows.events]) markDeliveryAccepted(marker, 'mcp-changes');
-  const changes = [...jobChanges(session.cursor, rows), ...tries.changes(cwd), ...answers.changes(new Set(rows.map((row) => row.job)), cwd), ...flows.lines, ...perms.map(e => e.line)];
-  session.cursor = new Map(rows.map((row) => [row.job, row]));
-  return changes.length ? { ...(value as Record<string, unknown>), changes } : value;
+  return changes.length ? { ...value, changes } : value;
 }
 
 export function mutationKey(name: string, args: Args): string | null {

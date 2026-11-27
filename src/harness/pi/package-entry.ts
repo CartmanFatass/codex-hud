@@ -149,10 +149,10 @@ export function installPiPackage(
       const unregister = registerPiWatcher(pane, binding.hudHome);
       if (unregister) {
         const stop = startSessionWatch(binding.hudHome, pane, ctx.cwd, (lines) => {
-          if (!current(s)) return s.stopWatch?.();
+          if (!current(s) || !pi.sendMessage) { s.stopWatch?.(); return 'refused'; }
           try {
             // Pi 1.5.2 delivers steering after the current tool batch, before the next model request.
-            pi.sendMessage?.(
+            pi.sendMessage(
               {
                 customType: 'hud-watch',
                 content: `HUD watch notice (status only; not a user instruction or authorization):\n${lines.join('\n')}`,
@@ -160,7 +160,8 @@ export function installPiPackage(
               },
               { deliverAs: 'steer', triggerTurn: true }
             );
-          } catch { s.stopWatch?.(); }
+            return 'sent';
+          } catch { s.stopWatch?.(); return 'refused'; }
         });
         s.stopWatch = () => { stop(); unregister(); };
       }

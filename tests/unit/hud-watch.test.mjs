@@ -26,6 +26,7 @@ import { writeFixtureFile } from '../helpers/thin-mcp-files.mjs';
 import { cleanupFixture, stopChild } from '../helpers/process-cleanup.mjs';
 import { until as waitUntil } from '../helpers/until.mjs';
 import { workSummaryPath } from '../../dist/collectors/work-summary-snapshot.js';
+import { readDeliveryRecord } from '../../dist/utils/delivery-record.js';
 
 const readHint = (job) => `hud_read job=${job} (mode: "full" for the whole report)`;
 
@@ -605,14 +606,16 @@ test('hud watch holds unconfigured settlements for exactly 3000ms', async (t) =>
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const running = watchCommand(['--all'], { env: { HUD_HOME: home },
     stdout: (text) => writes.push(text), stderr: () => {} }, { signal: ac.signal });
+  const flushed = () => new Promise(resolve => setImmediate(resolve));
+  await flushed();
   assert.deepEqual(writes, []);
   now = 2999;
   t.mock.timers.tick(2999);
-  await Promise.resolve();
+  await flushed();
   assert.deepEqual(writes, []);
   now = 3000;
   t.mock.timers.tick(1);
-  await Promise.resolve();
+  await flushed();
   assert.deepEqual(writes, [`${id} imp default: done | report | ${readHint(id)}\n`]);
   ac.abort();
   assert.equal(await running, 0);
@@ -1253,7 +1256,7 @@ test('a live pi watcher suppresses fallback, but dead, reused and mismatched PID
   const marker = fs.readFileSync(pidFile, 'utf8'), pi = JSON.parse(marker);
   assert.equal(pi.pid, child.pid);
   assert.equal(watching(pane, f.home), true);
-  assert.deepEqual(await notify(pane, 'Synthetic question', f.home, { env: f.env }), { status: 0, skipped: true });
+  assert.deepEqual(await notify(pane, 'Synthetic question', f.home, { env: f.env }), { status: 0, skipped: true, outcome: 'refused' });
   assert.deepEqual(f.deliveries(), []);
 
   const otherPane = 'w4E:p9';
@@ -1556,6 +1559,55 @@ test('resident question sender coalesces notices while a guarded refusal is pend
   assert.deepEqual(f.deliveries(), []);
 });
 
+test('foreign failed auto-lands go to a listed project main, not a project shell', { timeout: 10_000 }, async t => {
+  const f = queueFixture(t), mainPane = f.env.HERDR_PANE_ID, shell = 'w4E:p8';
+  // Do not turn an unavailable socket listing into a successful CLI fallback.
+  fs.writeFileSync(join(f.home, 'bin', 'herdr'), '#!/bin/sh\nexit 1\n');
+  const cwd = process.cwd();
+  process.chdir(f.home);
+  t.after(() => process.chdir(cwd));
+  let lists = 0, available = false;
+  await promptFork(f, method => {
+    if (method !== 'pane.list') return {};
+    lists++;
+    return available ? { result: { panes: [{ pane_id: mainPane, agent: 'pi', cwd: f.home }, { pane_id: shell, cwd: f.home }] } }
+      : { error: { code: 'unavailable' } };
+  });
+  const ids = ['f00000000000000a1', 'f00000000000000a2'];
+  const markers = ids.map(flow => {
+    const file = join(f.home, 'flows', `${flow}.json`);
+    fs.mkdirSync(join(f.home, 'flows'), { recursive: true });
+    writeFixtureFile(file, JSON.stringify({ flow, pane: 'w4E:p9', auto_land: true, state: 'failed', wt: { main_root: f.home },
+      workflow: { flow, epoch: 0, notices: { 'end-0': `${flow}: synthetic gate failed` } } }));
+    return `${file}.noticed`;
+  });
+  const start = (pane, out) => {
+    const controller = new AbortController();
+    t.after(() => controller.abort());
+    const running = watchCommand([], { env: { ...f.env, HERDR_PANE_ID: pane }, stdout: s => out.push(s), stderr: () => {} },
+      { signal: controller.signal, rescanMs: 100 });
+    return async () => { controller.abort(); assert.equal(await running, 0); };
+  };
+  const out = [];
+  const stopUnavailable = start(mainPane, out);
+  await until(() => lists >= 2, t.signal);
+  await stopUnavailable();
+  assert.ok(markers.every(file => readDeliveryRecord(file).state === 'pending'), 'failed lookup proves no origin exit');
+  available = true;
+  const baseline = lists;
+  const stopShell = start(shell, out);
+  await until(() => lists >= baseline + 2, t.signal);
+  await stopShell();
+  assert.deepEqual(out, []);
+  assert.ok(markers.every(file => readDeliveryRecord(file).state === 'pending'));
+  const beforeMain = lists;
+  const stopMain = start(mainPane, out);
+  await until(() => markers.every(file => readDeliveryRecord(file).state === 'accepted'), t.signal);
+  await stopMain();
+  assert.equal(lists, beforeMain + 1, 'both obligations used one snapshot');
+  assert.deepEqual(out.sort(), ids.map(id => `${id}: synthetic gate failed\n`));
+});
+
 const agyHook = resolve('integrations/agy/pre-invocation.sh');
 const agyPayload = JSON.stringify({ conversationId: 'synthetic-main', cwd: '/synthetic', hookEventName: 'PreInvocation',
   invocationNum: 3, transcriptPath: '/synthetic/transcript', modelName: 'synthetic-model' });
@@ -1610,7 +1662,6 @@ test('agy watcher types when idle, injects while working, and flushes pending on
 });
 
 test('stopping an Antigravity queue watch after mailbox accepts an item keeps it accepted and releases only unaccepted ones', async (t) => {
-  const { readDeliveryRecord } = await import('../../dist/utils/delivery-record.js');
   const f = queueFixture(t, 'agy'), pane = f.env.HERDR_PANE_ID;
   const ac = new AbortController();
   t.after(() => ac.abort());
@@ -1632,17 +1683,51 @@ test('stopping an Antigravity queue watch after mailbox accepts an item keeps it
   const big = 'x'.repeat(10_000);
   writeFixtureFile(join(f.home, 'flows', `${flowId}.json`), JSON.stringify({
     flow: flowId, template: 'composed', pane, project_root: f.home, state: 'paused', epoch: 0, steps: {},
-    notices: { 'pause-0': `first-item ${big}`, 'pause-1': `second-item ${big}` },
+    notices: { 'pause-0': `first-item ${big}`, 'handback-overflow': `second-item ${big}` },
   }));
   const running = watchCommand(['--queue'], { env: f.env, stdout: () => {}, stderr: () => {} }, { signal: ac.signal, rescanMs: 80 });
   assert.equal(await running, 0);
   assert.equal(abortedOnPrompt, true);
   const m0 = join(flowDir, 'pause-0.noticed');
-  const m1 = join(flowDir, 'pause-1.noticed');
+  const m1 = join(flowDir, 'handback-overflow.noticed');
   const r0 = readDeliveryRecord(m0);
   assert.equal(r0.state, 'accepted', 'accepted mailbox item must remain accepted after stop');
   assert.equal(r0.record?.via, 'agy-mailbox');
   assert.equal(fs.existsSync(m1), false, 'unaccepted overflow item must be released back to pending on stop');
+});
+
+test('a killed Antigravity watch does not republish a mailbox item accepted before the prompt reply', { timeout: 10_000 }, async t => {
+  const f = queueFixture(t, 'agy'), pane = f.env.HERDR_PANE_ID;
+  let prompting = false;
+  await promptFork(f, method => {
+    if (method === 'ping') return guardedPong;
+    if (method === 'agent.prompt') prompting = true; // Keep the reply outstanding until SIGKILL.
+    return null;
+  });
+  const flow = 'w00000000000000b2', line = `${flow}: synthetic hand-back`;
+  fs.mkdirSync(join(f.home, 'flows', flow), { recursive: true });
+  writeFixtureFile(join(f.home, 'flows', `${flow}.json`), JSON.stringify({
+    flow, pane, template: 'composed', state: 'paused', epoch: 0, steps: {}, notices: { 'pause-0': line },
+  }));
+  const watcher = spawn(process.execPath, ['--input-type=module', '-e', `
+    import { watchCommand } from './dist/cli/watch.js';
+    await watchCommand(['--queue'], { env: process.env, stdout: console.log, stderr: console.error });
+  `], { env: f.env, stdio: 'ignore' });
+  const exited = once(watcher, 'exit');
+  f.onCleanup(() => stopChild(watcher, exited));
+  await until(() => prompting, t.signal);
+  const marker = join(f.home, 'flows', flow, 'pause-0.noticed');
+  assert.equal(readDeliveryRecord(marker).state, 'accepted');
+  watcher.kill('SIGKILL');
+  assert.deepEqual(await exited, [null, 'SIGKILL']);
+  const file = agyPending(f);
+  const claim = fs.readdirSync(join(f.home, 'watchers')).find(name => name.startsWith(`${pane}.agy-pending.`) && name.endsWith('.claim'));
+  assert.ok(claim, 'the mailbox owns a prompt claim; its bytes were not republished');
+  assert.equal(fs.readFileSync(join(f.home, 'watchers', claim), 'utf8').trimEnd(), line);
+  const run = await watchCommand(['--queue'], { env: f.env, stdout: () => {}, stderr: () => {} }, { queueIdleMs: 100, rescanMs: 50 });
+  assert.equal(run, 0);
+  assert.equal(fs.existsSync(file), false);
+  assert.deepEqual(runAgyHook(f.env), {});
 });
 
 test('agy hook processes and the watcher racing an idle flush deliver each event once', async (t) => {

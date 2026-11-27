@@ -76,7 +76,7 @@ function eventLine(message) {
 
 // Return how many notices were persisted. A live watcher retains overflow and
 // retries on its next regular wake rather than dropping older pending events.
-export async function pushAgyEvents(pane, home, messages, env, writePrivateFile, type) {
+export async function pushAgyEvents(pane, home, messages, env, writePrivateFile, type, published) {
   const file = pendingFile(pane, home);
   let accepted = 0;
   try {
@@ -97,6 +97,7 @@ export async function pushAgyEvents(pane, home, messages, env, writePrivateFile,
           accepted = count;
         }
       }
+      published?.(accepted);
       let sent = { status: 0, detail: 'pending for Antigravity delivery' };
       if (type) await consume(file, async (text, claim) => {
         sent = await type(text);

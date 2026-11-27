@@ -4,10 +4,9 @@ import { basename, dirname, join, resolve } from 'node:path';
 import type { Job } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
 import { recordQuestionTimeout } from '../roles/job-archive.js';
-import { jobCallerPane } from '../roles/job-pane.js';
 import { notify, recordPromptExpiry, taskDelivery, watching, PROMPT_QUIET_MS, PROMPT_RETRY_TTL_MS, type NotifyResult } from '../roles/notify.js';
-import { loadLivePanes, resolveRecipient } from '../roles/select-send.js';
-import { jobProjectRoot } from '../roles/selection-excerpts.js';
+import { noticeResolver } from '../roles/select-send.js';
+import { jobNoticeOrigin } from '../workflows/scope.js';
 import { watchHerdrPane } from '../runtime/herdr-socket.js';
 import { readJsonFile, writePrivateFile } from '../utils/atomic-fs.js';
 import { waitUntilFs } from '../utils/fs-wait.js';
@@ -170,17 +169,15 @@ export async function notifyQuestion(
   let pushed = 'not pushed (no --notify / --orchestrator)';
   // SESSION.txt describes the launch. The receipt can name a new main session after a handoff.
   const receipt = readReceipt(dir, job);
-  const origin = jobCallerPane(receipt) || orchestratorPane(dir);
   const home = dirname(dirname(resolve(dir)));
-  const projectRoot = jobProjectRoot(receipt);
+  const origin = jobNoticeOrigin(home, receipt);
+  origin.pane ||= orchestratorPane(dir);
   if (receipt.scout_only === true) pushed = 'handled by scouted dispatch';
   else if (receipt.ticket_queue) pushed = 'handled by the ticket queue';
-  else if (origin && taskDelivery(dir, origin)) pushed = 'delivered by MCP task';
-  else if (origin && watching(origin, home)) pushed = 'delivered by hud watch';
-  else if ((origin && !/[\u0000-\u001f\u007f-\u009f]/.test(origin)) || projectRoot) {
-    const { panes, workerPanes } = await loadLivePanes(home);
+  else if (origin.pane && taskDelivery(dir, origin.pane)) pushed = 'delivered by MCP task';
+  else if (origin.pane || origin.project_root) {
+    const resolved = await noticeResolver(home)(origin);
     signal?.throwIfAborted();
-    const resolved = resolveRecipient({ home, originPane: origin, projectRoot, panes, workerPanes });
     if (resolved.kind === 'unknown') return 'not pushed (pane availability unknown)';
     if (resolved.kind === 'none') return 'not pushed (no live main pane)';
     if (resolved.watching) return 'delivered by hud watch';
@@ -192,6 +189,7 @@ export async function notifyQuestion(
       pending.notice = notice;
       return 'pending for guarded typing';
     }
+    if (!notice.needed()) return 'recorded for HUD reads';
     const ran = await notify(orch, notice.text, home, { signal });
     signal?.throwIfAborted();
     if (ran.retryPrompt) {
