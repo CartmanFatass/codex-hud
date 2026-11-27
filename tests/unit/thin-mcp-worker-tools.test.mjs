@@ -26,6 +26,7 @@ import {
   runProgress,
   fallbackRole,
   waitFixtureJob,
+  paneList,
   progressRecord,
   jsonLines,
   writeCliRole,
@@ -40,6 +41,7 @@ test('hud_ask does not block other worker MCP calls while Codex queue is slow', 
   // hud_create checks the caller's pane for a queue watcher in the background (its second `pane get`). If that
   // check ran after the Codex stub below, it would start a watcher that takes the delivery ("delivered by hud watch").
   await until(() => f.commands().filter(({ args }) => args.join(' ') === 'pane get w4E:p1').length >= 2, t.signal);
+  paneList(f, 'w4E:p1');
   // A shell stub: a Node one can miss the 2 s pane-lookup budget under full-suite load and fall back to hud watch.
   f.overrideBin('herdr', `#!/bin/sh
 case "$2" in
@@ -96,6 +98,7 @@ test('worker ping can release a contended Antigravity hud_ask mailbox before flo
   const f = await fixture(t);
   const parent = await f.call('hud_create', { role: 'imp', task: 'Synthetic mailbox question.' });
   await until(() => f.commands().filter(({ args }) => args.join(' ') === 'pane get w4E:p1').length >= 2, t.signal);
+  paneList(f, 'w4E:p1');
   f.overrideBin('herdr', `#!/bin/sh\necho '{"result":{"pane":{"agent":"agy","agent_status":"working"}}}'\n`);
   f.overrideBin('flock', '#!/bin/sh\ntouch "$HOME/waiting-on-mailbox"\nexec /usr/bin/flock "$@"\n');
   const dir = join(f.env.HUD_HOME, 'watchers');
@@ -1094,6 +1097,7 @@ test(
   { timeout: 15000 },
   async (t) => {
     const f = await fixture(t);
+    paneList(f, 'w4E:p1');
     const id = 'j00000000000000a1',
       dir = join(f.env.HUD_HOME, 'jobs', id);
     fs.mkdirSync(dir, { recursive: true });
@@ -1146,6 +1150,7 @@ test(
 test('hud-ask prints the default when no answer arrives', { timeout: 60000 }, async (t) => {
   const f = await fixture(t);
   await f.startCliSocket();
+  paneList(f, 'w4E:p1');
   const id = 'j00000000000000a2',
     dir = join(f.env.HUD_HOME, 'jobs', id);
   fs.mkdirSync(dir, { recursive: true });

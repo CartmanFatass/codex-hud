@@ -322,7 +322,7 @@
     {
       "number": 29,
       "title": "One delivery-state record and call-time recipient lookup for notices and permission hand-offs",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -337,32 +337,39 @@
         {
           "id": 1,
           "text": "A worker started before its main pane exits hits a permission prompt: another live main pane in the same project receives the approve/decline notice and can answer it with `hud_respond`; `syncPermissionNotices` no longer exists.",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "`codex queue` exit 1 with stderr containing `permission denied` or `no such file` is treated as unknown and the notice is not typed again.",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "`hud watch --verbose` emits a post-startup permission once and nothing for it after a restart while it is still blocked.",
-          "done": false
+          "done": true
         },
         {
           "id": 4,
           "text": "Stopping an Antigravity queue watch after the mailbox accepted an item keeps that item accepted and releases only the unaccepted ones.",
-          "done": false
+          "done": true
         },
         {
           "id": 5,
           "text": "A flake-block index entry is pruned only on accepted delivery or a missing/landed source, never while a claim is in flight; no 60 s foreign-claim timer remains.",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T17:33:21.034Z",
+        "job": "j1e6acb3036b58282",
+        "flow": "f1e6acb3036b58282-2",
+        "replay_base": "f4f6954b065ae592c27ddc04a272b4e7b03f1f44",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T16:03:52.535Z",
-      "updated_at": "2026-11-27T16:03:52.535Z"
+      "updated_at": "2026-11-27T17:33:21.034Z"
     },
     {
       "number": 30,

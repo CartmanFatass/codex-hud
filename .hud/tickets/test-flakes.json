@@ -607,6 +607,50 @@
       "comments": [],
       "created_at": "2026-11-27T14:02:07.656Z",
       "updated_at": "2026-11-27T14:30:49.429Z"
+    },
+    {
+      "number": 30,
+      "title": "Gate flakes collected after test-flakes/29",
+      "kind": "flake-list",
+      "status": "needs-triage",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "what": "Running list of gate flakes that passed on immediate rerun; dispatches when a named test repeats or the list reaches 4 cases. Fix each flaky test to wait on observable events instead of fixed timing without weakening assertions or product bounds (fix the product if it is a real bug).",
+      "cases": [
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/workflow-ticket-queue.test.mjs",
+          "case_name": "unattended ticket queue waits for native permissions and lands after auto-approval",
+          "flow": "fef0cac645b5c2c8e",
+          "log": "~/.hud/flows/fef0cac645b5c2c8e.json.gate-1.log",
+          "recorded_at": "2026-11-27T17:26:00.145Z"
+        },
+        {
+          "step": "gate[3]: TZ=UTC node tests/run-mjs.mjs 8",
+          "test": "tests/unit/worker-permissions.test.mjs",
+          "case_name": "one watcher pass approves only the proven worker cleanup; restart, handoff and gone are safe",
+          "flow": "fef0cac645b5c2c8e",
+          "log": "~/.hud/flows/fef0cac645b5c2c8e.json.gate-1.log",
+          "recorded_at": "2026-11-27T17:26:00.145Z"
+        }
+      ],
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "Each listed case passes 20 consecutive runs under parallel load",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "No assertion or product bound weakened",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T17:26:00.145Z",
+      "updated_at": "2026-11-27T17:26:00.145Z"
     }
   ]
 }

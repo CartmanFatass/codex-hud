@@ -536,6 +536,50 @@
       "comments": [],
       "created_at": "2026-11-27T16:52:20.167Z",
       "updated_at": "2026-11-27T17:25:54.284Z"
+    },
+    {
+      "number": 67,
+      "title": "Ticket archive repair: staged-edit refusal, receipt-before-rename, legacy @groups fail-closed, Git-probe wording",
+      "kind": "impl",
+      "status": "ready-for-agent",
+      "owner_try": false,
+      "live_try": "none",
+      "approved_removals": [],
+      "blocked_by": [],
+      "repairs": [
+        "chores/66"
+      ],
+      "what": "Repair four findings from milestone review ja4f8aac10f123f88 (read it: `~/.hud/jobs/ja4f8aac10f123f88/report.md`) against chores/66 (commit f4f6954b). Keep the candidate-A design; do not reintroduce @groups or reconciliation.\n\n1. Staged hand edit (review #1): `inspectMainPath` in `src/tickets/commit.ts` checks only worktree bytes. HUD never leaves staged changes on a ticket file, so for an existing tracked file treat any staged index change (porcelain X column not ' ' and not '?') as a hand edit and refuse before writing. Applies to archive preflight (`checkArchiveFiles`) and to the pending-write sweep (`collectPendingWrites` should skip such a path, not commit over the staged blob).\n2. Receipt ordering (review #5): `prepareTicketWrites` in `src/tickets/store.ts` renames the feature file before saving `ticket-writes.json`. Restore the old guarantee: the receipt is saved before any project file is renamed into place (e.g. stage temp files via `writeFileAtomic`'s `beforeRename`, or save the receipt first). If the receipt save fails, no project file changes. No recursive multi-file publisher is needed beyond what that takes.\n3. Legacy ledger (review #4): `readTicketWrites` silently drops an old `@groups` key. Fail closed instead: if the ledger has `@groups`, refuse sweep/land/archive with one clear error that names the ledger path and the recovery (commit or revert the listed files by hand, then delete the `@groups` key). Do not restore group reconciliation.\n4. Git-free wording (review #2): an ordinary edit to a feature whose digest was already pruned runs a read-only Git probe (`isCleanInGitSync`). Keep that probe (it is the hand-edit guard) and correct `docs/reference.md` / `docs/reference.zh.md` to say ordinary edits take no lease and make no commit, and run only a read-only Git status probe when the file has no recorded HUD digest. Add a test: after a sweep prunes the digest, a small `update` succeeds while a land holds `main-checkout` (lease-free).\n\nSize budget: about 40 added / 10 removed in src plus tests. Stop and report if it grows past 1.5x.",
+      "acceptance": [
+        {
+          "id": 1,
+          "text": "An owner edit staged on a HUD-pending ticket file, with the worktree reverted to HUD's bytes, makes a cap-crossing add refuse before writing; the staged index blob and the worktree are unchanged afterwards, and `hud_tickets commit` skips that file.",
+          "done": false
+        },
+        {
+          "id": 2,
+          "text": "If saving `ticket-writes.json` fails during an ordinary add, the project ticket file is unchanged and the add reports an error (no duplicate ticket on retry).",
+          "done": false
+        },
+        {
+          "id": 3,
+          "text": "A ledger carrying a legacy `@groups` key makes `commit`, local `hud_land` record sweep and an archive refuse with a message naming the recovery; no file is committed.",
+          "done": false
+        },
+        {
+          "id": 4,
+          "text": "After a sweep prunes a feature's digest, a small `update` succeeds while another holder has the `main-checkout` lease; `docs/reference.md` and `.zh` describe the read-only Git probe instead of claiming no Git execution.",
+          "done": false
+        },
+        {
+          "id": 5,
+          "text": "No `@groups` handling beyond the fail-closed check remains in src.",
+          "done": false
+        }
+      ],
+      "comments": [],
+      "created_at": "2026-11-27T17:30:58.769Z",
+      "updated_at": "2026-11-27T17:30:58.769Z"
     }
   ]
 }
