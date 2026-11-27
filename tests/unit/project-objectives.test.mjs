@@ -12,6 +12,7 @@ import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
 import { onPage, PROJECTS } from '../fixtures/project-page.mjs';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { HomePortfolioCollector } from '../../dist/collectors/home-portfolio.js';
+import { collectFeatureActivity } from '../../dist/render/project-objectives.js';
 import { NOW, plain, projectFixture } from '../fixtures/project-page.mjs';
 
 const sample = `# Objectives
@@ -749,4 +750,57 @@ test('Objective page resolves record and evidence from one read, handles removal
   assert.equal(loadedFromPending.subpage.evidence[1].file, newDoc);
   const loadedFrame = draw(loadedFromPending, snap2, 'en', { workboard: boardWithObj });
   assert.match(plain(loadedFrame).join('\n'), /Fresh synthetic result recorded\.[\s\S]*docs\/new-proof\.md/);
+});
+
+test('collectFeatureActivity and Objective views count a live job linked to tickets in two features under both features', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'project-objective-shared-job-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const sharedJobId = 'j0000000000000601';
+  const at = NOW - 5 * 60_000;
+  const featA = {
+    slug: 'feat-alpha',
+    at,
+    tickets: [{
+      number: '01', title: 'Alpha task', path: '/synthetic/feat-alpha/01.md',
+      state: 'working', at, status: 'claimed', checked: 0, total: 1, blockers: [], items: [],
+      job: { id: sharedJobId, role: 'imp', state: 'working', at, created: at },
+    }],
+  };
+  const featB = {
+    slug: 'feat-beta',
+    at,
+    tickets: [{
+      number: '02', title: 'Beta task', path: '/synthetic/feat-beta/02.md',
+      state: 'working', at, status: 'claimed', checked: 0, total: 1, blockers: [], items: [],
+      job: { id: sharedJobId, role: 'imp', state: 'working', at, created: at },
+    }],
+  };
+  const activity = [
+    { ticket: 'feat-alpha/01', kind: 'live', jobId: sharedJobId, at },
+    { ticket: 'feat-beta/02', kind: 'live', jobId: sharedJobId, at },
+  ];
+  const scanned = new Map([[featA.slug, featA], [featB.slug, featB]]);
+  const byFeature = collectFeatureActivity(scanned, [], activity, NOW);
+  assert.ok(byFeature.get('feat-alpha')?.some((e) => e.kind === 'live' && e.jobId === sharedJobId && e.ticket === 'feat-alpha/1'));
+  assert.ok(byFeature.get('feat-beta')?.some((e) => e.kind === 'live' && e.jobId === sharedJobId && e.ticket === 'feat-beta/2'));
+
+  const objA = { id: 'obj-a', state: 'active', title: 'Alpha objective', features: ['feat-alpha'], evidence: [] };
+  const objB = { id: 'obj-b', state: 'active', title: 'Beta objective', features: ['feat-beta'], evidence: [] };
+  const objBoth = { id: 'obj-both', state: 'active', title: 'Shared objective', features: ['feat-alpha', 'feat-beta'], evidence: [] };
+  const data = {
+    ...f.data,
+    tickets: [featA, featB],
+    objectiveTickets: [featA, featB],
+    ledger: [],
+    waiting: [],
+    objectives: { path: objectivePath(f.cwd), stance: 'active', priority: 'normal', objectives: [objA, objB, objBoth], diagnostics: [], acceptance: {} },
+  };
+  const hub = f.render(80, 'en', onPage(), 20, data, true, 'unicode', 'none', { projectActivity: activity });
+  assert.match(hub.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'obj-a').text, /● 1 live/);
+  assert.match(hub.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'obj-b').text, /● 1 live/);
+
+  const detail = f.render(80, 'en', { ...onPage(), subpage: { kind: 'objective', target: { root: f.cwd, objective: objBoth, blocked: false } } }, 20, data, true, 'unicode', 'none', { projectActivity: activity });
+  assert.match(detail.workboard.rows.find((r) => r.item === 'objective:feature:feat-alpha').text, /● 1 live/);
+  assert.match(detail.workboard.rows.find((r) => r.item === 'objective:feature:feat-beta').text, /● 1 live/);
 });

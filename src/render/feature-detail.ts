@@ -102,7 +102,7 @@ export function featureCrumb(
 
 function landProgressText(progress: LandProgress | undefined, at: number | undefined, now: number): string {
   const ink = theme.board;
-  if (!progress) return ink.active(t('Gate'));
+  if (!progress) return ink.active(t('landing'));
   if (progress.kind === 'lease') {
     const age = compactAge(progress.since ?? at, now);
     return `${ink.active(`${mark('◷', '~')} ${t('Lease wait')}`)}${age ? ` ${ink.muted(age)}` : ''}`;
@@ -154,7 +154,11 @@ function ticketJobEvidence(
   const ended = entries
     .filter((e): e is Extract<TicketActivity, { kind: 'ended' }> => e.kind === 'ended' && recent(e.at))
     .sort((a, b) => b.at - a.at || Number(!!b.execJob) - Number(!!a.execJob) || Number(!!b.result) - Number(!!a.result));
-  const fallbackExecJob = lives.find((e) => e.execJob)?.execJob ?? ended.find((e) => e.execJob)?.execJob;
+  const execJobFor = (jobId: string | undefined): ExecutionRunJobTarget | undefined => {
+    if (!jobId) return undefined;
+    return lives.find((e) => e.jobId === jobId && e.execJob)?.execJob
+      ?? entries.find((e) => e.kind === 'ended' && e.jobId === jobId && e.execJob)?.execJob;
+  };
   const latestEndedAt = ended[0]?.at;
 
   if (gates.length) {
@@ -164,7 +168,7 @@ function ticketJobEvidence(
       || (b.at ?? 0) - (a.at ?? 0))[0];
     return {
       statusText: landProgressText(gate.progress, gate.at, now),
-      execJob: gate.execJob ?? fallbackExecJob,
+      execJob: gate.execJob ?? execJobFor(gate.jobId),
       endedAt: latestEndedAt,
     };
   }
@@ -183,11 +187,17 @@ function ticketJobEvidence(
       : 'working';
     return { statusText: liveJobText(state, ticket.job.at, now), endedAt: latestEndedAt };
   }
-  if (ticket.landingAt !== undefined && recent(ticket.landingAt)) {
-    return { statusText: endedJobText('landed', ticket.landingAt, now), execJob: fallbackExecJob, endedAt: ticket.landingAt };
+  const landingAt = ticket.landing?.at ?? ticket.landingAt;
+  const hasRecentLanding = landingAt !== undefined && recent(landingAt);
+  const latest = ended[0];
+  if (hasRecentLanding && (!latest || landingAt > latest.at || (landingAt === latest.at && (Boolean(ticket.landing?.job) || latest.result !== 'landed')))) {
+    return {
+      statusText: endedJobText('landed', landingAt, now),
+      execJob: execJobFor(ticket.landing?.job),
+      endedAt: landingAt,
+    };
   }
-  if (ended.length) {
-    const latest = ended[0];
+  if (latest) {
     return {
       statusText: endedJobText(latest.result, latest.at, now),
       execJob: latest.execJob,
@@ -195,6 +205,15 @@ function ticketJobEvidence(
     };
   }
   return {};
+}
+
+function formatTicketLanding(landing: NonNullable<ProjectTicket['landing']>, fallbackCommit?: string): string | undefined {
+  const parts: string[] = [];
+  if (Number.isFinite(landing.at)) parts.push(new Date(landing.at).toISOString().slice(0, 10));
+  const commit = landing.commit ?? fallbackCommit;
+  if (commit) parts.push(commit.slice(0, 7));
+  if (typeof landing.gates === 'number' && landing.gates > 0) parts.push(t('gate {n}/{n}', { n: landing.gates }));
+  return parts.length ? parts.join(' · ') : undefined;
 }
 
 function ticketStateLabel(ticket: ProjectTicket): string {
@@ -272,7 +291,7 @@ export function featureDetailRows(
     const latest = (result: 'landed' | 'done') => entries.reduce<number | undefined>((at, entry) =>
       entry.kind === 'ended' && entry.result === result && entry.at <= now && (at === undefined || entry.at > at) ? entry.at : at, undefined);
     const doneAt = ticket.state === 'done'
-      ? ticket.landingAt ?? landings?.get(key) ?? latest('landed') ?? ledgerAt.get(key) ?? latest('done') ?? ticket.job?.completedAt ?? ticket.at
+      ? (ticket.landing?.at ?? ticket.landingAt) ?? landings?.get(key) ?? latest('landed') ?? ledgerAt.get(key) ?? latest('done') ?? ticket.job?.completedAt ?? ticket.at
       : Math.max(evidence.endedAt ?? -Infinity, ledgerAt.get(key) ?? -Infinity, ticket.at);
     return { ticket, evidence, doneAt };
   });
@@ -334,10 +353,19 @@ export function featureDetailRows(
       if (!ticket.items.length) {
         rows.push({ text: fit(`    ${ink.muted(t('no checklist'))}`, width), item, files: [ticket.path] });
       }
-      const comments = [ticket.landedComment, ticket.comment].filter((c): c is string => Boolean(c));
-      for (const text of comments) {
-        const labelWord = t('comment');
-        const labelCol = Math.max(visualLength(labelWord) + 1, width >= 56 ? 9 : visualLength(labelWord) + 1);
+      const details: { label: string; text: string }[] = [];
+      const landingText = ticket.landing ? formatTicketLanding(ticket.landing, ticket.commit) : undefined;
+      if (landingText) details.push({ label: t('landed'), text: landingText });
+      if (ticket.landedComment && ticket.landedComment !== landingText) {
+        details.push({ label: t('comment'), text: ticket.landedComment });
+      }
+      if (ticket.comment && ticket.comment !== landingText && ticket.comment !== ticket.landedComment) {
+        details.push({ label: t('comment'), text: ticket.comment });
+      }
+      const labelCol = details.length
+        ? Math.max(...details.map((d) => visualLength(d.label) + 1), width >= 56 ? 9 : 0)
+        : 0;
+      for (const { label: labelWord, text } of details) {
         const label = fit(labelWord, labelCol);
         const room = Math.max(1, width - 4 - visualLength(label));
         clampLines(text, room, 4).lines.forEach((line, k) => {

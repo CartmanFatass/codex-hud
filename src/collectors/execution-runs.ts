@@ -319,6 +319,11 @@ function workerStatusInfo(
   return { state, changedAt };
 }
 
+export function isPublishingLandStep(step: string | undefined): boolean {
+  return !!step && (step === 'records' || step === 'fast-forward' || /^after\[/.test(step)
+    || step === 'push' || step === 'cleanup' || step === 'done');
+}
+
 function extractLandGateAndRepair(
   home: string,
   land: LandFlow,
@@ -328,8 +333,7 @@ function extractLandGateAndRepair(
 ): { progress?: LandProgress; gate?: MetroGate; repair?: MetroRepair; repairs?: MetroRepair[] } {
   const progress = landProgress(land);
   const total = land.config?.gate?.length;
-  const publishing = land.step === 'records' || land.step === 'fast-forward' || /^after\[/.test(land.step)
-    || land.step === 'push' || land.step === 'cleanup' || land.step === 'done';
+  const publishing = isPublishingLandStep(land.step);
   const gateTiming = land.timings?.filter((timing) => /^gate\[/.test(timing.step)).at(-1);
   const rawRepairs = land.repairs ?? [];
   const lastRepair = rawRepairs.at(-1);
@@ -501,7 +505,7 @@ function projectTicketItem(
       return { ...base, stage: 'failed', ...(changedAt !== undefined ? { changedAt } : {}), ...(gate ? { landGate: gate } : {}), ...(reason ? { reason } : {}) };
     }
     if (land.state === 'completed' || activeLand(land)) {
-      if (land.landed_sha) {
+      if (land.landed_sha || land.landed_at) {
         const changedAt = parseTime(land.landed_at) ?? parseTime(land.updated_at) ?? parseTime(land.step_started_at) ?? worker?.settledAt ?? worker?.startedAt ?? undefined;
         return { ...base, stage: 'landed', ...(changedAt !== undefined ? { changedAt } : {}) };
       }
@@ -976,8 +980,8 @@ function readFixedExecutionRun(
     const { progress, gate: metroGate, repair: metroRepair, repairs: metroRepairs } = extractLandGateAndRepair(home, land, workers, cache, 'gate');
     const waiting = progress?.kind === 'lease';
     const picking = land.step === 'prepare' || land.step === 'create integration' || land.step === 'cherry-pick';
-    const publishing = land.step === 'records' || land.step === 'fast-forward' || /^after\[/.test(land.step)
-      || land.step === 'push' || land.step === 'cleanup' || land.step === 'done';
+    const publishing = isPublishingLandStep(land.step);
+    const published = Boolean(land.landed_sha || land.landed_at || publishing);
     const gateTiming = land.timings?.filter((timing) => /^gate\[/.test(timing.step)).at(-1);
     const gate = progress?.kind === 'gate' ? progress : gateTiming ? landProgress({ ...land, step: gateTiming.step, step_started_at: undefined }) : undefined;
     const pickTiming = land.timings?.filter((timing) => timing.step === 'cherry-pick').at(-1);
@@ -1056,7 +1060,7 @@ function readFixedExecutionRun(
     const landEdges: MetroEdge[] = landStations.slice(1).map((s, idx) => ({ from: landStations[idx].id, to: s.id }));
     const landLastChanged = lastChangedStationId(landStations);
     return { ...base, kind: 'land', label: workerTitle(job) ?? land.job.slice(0, 8), state: 'working', nodes,
-      landActivity: { progress, ...current },
+      ...(!published ? { landActivity: { progress, ...current } } : {}),
       metro: { stations: landStations, edges: landEdges, ...(landLastChanged !== undefined ? { lastChangedId: landLastChanged } : {}) },
       // Keep a settled source job's own recent outcome after the land flow closes.
       jobIds: [land.job, ...land.repairs?.flatMap(({ job }) => job ? [job] : []) ?? []],

@@ -65,17 +65,30 @@ export function legacyTicketEvidence(text: string, number: number, path: string,
 export function storedTicketEvidence(ticket: TicketRecord, path: string, sourcePath: string): ProjectTicket {
   const { status, landing, accepted, owner_try: ownerTry } = ticket;
   const landingAt = landing ? Date.parse(landing.at) : undefined;
+  const landingCommit = landing && /^[a-f0-9]{7,64}$/i.test(landing.commit ?? '') ? landing.commit : undefined;
   const items = ticket.acceptance.map(({ done, text }) => ({ done, text }));
   const checked = items.filter(({ done }) => done).length;
   const landed = landing && (checked === items.length ? (ownerTry ? 'try' : 'done') : status === 'ready-for-human' ? 'try' : undefined);
   const state = status === 'wontfix' ? 'dropped' : status === 'done' || accepted ? 'done'
     : landed ?? (status === 'claimed' ? 'working' : 'ready');
-  const comment = ticket.comments.at(-1)?.text;
+  const comments = ticket.comments.map((c) => commentText(c.text)).filter(Boolean);
+  const comment = comments.at(-1);
+  const landedComment = !landing ? comments.filter((b) => /^(?:[-*]\s+)?Landed\b/i.test(b)).at(-1) : undefined;
   return { number: String(ticket.number).padStart(2, '0'), title: ticket.title, path, sourcePath, status, ownerTry,
     at: Date.parse(ticket.updated_at), state, blockers: ticket.blocked_by,
     ...(ticket.claimed_at ? { claimedAt: Date.parse(ticket.claimed_at) } : {}),
     items, checked, total: items.length,
-    ...(landing ? { landingAt, recordedLanding: true,
-      ...(/^[a-f0-9]{7,64}$/i.test(landing.commit ?? '') ? { commit: landing.commit } : {}) } : {}),
-    ...(comment ? { comment: commentText(comment) } : {}) };
+    ...(landing ? {
+      landingAt,
+      recordedLanding: true,
+      landing: {
+        at: landingAt!,
+        ...(landing.job ? { job: landing.job } : {}),
+        ...(landingCommit ? { commit: landingCommit } : {}),
+        ...(typeof landing.gates === 'number' ? { gates: landing.gates } : {}),
+      },
+      ...(landingCommit ? { commit: landingCommit } : {}),
+    } : {}),
+    ...(comment ? { comment } : {}),
+    ...(landedComment && landedComment !== comment ? { landedComment } : {}) };
 }

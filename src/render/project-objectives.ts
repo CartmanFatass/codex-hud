@@ -26,14 +26,14 @@ export function collectFeatureActivity(
   activity: readonly TicketActivity[],
   now: number,
 ): Map<string, TicketActivity[]> {
-  const jobTickets = new Map([...scanned.values()].flatMap(({ slug, tickets }) => tickets.flatMap(({ number, job }) =>
-    job?.id ? [[job.id, targetKey(`${slug}/${number}`)] as const] : [])));
-  const landingDates = new Map([...scanned.values()].flatMap(({ slug, tickets }) => tickets.flatMap(({ number, landingAt }) =>
-    landingAt === undefined ? [] : [[targetKey(`${slug}/${number}`), landingAt] as const])));
+  const landingDates = new Map([...scanned.values()].flatMap(({ slug, tickets }) => tickets.flatMap(({ number, landing, landingAt }) => {
+    const at = landing?.at ?? landingAt;
+    return at === undefined ? [] : [[targetKey(`${slug}/${number}`), at] as const];
+  })));
   const byFeature = new Map<string, TicketActivity[]>();
   const recent = (at: number) => at <= now && now - at <= ENDED_MS;
   const add = (entry: TicketActivity) => {
-    const ticket = (entry.kind === 'live' ? jobTickets.get(entry.jobId) : undefined) ?? targetKey(entry.ticket);
+    const ticket = targetKey(entry.ticket);
     const slug = /^([a-z0-9_-]+)\/\d+$/.exec(ticket)?.[1];
     if (entry.kind === 'ended' && entry.result === 'landed') entry = { ...entry, at: landingDates.get(ticket) ?? entry.at };
     if (!slug || (entry.kind === 'ended' && !recent(entry.at))) return;

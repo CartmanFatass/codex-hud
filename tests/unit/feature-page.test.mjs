@@ -12,6 +12,7 @@ import { handleMonitorInput } from '../../dist/render/monitor.js';
 import { acceptsMonitorInput } from '../../dist/render/monitor-state.js';
 import { WorkbenchInputDecoder } from '../../dist/utils/workbench-input.js';
 import { NOW, onPage, plain, projectFixture } from '../fixtures/project-page.mjs';
+import { putTicketFeature, ticketRecord } from '../fixtures/ticket-store.mjs';
 
 function makeWorker(base, id, role, overrides = {}) {
   return {
@@ -821,4 +822,333 @@ test('Unlinked row stays selected on Esc when its first unfinished ticket lands,
   assert.equal(returned.state.project.view.kind, 'unlinked');
   assert.equal(returned.state.project.nav.cursor, 'project:unlinked:spare-cli');
   assert.deepEqual(send(returned, 'o').action, { type: 'open-files', files: [ticketPath('spare-cli', '02')] });
+});
+
+test('JSON ticket landing and newest ended attempt choose status and Inspector target together', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-landing-pair-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const slug = 'nav-redesign';
+  const at = (min) => NOW - min * 60_000;
+  const iso = (min) => new Date(at(min)).toISOString();
+
+  // Ticket 01: landed 2h ago with unfinished acceptance, then a newer attempt failed 30m ago.
+  const landJob1 = 'j0000000000000701';
+  const retryJob1 = 'j0000000000000702';
+  // Ticket 02: landed 1h ago with its landing job retained alongside an older failed attempt 3h ago.
+  const olderJob2 = 'j0000000000000703';
+  const landJob2 = 'j0000000000000704';
+  // Ticket 03: landed 1h ago, landing job no longer retained, older failed attempt 3h ago still retained.
+  const olderJob3 = 'j0000000000000705';
+  const missingLandJob3 = 'j0000000000000706';
+
+  putTicketFeature(f.cwd, slug, [
+    ticketRecord(1, {
+      title: 'Retry after partial landing',
+      status: 'ready-for-agent',
+      acceptance: [{ id: 1, text: 'First criterion', done: true }, { id: 2, text: 'Second criterion', done: false }],
+      landing: { at: iso(120), job: landJob1, flow: 'f0000000000000701', replay_base: 'a'.repeat(40), gates: 2 },
+    }),
+    ticketRecord(2, {
+      title: 'Landed with retained landing job',
+      status: 'done',
+      acceptance: [{ id: 1, text: 'Only criterion', done: true }],
+      landing: { at: iso(60), job: landJob2, flow: 'f0000000000000704', replay_base: 'b'.repeat(40), gates: 1 },
+    }),
+    ticketRecord(3, {
+      title: 'Landed after landing job aged out',
+      status: 'done',
+      acceptance: [{ id: 1, text: 'Done criterion', done: true }],
+      landing: { at: iso(60), job: missingLandJob3, flow: 'f0000000000000706', replay_base: 'c'.repeat(40), gates: 1 },
+    }),
+  ]);
+
+  const addJob = (job, ticket, state, createdMin, settledMin) => {
+    const dir = join(f.hud, 'jobs', job);
+    f.put(join(dir, 'job.json'), { job, role: 'imp', cwd: f.cwd, ticket, headless: true, created_at: iso(createdMin) });
+    f.put(join(dir, 'STATUS.json'), { state, started_at: iso(createdMin), settled_at: iso(settledMin) });
+  };
+  addJob(landJob1, `${slug}/01`, 'done', 140, 125);
+  f.put(join(f.hud, 'flows', 'f0000000000000701.json'), {
+    flow: 'f0000000000000701', job: landJob1, state: 'completed', step: 'done',
+    wt: { main_root: f.cwd }, landed_sha: '1'.repeat(40), landed_at: iso(120), updated_at: iso(120),
+  });
+  addJob(retryJob1, `${slug}/01`, 'failed', 50, 30);
+
+  addJob(olderJob2, `${slug}/02`, 'failed', 200, 180);
+  addJob(landJob2, `${slug}/02`, 'done', 80, 65);
+  f.put(join(f.hud, 'flows', 'f0000000000000704.json'), {
+    flow: 'f0000000000000704', job: landJob2, state: 'completed', step: 'done',
+    wt: { main_root: f.cwd }, landed_sha: '2'.repeat(40), landed_at: iso(60), updated_at: iso(60),
+  });
+
+  addJob(olderJob3, `${slug}/03`, 'failed', 200, 180);
+
+  const execution = new PanelExecution(f.hud, null);
+  t.after(() => execution.dispose());
+  execution.sync(f.cwd);
+  const project = await f.collector.collect(true, f.board, NOW);
+  await execution.refresh(undefined, NOW, false, project);
+
+  const draw = (cursor) => f.render(100, 'en', {
+    ...onPage(),
+    subpage: { kind: 'feature', target: { root: f.cwd, slug }, cursor },
+  }, 24, project, true, 'unicode', 'none', {
+    projectActivity: execution.activity(f.cwd),
+    projectLandings: execution.landings(f.cwd),
+    workboard: execution.board(),
+  });
+  const enter = (frame) => handleMonitorInput(frame.state, { type: 'key', key: 'enter' }, { frame, nowMs: NOW });
+
+  // Ticket 01: newer failed retry wins over older landing; Enter opens retryJob1.
+  const f1 = draw(`feature:ticket:${slug}:01`);
+  const row1 = f1.workboard.rows.find((r) => r.item === `feature:ticket:${slug}:01`);
+  assert.match(row1.text, /✗ failed 30m/);
+  assert.doesNotMatch(row1.text, /landed/);
+  assert.equal(row1.execJob?.target.workerId, `thin-job:${retryJob1}`);
+  const insp1 = enter(f1).state.subpage;
+  assert.equal(insp1.kind, 'inspector');
+  assert.equal(insp1.target.workerId, `thin-job:${retryJob1}`);
+
+  // Ticket 02: landing wins over older failed attempt and targets landJob2, never olderJob2.
+  const f2 = draw(`feature:ticket:${slug}:02`);
+  const row2 = f2.workboard.rows.find((r) => r.item === `feature:ticket:${slug}:02`);
+  assert.match(row2.text, /✓ landed 1h/);
+  assert.equal(row2.execJob?.target.workerId, `thin-job:${landJob2}`);
+  const insp2 = enter(f2).state.subpage;
+  assert.equal(insp2.kind, 'inspector');
+  assert.equal(insp2.target.workerId, `thin-job:${landJob2}`);
+
+  // Ticket 03: landing wins over older failed attempt; landing job is absent so execJob is absent (never olderJob3) and Enter expands inline.
+  const f3 = draw(`feature:ticket:${slug}:03`);
+  const row3 = f3.workboard.rows.find((r) => r.item === `feature:ticket:${slug}:03`);
+  assert.match(row3.text, /✓ landed 1h/);
+  assert.equal(row3.execJob, undefined);
+  const exp3 = enter(f3).state.subpage;
+  assert.equal(exp3.kind, 'feature');
+  assert.deepEqual(exp3.expanded, [`feature:ticket:${slug}:03`]);
+});
+
+test('Inline expansion shows JSON landing line (date, commit, gates) + distinct comment, and legacy Landed comment + later note at 40/62 EN/ZH no-colour', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-inline-landing-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+
+  // JSON feature: ticket 01 has landing with commit + distinct later comment; ticket 02 has native landing without commit or comment.
+  putTicketFeature(f.cwd, 'json-feat', [
+    ticketRecord(1, {
+      title: 'JSON landed with commit and note',
+      status: 'done',
+      acceptance: [{ id: 1, text: 'Ship landing projection', done: true }],
+      landing: {
+        at: '2026-11-10T09:30:00Z',
+        job: 'j0000000000000801',
+        flow: 'f0000000000000801',
+        replay_base: 'a'.repeat(40),
+        gates: 2,
+        commit: '1a2b3c4d5e6f7890',
+      },
+      comments: [
+        { at: '2026-11-10T10:00:00Z', author: 'owner', text: 'Verified narrow columns' },
+      ],
+    }),
+    ticketRecord(2, {
+      title: 'JSON native landing without commit',
+      status: 'done',
+      acceptance: [{ id: 1, text: 'Keep native landing visible', done: true }],
+      landing: {
+        at: '2026-11-11T14:00:00Z',
+        job: 'j0000000000000802',
+        flow: 'f0000000000000802',
+        replay_base: 'b'.repeat(40),
+        gates: 1,
+      },
+      comments: [],
+    }),
+  ]);
+
+  // Legacy markdown feature: Landed comment followed by a later note.
+  const legacyPath = join(f.cwd, '.scratch', 'legacy-feat', 'issues', '01-legacy-landed.md');
+  f.put(legacyPath, [
+    '# 01: Legacy landed ticket',
+    '',
+    '**Status:** ready-for-human · **Owner try:** yes',
+    '**Blocked by:** none',
+    '',
+    '- [x] Confirm legacy retention',
+    '',
+    '## Comments',
+    '- Landed in 9988776; gate 1/1 passed.',
+    '- Follow-up legacy note after landing',
+    '',
+  ].join('\n'));
+
+  const project = await f.collector.collect(true, f.board, NOW);
+  const key = (frame, k) => handleMonitorInput(frame.state, { type: 'key', key: k }, { frame, nowMs: NOW });
+
+  for (const lang of ['en', 'zh']) for (const width of [40, 62]) {
+    const zh = lang === 'zh';
+    const draw = (subpage) => f.render(width, lang, { ...onPage(), subpage }, 30, project, true, 'unicode', 'none', {
+      projectDisplayRoot: f.cwd,
+      projectName: 'orchard',
+    });
+
+    // JSON ticket 01: landing line (date + short commit + gates) + distinct comment.
+    const item1 = 'feature:ticket:json-feat:01';
+    const j1Start = draw({ kind: 'feature', target: { root: f.cwd, slug: 'json-feat' }, cursor: item1 });
+    const j1Exp = draw(key(j1Start, 'enter').state.subpage);
+    assert.ok([...j1Exp.lines, ...j1Exp.workboard.rows.map((r) => r.text)]
+      .every((line) => visualLength(line) === width && !line.includes('\x1b')));
+    const j1Text = plain(j1Exp).join('\n');
+    assert.match(j1Text, /✓ Ship landing projection/);
+    assert.match(j1Text, zh ? /已落地\s+2026-11-10 · 1a2b3c4/ : /landed\s+2026-11-10 · 1a2b3c4/);
+    assert.match(j1Text, width >= 56 ? (zh ? /门禁 2\/2/ : /gate 2\/2/) : (zh ? /门禁\s+2\/2/ : /gate\s+2\/2/));
+    assert.match(j1Text, zh ? /评论\s+Verified narrow columns/ : /comment\s+Verified narrow columns/);
+
+    // JSON ticket 02: landing line (date + gates, no commit) and no comment line.
+    const item2 = 'feature:ticket:json-feat:02';
+    const j2Start = draw({ kind: 'feature', target: { root: f.cwd, slug: 'json-feat' }, cursor: item2 });
+    const j2Exp = draw(key(j2Start, 'enter').state.subpage);
+    assert.ok([...j2Exp.lines, ...j2Exp.workboard.rows.map((r) => r.text)]
+      .every((line) => visualLength(line) === width && !line.includes('\x1b')));
+    const j2Text = plain(j2Exp).join('\n');
+    assert.match(j2Text, /✓ Keep native landing visible/);
+    assert.match(j2Text, zh ? /已落地\s+2026-11-11 · 门禁 1\/1/ : /landed\s+2026-11-11 · gate 1\/1/);
+    assert.doesNotMatch(j2Text, zh ? /\n\s+评论\s/ : /\n\s+comment\s/);
+
+    // Legacy markdown ticket 01: both retained Landed comment and later note appear.
+    const legItem = 'feature:ticket:legacy-feat:01-legacy-landed.md';
+    const legStart = draw({ kind: 'feature', target: { root: f.cwd, slug: 'legacy-feat' }, cursor: legItem });
+    const legExp = draw(key(legStart, 'enter').state.subpage);
+    assert.ok([...legExp.lines, ...legExp.workboard.rows.map((r) => r.text)]
+      .every((line) => visualLength(line) === width && !line.includes('\x1b')));
+    const legText = plain(legExp).join('\n');
+    assert.match(legText, /✓ Confirm legacy retention/);
+    assert.match(legText, /Landed in 9988776/);
+    assert.match(legText, /Follow-up legacy note after\s+landing/);
+  }
+});
+
+test('Standalone land after publish yields no gate activity (landed on Feature and Objective); pick/prepare shows neutral landing word', async (t) => {
+  const root = fs.mkdtempSync(join(tmpdir(), 'feature-page-standalone-land-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const f = await projectFixture(root, { progressTickets: false });
+  const slug = 'nav-redesign';
+  const at = (min) => NOW - min * 60_000;
+  const iso = (min) => new Date(at(min)).toISOString();
+
+  const pubJob = 'j0000000000000901', pubFlow = 'f0000000000000901';
+  const prepJob = 'j0000000000000902', prepFlow = 'f0000000000000902';
+
+  putTicketFeature(f.cwd, slug, [
+    ticketRecord(1, {
+      title: 'Published land running after-steps',
+      status: 'done',
+      acceptance: [{ id: 1, text: 'Publish commit', done: true }],
+      landing: { at: iso(10), job: pubJob, flow: pubFlow, replay_base: 'a'.repeat(40), gates: 2 },
+    }),
+    ticketRecord(2, {
+      title: 'Pre-publication prepare step',
+      status: 'claimed',
+      claimed_at: iso(20),
+      acceptance: [{ id: 1, text: 'Prepare worktree', done: false }],
+    }),
+  ]);
+
+  for (const [job, ticket, settledMin] of [
+    [pubJob, `${slug}/01`, 15],
+    [prepJob, `${slug}/02`, 20],
+  ]) {
+    const dir = join(f.hud, 'jobs', job);
+    f.put(join(dir, 'job.json'), {
+      job, role: 'imp', cwd: f.cwd, ticket, headless: true,
+      worktree: { root: join(root, `wt-${job}`), main_root: f.cwd, branch: `wt/${job}` },
+      created_at: iso(30),
+    });
+    f.put(join(dir, 'STATUS.json'), { state: 'done', started_at: iso(25), settled_at: iso(settledMin) });
+  }
+
+  const objective = { id: 'interaction', state: 'active', title: 'Landing status check', features: [slug], evidence: [] };
+  const postPublishSteps = ['after[1]: npm run check', 'push', 'cleanup'];
+  const prePublishSteps = ['prepare', 'cherry-pick'];
+
+  for (const [idx, step] of postPublishSteps.entries()) {
+    const prepStep = prePublishSteps[idx % prePublishSteps.length];
+    f.put(join(f.hud, 'flows', `${pubFlow}.json`), {
+      flow: pubFlow, job: pubJob, state: 'running', step,
+      wt: { root: join(root, `wt-${pubJob}`), main_root: f.cwd, branch: `wt/${pubJob}` },
+      config: { base: 'main', gate: ['npm run build', 'npm test'], after: ['npm run check'], push: true },
+      landed_sha: 'd'.repeat(40), landed_at: iso(10),
+      created_at: iso(14), updated_at: iso(1), step_started_at: iso(2),
+    });
+    // First check with ONLY the published land active so Objective note reflects ticket 01 alone.
+    fs.rmSync(join(f.hud, 'flows', `${prepFlow}.json`), { force: true });
+
+    const execution = new PanelExecution(f.hud, null);
+    t.after(() => execution.dispose());
+    execution.sync(f.cwd);
+    const project = await f.collector.collect(true, f.board, NOW);
+    await execution.refresh(undefined, NOW, false, project);
+
+    const pubRun = execution.view(f.cwd).runs.find((r) => r.flow === pubFlow);
+    assert.equal(pubRun.landActivity, undefined, `no landActivity during ${step}`);
+    const activity = execution.activity(f.cwd);
+    assert.deepEqual(activity.filter((e) => e.ticket === `${slug}/01` && e.kind === 'gate'), [], `no gate activity during ${step}`);
+    const landedEntry = activity.find((e) => e.ticket === `${slug}/01` && e.kind === 'ended');
+    assert.equal(landedEntry?.result, 'landed');
+
+    const projectWithObj = {
+      ...project,
+      objectiveTickets: project.tickets,
+      objectives: { path: objectivePath(f.cwd), stance: 'active', priority: 'normal', objectives: [objective], diagnostics: [], acceptance: {} },
+    };
+    for (const lang of ['en', 'zh']) {
+      const zh = lang === 'zh';
+      const featFrame = f.render(80, lang, { ...onPage(), subpage: { kind: 'feature', target: { root: f.cwd, slug } } }, 20, projectWithObj, true, 'unicode', 'none', {
+        projectActivity: activity, projectLandings: execution.landings(f.cwd),
+      });
+      const row1 = featFrame.workboard.rows.find((r) => r.item === `feature:ticket:${slug}:01`).text;
+      assert.match(row1, zh ? /✓ 已落地 10分/ : /✓ landed 10m/);
+      assert.doesNotMatch(row1, zh ? /门禁/ : /\bGate\b/);
+
+      const objFrame = f.render(80, lang, { ...onPage(), subpage: { kind: 'objective', target: { root: f.cwd, objective, blocked: false } } }, 20, projectWithObj, true, 'unicode', 'none', {
+        projectActivity: activity, projectLandings: execution.landings(f.cwd),
+      });
+      const objRow = objFrame.workboard.rows.find((r) => r.item === `objective:feature:${slug}`).text;
+      assert.doesNotMatch(objRow, zh ? /门禁/ : /gate/i);
+      assert.match(objRow, zh ? /✓ 刚落地/ : /✓ Just landed/);
+
+      const hubFrame = f.render(80, lang, onPage(), 20, projectWithObj, true, 'unicode', 'none', {
+        projectActivity: activity, projectLandings: execution.landings(f.cwd),
+      });
+      const hubRow = hubFrame.workboard.rows.find((r) => r.objectiveTarget?.objective.id === 'interaction').text;
+      assert.doesNotMatch(hubRow, zh ? /门禁/ : /gate/i);
+      assert.match(hubRow, zh ? /✓ 刚落地/ : /✓ Just landed/);
+    }
+
+    // Now add the pre-publication land (prepare / cherry-pick) without gate/repair/lease progress.
+    f.put(join(f.hud, 'flows', `${prepFlow}.json`), {
+      flow: prepFlow, job: prepJob, state: 'running', step: prepStep,
+      wt: { root: join(root, `wt-${prepJob}`), main_root: f.cwd, branch: `wt/${prepJob}` },
+      config: { base: 'main', gate: ['npm test'], after: [], push: false },
+      created_at: iso(4), updated_at: iso(1), step_started_at: iso(1),
+    });
+    const execPrep = new PanelExecution(f.hud, null);
+    t.after(() => execPrep.dispose());
+    execPrep.sync(f.cwd);
+    await execPrep.refresh(undefined, NOW, false, project);
+    const prepRun = execPrep.view(f.cwd).runs.find((r) => r.flow === prepFlow);
+    assert.ok(prepRun.landActivity, `landActivity emitted during ${prepStep}`);
+    assert.equal(prepRun.landActivity.progress, undefined);
+
+    for (const lang of ['en', 'zh']) {
+      const zh = lang === 'zh';
+      const featFrame = f.render(80, lang, { ...onPage(), subpage: { kind: 'feature', target: { root: f.cwd, slug } } }, 20, projectWithObj, true, 'unicode', 'none', {
+        projectActivity: execPrep.activity(f.cwd), projectLandings: execPrep.landings(f.cwd),
+      });
+      const row2 = featFrame.workboard.rows.find((r) => r.item === `feature:ticket:${slug}:02`).text;
+      assert.match(row2, zh ? /落地中/ : /\blanding\b/);
+      assert.doesNotMatch(row2, zh ? /门禁/ : /\bGate\b/);
+    }
+  }
 });

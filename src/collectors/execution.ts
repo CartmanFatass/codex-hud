@@ -10,7 +10,7 @@ import { isComposedId, type ComposedRun } from '../workflows/composed-state.js';
 import { headerScanner } from '../workflows/header-scan.js';
 import { runVisible } from '../workflows/scope.js';
 import { stopRequested } from '../workflows/store.js';
-import { ENDED_MS, jobTargetFor, readExecutionRuns, type ExecutionRun, type ExecutionRunJobTarget, type LandProgress } from './execution-runs.js';
+import { ENDED_MS, isPublishingLandStep, jobTargetFor, readExecutionRuns, type ExecutionRun, type ExecutionRunJobTarget, type LandProgress } from './execution-runs.js';
 import { readHeadlessOutput, type HeadlessOutput } from './headless-output.js';
 import type { ProjectSnapshot } from './project-board.js';
 import { targetKey } from './ticket-evidence.js';
@@ -249,7 +249,7 @@ export function executionSnapshot(home: string, board: WorkboardSnapshot, scope:
     }
     for (const item of run.tickets) {
       const ticket = run.feature && /^\d+$/.test(item.ticket) ? `${run.feature}/${item.ticket}` : item.ticket;
-      if (run.endedAt === undefined && item.stage === 'land-gate' && !item.landingUnknown) {
+      if (run.endedAt === undefined && item.stage === 'land-gate' && !item.landingUnknown && !isPublishingLandStep(item.landStep)) {
         // Activity opens the current repair; the metro's host station keeps the source job.
         const repair = item.landProgress?.kind === 'repair' && item.landRepair?.jobId ? item.landRepair : undefined;
         const jobId = repair?.jobId ?? item.jobId;

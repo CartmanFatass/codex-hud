@@ -396,6 +396,7 @@ export const WORKBOARD_ZH: Record<string, string> = {
   'ready-for-human': '待人工',
   flow: '流程',
   gate: '门禁',
+  'gate {n}/{n}': '门禁 {n}/{n}',
   'waiting for {flow}': '等待 {flow}',
   'waiting for {flow} (gate step {n}, {m} min)': '等待 {flow}（门禁第 {n} 步，{m} 分钟）',
   'wait {flow} · gate {n}, {m}m': '等待 {flow} · 门禁 {n}，{m}分',
