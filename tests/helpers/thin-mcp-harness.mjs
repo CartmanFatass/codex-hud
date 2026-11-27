@@ -20,6 +20,13 @@ import { until } from './until.mjs';
 
 const fakeBin = fileURLToPath(new URL('./thin-mcp-fake-bin.mjs', import.meta.url));
 const clock = new URL('./thin-mcp-clock.mjs', import.meta.url).href;
+// Fake pi loads the worker entry directly, without pi's extension module resolver.
+const piHost = `import { registerHooks } from 'node:module';
+registerHooks({ resolve(specifier, context, next) {
+  if (specifier === '@earendil-works/pi-agent-core' && context.parentURL?.endsWith('/hud-worker.mjs'))
+    return { url: 'data:text/javascript,' + encodeURIComponent('export class Agent { followUp() {} }'), shortCircuit: true };
+  return next(specifier, context);
+} });`;
 
 export const workerFor = (f, id) =>
   readThinJobs(f.env.HUD_HOME, { project: null, pane: 'w4E:p1' })
@@ -106,7 +113,7 @@ async function startFixture(t, { inHerdr = true, probe = '', watcherTickMs, work
     env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --import=${clock}`;
     env.HUD_TEST_CLOCK_SCALE = String(clockScale);
   }
-  env.NODE_OPTIONS = reapStubOptions(bin, env.NODE_OPTIONS);
+  env.NODE_OPTIONS = reapStubOptions(bin, `${env.NODE_OPTIONS ?? ''} --import=data:text/javascript,${encodeURIComponent(piHost)}`);
   // Never pass the outer test runner's session into the synthetic MCP caller.
   for (const key of ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'HUD_MCP_PI_SESSION_ID']) delete env[key];
   for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'GEMINI_API_KEY', 'TYPESAFE_API_KEY', 'MISTRAL_API_KEY']) {

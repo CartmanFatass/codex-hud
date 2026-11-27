@@ -9,9 +9,9 @@ import { webSearch } from './web-search.js';
 import { trackTps } from './tps.js';
 import { writePrivateFile } from '../../../utils/atomic-fs.js';
 import { isQuotaFailure } from '../../../roles/exhausted.js';
-import type { WorkerPi } from './host.js';
+import type { WorkerAgentQueue, WorkerPi } from './host.js';
 
-export async function installWorker(pi: WorkerPi) {
+export async function installWorker(pi: WorkerPi, agentQueue?: WorkerAgentQueue) {
   const dir = process.env.HUD_JOB_DIR;
   if (!dir) throw Error('Missing HUD_JOB_DIR');
   const contract = readContract(dir);
@@ -33,6 +33,7 @@ export async function installWorker(pi: WorkerPi) {
       role: contract.role,
       profile: contract.tab.profile,
       effortSource: contract.tab.effortSource,
+      agentQueue,
     });
     await workerTools(pi, dir, true, tab);
     return;

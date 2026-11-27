@@ -12,7 +12,7 @@ import { writeJsonPrivate } from '../../../utils/atomic-fs.js';
 import { procStat } from '../../../utils/proc.js';
 import { readQuestionAnswer, watchQaDir, type PublishedQuestion } from '../../../worker/qa.js';
 import { sonicChildren, sonicCollectPrompt } from '../../../worker/sonic-jobs.js';
-import type { WorkerContext, WorkerPi } from './host.js';
+import type { WorkerAgentQueue, WorkerContext, WorkerPi } from './host.js';
 import { DEFAULT_WARM_CAP_USD, exitDecision, idleGraceMs, lifecycle, warming } from './tab-policy.js';
 
 export const ASYNC_ANSWER_TYPE = 'hud-orchestrator-answer';
@@ -20,6 +20,22 @@ const SELECTION_NOTE_TYPE = 'hud-selection-note';
 const ASYNC_DELIVERY_TIMEOUT_MS = 20_000;
 const ASYNC_FALLBACK_POLL_MS = 2_000;
 const SONIC_RETRY_MS = 2_000;
+
+type QueuedMessage = Parameters<WorkerAgentQueue['followUp']>[0];
+const observedQueues = new WeakSet<WorkerAgentQueue>();
+const queuedUserFollowUps = new WeakSet<QueuedMessage>();
+
+function observeUserFollowUps(queue: WorkerAgentQueue): void {
+  if (observedQueues.has(queue)) return;
+  const followUp = queue.followUp;
+  // Pi's message events don't distinguish steers from follow-ups. Remember the exact object
+  // handed to the native follow-up queue, without changing the queue, its text or its drain order.
+  queue.followUp = function (message) {
+    followUp.call(this, message);
+    if (message.role === 'user') queuedUserFollowUps.add(message);
+  };
+  observedQueues.add(queue);
+}
 
 export interface TabTiming {
   now: () => number;
@@ -35,6 +51,7 @@ export interface TabLifecycleOptions {
   warmCapUsd?: number;
   timing?: TabTiming;
   watchQa?: boolean;
+  agentQueue?: WorkerAgentQueue;
   fatal?: (reason: string) => never;
 }
 
@@ -76,6 +93,7 @@ function defaultFail(reason: string): never {
 }
 
 export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions): TabLifecycleController {
+  if (options.agentQueue) observeUserFollowUps(options.agentQueue);
   const timing: TabTiming = options.timing ?? {
     now: () => performance.now(),
     schedule: setTimeout,
@@ -122,6 +140,7 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
   let lastSnapshot = '';
   let linkedSession: string | undefined;
   let stagedNotes: string[] = [];
+  const stagedFollowUpNotes = new WeakMap<QueuedMessage, { ids: string[]; block: { type: 'text'; text: string } }>();
   const deliveredNotes = new Set<string>(); // If receipt I/O fails, don't inject the same notes again in this worker.
 
   const active = () => enabled && !disabled;
@@ -497,8 +516,15 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     state = 'working';
     publish(ctx);
     stagedNotes = [];
-    if (event?.messageType !== 'user' || stopRequested() || existsSync(join(taskDir, jobFiles.closeRequested))) return;
-    // Only a fresh user prompt consumes notes, never a tool step or a queued steer.
+    if (event?.messageType !== 'user') return;
+    const notes = loadNotes();
+    if (!notes) return;
+    stagedNotes = notes.ids;
+    return { message: { customType: SELECTION_NOTE_TYPE, content: notes.content, display: true } };
+  });
+
+  function loadNotes() {
+    if (!active() || closing || stopRequested() || existsSync(join(taskDir, jobFiles.closeRequested))) return;
     const home = dirname(dirname(taskDir)), target = basename(taskDir);
     const fields = getJobIndexCache(home).readSession(target)?.fields;
     if (!fields?.launchId || fields.pid !== String(process.pid) || fields.pidStart !== pidStartTime) return;
@@ -508,12 +534,23 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
       for (const id of deliveredNotes) if (!pending.some(note => note.id === id)) deliveredNotes.delete(id);
       const notes = pending.filter(row => !deliveredNotes.has(row.id));
       if (!notes.length) return;
-      stagedNotes = notes.map(row => row.id);
-      return { message: { customType: SELECTION_NOTE_TYPE, content: notes.map(row => formatSelectionMessage(row)).join('\n\n'), display: true } };
+      return { ids: notes.map(row => row.id), content: notes.map(row => formatSelectionMessage(row)).join('\n\n') };
     } catch { /* An unavailable note store must not prevent a worker prompt. */ }
-  });
+  }
 
   pi.on('message_start', ({ message }, ctx) => {
+    if (message.role === 'user' && queuedUserFollowUps.delete(message)) {
+      const notes = loadNotes();
+      if (!notes) return;
+      const content = typeof message.content === 'string' ? [{ type: 'text', text: message.content }] : message.content;
+      if (!Array.isArray(content)) return;
+      // At this point pi has drained the follow-up and normalized its attachments. It uses this
+      // same message for message_end, session persistence and the next assistant request.
+      const block = { type: 'text' as const, text: `\n\n${notes.content}` };
+      message.content = [...content, block];
+      stagedFollowUpNotes.set(message, { ids: notes.ids, block });
+      return;
+    }
     if (message.role !== 'custom' || message.customType !== ASYNC_ANSWER_TYPE) return;
     const id = (message.details as { requestId?: string } | undefined)?.requestId;
     if (!id || asyncQuestions.get(id)?.sentAt === undefined || stopRequested() || !ownsPendingQuestions(ctx)) return;
@@ -527,14 +564,25 @@ export function installTabLifecycle(pi: WorkerPi, options: TabLifecycleOptions):
     publish(ctx);
   });
 
+  async function acknowledgeNotes(ids: string[]): Promise<void> {
+    for (const id of ids) deliveredNotes.add(id);
+    try {
+      await markSelectionNotesDelivered(dirname(dirname(taskDir)), deliveredNotes);
+      deliveredNotes.clear();
+    } catch { /* Keep the in-process fence even if the receipt cannot be written. */ }
+  }
+
   pi.on('message_end', async ({ message }) => {
+    if (message.role === 'user') {
+      const notes = stagedFollowUpNotes.get(message);
+      stagedFollowUpNotes.delete(message);
+      if (notes && Array.isArray(message.content) && message.content.includes(notes.block)) await acknowledgeNotes(notes.ids);
+      return;
+    }
     if (message.role === 'custom' && message.customType === SELECTION_NOTE_TYPE && stagedNotes.length) {
-      for (const id of stagedNotes) deliveredNotes.add(id);
+      const ids = stagedNotes;
       stagedNotes = [];
-      try {
-        await markSelectionNotesDelivered(dirname(dirname(taskDir)), deliveredNotes);
-        deliveredNotes.clear();
-      } catch { /* Keep the in-process fence even if the receipt cannot be written. */ }
+      await acknowledgeNotes(ids);
       return;
     }
     if (message.role !== 'assistant') return;

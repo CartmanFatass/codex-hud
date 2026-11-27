@@ -14,7 +14,11 @@ interface Message {
   errorMessage?: string;
   customType?: string;
   details?: unknown;
+  content?: unknown;
   usage?: Omit<Counts, 'total'> & { totalTokens: number; cost?: Counts };
+}
+export interface WorkerAgentQueue {
+  followUp(message: Message): void;
 }
 interface Events {
   session_start: { reason?: string } | undefined;

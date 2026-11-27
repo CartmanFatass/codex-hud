@@ -1,8 +1,9 @@
 // Ported tab-policy, tab-lifecycle, async-ask, clean-exit, tab UI, and piWorkerArgv tests on a fake Pi with fake timers.
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
 import { setImmediate as immediate, setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
@@ -105,6 +106,7 @@ function makeLifecycleFixture(t, {
   watchQa = false,
   warmCapUsd,
   promptCache = { short: 60, long: 120 },
+  agentQueue,
 } = {}) {
   const root = fs.mkdtempSync(join(tmpdir(), 'hud-tab-lifecycle-'));
   const jobsDir = join(root, 'jobs');
@@ -161,6 +163,7 @@ function makeLifecycleFixture(t, {
     timing,
     watchQa,
     warmCapUsd,
+    agentQueue,
     fatal(reason) { throw new Error(reason); },
   });
   const emit = async (name, event = {}) => {
@@ -300,9 +303,9 @@ test('tab-lifecycle: session link (lazy, idempotent, no self-link, preserves his
   assert.match(messages[0], /session link failed \(ignored\)/);
 });
 
-test('a selection note waits for the next new user prompt and is delivered once', async (t) => {
+async function selectionNoteFixture(t, agentQueue) {
   const clock = makeFakeClock();
-  const f = makeLifecycleFixture(t, { role: 'imp', timing: clock.timing });
+  const f = makeLifecycleFixture(t, { role: 'imp', timing: clock.timing, agentQueue });
   const target = 'j1111111111111111', launchId = 'launch-test-a', endpoint = join(f.root, 'herdr.sock');
   const userPrompt = { messageType: 'user' };
   await f.emit('session_start');
@@ -315,7 +318,65 @@ test('a selection note waits for the next new user prompt and is delivered once'
   const record = await recordSelectionNote(f.root, { target, launchId, role: 'imp', source: owner, excerpt, note }, endpoint);
   const current = () => readSelectionExcerpts(f.root, getJobIndexCache(f.root), { job: target })[0];
   assert.equal(current().id, record.id);
-  await f.emit('message_start', { message: { role: 'user' } }); // A queued steer can arrive mid-run.
+  return { f, current, userPrompt };
+}
+
+const selectionNoteText = /\[HUD selection note\][\s\S]*pane=w4E:p9[\s\S]*Original log: check failed[\s\S]*Note: Check the expected output/;
+
+test('a mid-turn selection note is delivered once when pi drains a queued user follow-up', async (t) => {
+  const followUps = [];
+  const agentQueue = { followUp(message) { followUps.push(message); } };
+  const { f, current } = await selectionNoteFixture(t, agentQueue);
+  const text = { type: 'text', text: 'Synthetic follow-up question?' };
+  const image = { type: 'image', data: 'synthetic', mimeType: 'image/png' };
+  const followUp = { role: 'user', content: [text, image] };
+  const secondFollowUp = { role: 'user', content: [text] };
+  const customWake = { role: 'custom', customType: 'synthetic-wake', content: 'Wake' };
+  agentQueue.followUp(customWake);
+  agentQueue.followUp(followUp);
+  agentQueue.followUp(secondFollowUp);
+  assert.deepEqual(followUp.content, [text, image], 'enqueue does not alter the prompt');
+  assert.equal(current().delivery, 'pending');
+
+  // A steer with the same text is not the queued follow-up, even while it is pending.
+  const steer = { role: 'user', content: [text] };
+  await f.emit('message_start', { message: steer });
+  await f.emit('message_end', { message: steer });
+  assert.deepEqual(steer.content, [text]);
+  await f.emit('turn_end');
+  await f.emit('turn_start');
+  const wake = followUps.shift();
+  await f.emit('message_start', { message: wake });
+  await f.emit('message_end', { message: wake });
+  assert.equal(current().delivery, 'pending', 'a queued custom wake does not take the note');
+
+  await f.emit('turn_end');
+  await f.emit('turn_start'); // Pi does not emit before_agent_start on the queue drain.
+  const drained = followUps.shift();
+  await f.emit('message_start', { message: drained });
+  assert.deepEqual(drained.content.slice(0, 2), [text, image]);
+  assert.equal(drained.content.length, 3);
+  assert.match(drained.content[2].text, selectionNoteText);
+  assert.equal(current().delivery, 'pending', 'wait for pi to finish the augmented message');
+  await f.emit('message_end', { message: drained });
+  assert.equal(current().delivery, 'delivered');
+
+  const next = followUps.shift();
+  await f.emit('message_start', { message: next });
+  await f.emit('message_end', { message: next });
+  assert.deepEqual(next.content, [text], 'the next follow-up does not repeat the note');
+  assert.deepEqual(f.sentMessages, []);
+  assert.deepEqual(f.sentUsers, []);
+});
+
+test('a steer, tool step and custom wake leave a selection note pending for a fresh user prompt', async (t) => {
+  const { f, current, userPrompt } = await selectionNoteFixture(t);
+  const steer = { role: 'user', content: [{ type: 'text', text: 'Synthetic steer' }] };
+  await f.emit('message_start', { message: steer });
+  await f.emit('message_end', { message: steer });
+  const toolResult = { role: 'toolResult' };
+  await f.emit('message_start', { message: toolResult });
+  await f.emit('message_end', { message: toolResult });
   await f.emit('turn_end');
   await f.emit('turn_start');
   assert.deepEqual(f.sentMessages, []);
@@ -329,7 +390,7 @@ test('a selection note waits for the next new user prompt and is delivered once'
   assert.equal(current().delivery, 'pending');
 
   const { message } = await f.emit('before_agent_start', userPrompt);
-  assert.match(message.content, /\[HUD selection note\][\s\S]*pane=w4E:p9[\s\S]*Original log: check failed[\s\S]*Note: Check the expected output/);
+  assert.match(message.content, selectionNoteText);
   assert.equal(current().delivery, 'pending', 'a prepared prompt does not yet acknowledge the note');
   await f.emit('message_end', { message: { role: 'custom', ...message } });
   assert.equal(current().delivery, 'delivered');
@@ -1083,12 +1144,17 @@ test('installed Pi loader loads hud-worker.mjs and hud-worker-ui.mjs with zero e
     fs.rmSync(root, { recursive: true, force: true });
   });
   const { loadExtensions } = await import(pathToFileURL(join(pkg.root, 'dist/core/extensions/loader.js')).href);
+  const agentPackage = createRequire(join(pkg.root, 'package.json')).resolve('@earendil-works/pi-agent-core/package.json');
+  const { Agent } = await import(pathToFileURL(join(dirname(agentPackage), 'dist/index.js')).href);
+  const followUp = Agent.prototype.followUp;
+  t.after(() => { Agent.prototype.followUp = followUp; });
   const { errors, extensions } = await loadExtensions([
     resolve('integrations/pi/worker/hud-worker.mjs'),
     resolve('integrations/pi/worker/hud-worker-ui.mjs'),
   ], root);
   assert.deepEqual(errors, []);
   assert.equal(extensions.length, 2);
+  assert.notEqual(Agent.prototype.followUp, followUp, 'HUD observes the installed host queue, not a second copy of pi');
   const allCommands = extensions.flatMap((ext) => [...ext.commands.keys()]);
   for (const removed of ['role', 'brief', 'deepseek-search', 'deepseek-fetch', 'hud']) {
     assert.equal(allCommands.includes(removed), false, `R3: /${removed} must not be registered in worker tabs`);
