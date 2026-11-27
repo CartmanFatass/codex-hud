@@ -389,10 +389,13 @@ function parseColdReportMeta(metaBuf: Buffer | undefined, reportBuf: Buffer | un
   } catch { return undefined; }
 }
 
-function readColdJobObservation(id: string, full: boolean, detail: boolean, offset: number) {
-  let cold: ReturnType<typeof readColdJobText>;
-  try { cold = readColdJobText(hudHome, id); }
-  catch { return null; }
+async function readColdJobObservation(id: string, full: boolean, detail: boolean, offset: number) {
+  let cold: Awaited<ReturnType<typeof readColdJobText>>;
+  try {
+    cold = await readColdJobText(hudHome, id, {
+      names: [jobFiles.job, jobFiles.status, jobFiles.report, jobFiles.reportMeta],
+    });
+  } catch { return null; }
   if (!cold) return null;
   const archivedJob = parseColdJson<Job>(cold.entries.get(jobFiles.job));
   const archivedStatus = parseColdJson<Partial<JobStatus>>(cold.entries.get(jobFiles.status));
@@ -785,7 +788,7 @@ async function callJob(name: string, args: Args, detail: boolean, scan: JobScan)
   const job = findJob(id);
   if (!job) {
     if (name === 'hud_read' && JOB_ID_RE.test(id)) {
-      const archived = readColdJobObservation(id, fullRead(args), detail, (args.offset as number | undefined) ?? 0);
+      const archived = await readColdJobObservation(id, fullRead(args), detail, (args.offset as number | undefined) ?? 0);
       if (archived) return archived;
     }
     return { ok: false, code: 'job_not_found' };

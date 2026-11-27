@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { tryAbstractLock } from '../utils/abstract-lock.js';
 import { projectRegistryRoots } from '../roles/projects.js';
 import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
-import type { TarEntry } from '../utils/tar-zst.js';
+import type { TarEntry, TarFileEntry, TarInput } from '../utils/tar-zst.js';
 import {
   archiveFlowCold,
   archiveJobFlowsCold,
@@ -48,7 +48,7 @@ function inAbsoluteDir<T>(path: string, use: (dir: string, fd: number) => T): T 
   return inDirectory(sep, (dir, fd) => parts.length ? descend(dir, parts, use) : use(dir, fd));
 }
 
-function readPinnedRegular(path: string): { data: Buffer; stat: fs.Stats } | null {
+function readPinnedRegularEntry(path: string, name: string): TarEntry | null {
   let fd: number;
   try {
     fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW);
@@ -60,7 +60,36 @@ function readPinnedRegular(path: string): { data: Buffer; stat: fs.Stats } | nul
   try {
     const stat = fs.fstatSync(fd);
     if (!stat.isFile()) return null;
-    return { data: fs.readFileSync(fd), stat };
+    return { name, data: fs.readFileSync(fd), mode: 0o600, mtime: Math.floor(stat.mtimeMs / 1000) };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function statPinnedRegular(path: string, name: string): { stat: fs.Stats; entry: TarFileEntry } | null {
+  let fd: number;
+  try {
+    fd = fs.openSync(path, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ELOOP') return null;
+    throw error;
+  }
+  try {
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) return null;
+    return {
+      stat,
+      entry: {
+        name,
+        filePath: path,
+        size: stat.size,
+        dev: stat.dev,
+        ino: stat.ino,
+        mode: 0o600,
+        mtime: Math.floor(stat.mtimeMs / 1000),
+      },
+    };
   } finally {
     fs.closeSync(fd);
   }
@@ -79,15 +108,11 @@ export function pruneJobLogs(dir: string, job: Job, status: Partial<JobStatus>, 
     inAbsoluteDir(dir, (jobDir) => {
       const stat = (name: string) => fs.lstatSync(join(jobDir, name), { throwIfNoEntry: false });
       if (stat(jobFiles.stopRequested) || (status.state === 'closed' && !stat(jobFiles.report)?.isFile())) return;
-      const targets: { name: string; stat: fs.Stats; entry: TarEntry }[] = [];
+      const targets: { name: string; stat: fs.Stats; entry: TarInput }[] = [];
       for (const name of [jobFiles.sonicStdout, jobFiles.sonicStderr]) {
-        const read = readPinnedRegular(join(jobDir, name));
-        if (!read) continue;
-        targets.push({
-          name,
-          stat: read.stat,
-          entry: { name, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) },
-        });
+        const pinned = statPinnedRegular(join(jobDir, name), name);
+        if (!pinned) continue;
+        targets.push({ name, stat: pinned.stat, entry: pinned.entry });
       }
       if (!targets.length) return;
       // Move-then-delete: a failed archive write keeps the raw logs for the next sweep.
@@ -187,14 +212,14 @@ async function pruneExpiredWorkflow(home: string, id: string, cutoff: number) {
         if (!files.every(f => (/^(?:graph|index|manifest)\.json$|^(?:failure-\d+-\d+|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f) ||
           (composed && composedFile.test(f))) && fs.lstatSync(join(batch, f)).isFile())) return;
         const prefix = id.startsWith('j') ? 'flows/' : '';
-        const entries: TarEntry[] = [];
-        const receiptRead = readPinnedRegular(receipt);
-        if (!receiptRead) return;
-        entries.push({ name: `${prefix}${id}.json`, data: receiptRead.data, mode: 0o600, mtime: Math.floor(receiptRead.stat.mtimeMs / 1000) });
+        const entries: TarInput[] = [];
+        const receiptPinned = statPinnedRegular(receipt, `${prefix}${id}.json`);
+        if (!receiptPinned) return;
+        entries.push(receiptPinned.entry);
         for (const f of files) {
-          const read = readPinnedRegular(join(batch, f));
-          if (!read) return;
-          entries.push({ name: `${prefix}${id}/${f}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+          const pinned = statPinnedRegular(join(batch, f), `${prefix}${id}/${f}`);
+          if (!pinned) return;
+          entries.push(pinned.entry);
         }
         const ts = epoch(b.updated_at) ?? epoch(b.created_at) ?? stat.mtimeMs;
         if (id.startsWith('j')) archiveJobFlowsCold(home, id, entries, ts);
@@ -226,14 +251,14 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
               const receipt = readJsonBounded(path, stat.size) as TicketQueue | null;
               if (!unattended.has(flowId) && !hasOpenHold(receipt) && (receipt?.state === 'completed' || receipt?.state === 'failed' ||
                   receipt?.state === 'cancelled' || (receipt?.state === 'paused' && 'unattended' in receipt))) {
-                const entries: TarEntry[] = [];
-                const receiptRead = readPinnedRegular(path);
-                if (!receiptRead || !sameInode(stat, receiptRead.stat) || stat.ctimeMs !== receiptRead.stat.ctimeMs) continue;
-                entries.push({ name, data: receiptRead.data, mode: 0o600, mtime: Math.floor(receiptRead.stat.mtimeMs / 1000) });
+                const entries: TarInput[] = [];
+                const receiptPinned = statPinnedRegular(path, name);
+                if (!receiptPinned || !sameInode(stat, receiptPinned.stat) || stat.ctimeMs !== receiptPinned.stat.ctimeMs) continue;
+                entries.push(receiptPinned.entry);
                 const sidecarSuffixes = ['cancel', 'noticed', 'observed'] as const;
                 for (const suffix of sidecarSuffixes) {
-                  const read = readPinnedRegular(`${path}.${suffix}`);
-                  if (read) entries.push({ name: `${name}.${suffix}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+                  const pinned = statPinnedRegular(`${path}.${suffix}`, `${name}.${suffix}`);
+                  if (pinned) entries.push(pinned.entry);
                 }
                 const sub = join(dir, flowId), subStat = fs.lstatSync(sub, { throwIfNoEntry: false });
                 let subFiles: string[] | null = null;
@@ -242,9 +267,9 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
                     const files = fs.readdirSync(run);
                     if (!files.every(f => (f === 'graph.json' || /^(?:handback-j[a-f0-9]{16}|failure-\d+-(?:\d+|[a-z][a-z0-9_-]{0,47})|(?:end|pause|error)-\d+)\.(?:noticed|observed)$/.test(f)) && fs.lstatSync(join(run, f)).isFile())) return;
                     for (const f of files) {
-                      const read = readPinnedRegular(join(run, f));
-                      if (!read) return;
-                      entries.push({ name: `${flowId}/${f}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+                      const entry = readPinnedRegularEntry(join(run, f), `${flowId}/${f}`);
+                      if (!entry) return;
+                      entries.push(entry);
                     }
                     subFiles = files;
                   });
@@ -296,20 +321,20 @@ export function pruneLandFlows(home: string, now = Date.now()): void {
             return (receipt?.state !== 'completed' && receipt?.state !== 'failed' && receipt?.state !== 'cancelled') ||
               hasPendingFlakeCollection(home, receipt);
           })) continue;
-          const entries: TarEntry[] = [];
+          const entries: TarInput[] = [];
           let maxMtime = 0;
           for (const { name, path, stat } of files) {
             if (stat.mtimeMs > maxMtime) maxMtime = stat.mtimeMs;
             if (stat.isFile()) {
-              const read = readPinnedRegular(path);
-              if (read) entries.push({ name: `flows/${name}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+              const pinned = statPinnedRegular(path, `flows/${name}`);
+              if (pinned) entries.push(pinned.entry);
             } else {
               inDirectory(path, graph => {
                 const graphNames = fs.readdirSync(graph);
                 if (!graphNames.every(f => f === 'graph.json' && fs.lstatSync(join(graph, f)).isFile())) return;
                 for (const f of graphNames) {
-                  const read = readPinnedRegular(join(graph, f));
-                  if (read) entries.push({ name: `flows/${name}/${f}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+                  const entry = readPinnedRegularEntry(join(graph, f), `flows/${name}/${f}`);
+                  if (entry) entries.push(entry);
                 }
               });
             }

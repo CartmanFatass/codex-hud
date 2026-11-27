@@ -1,17 +1,30 @@
 /** Compressed cold archive under $HUD_HOME/archive/cold/YYYY-MM/: text forever, raw capped. */
+import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
-import { dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import type { Job, JobStatus } from '../mcp/job-contracts.js';
 import { jobFiles } from '../mcp/paths.js';
-import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
-import { decodeTarZst, encodeTarZst, isSafeTarPath, type TarEntry } from '../utils/tar-zst.js';
+import { readJsonBounded } from '../utils/atomic-fs.js';
+import {
+  DEFAULT_MAX_SYNC_FRAME_BYTES,
+  isSafeTarPath,
+  isTarFileEntry,
+  streamTarZstFile,
+  streamTarZstFileSync,
+  TarZstFrameWriter,
+  writeAllSync,
+  type TarEntryMeta,
+  type TarFileEntry,
+  type TarInput,
+} from '../utils/tar-zst.js';
 import { epoch } from './job-usage.js';
 
 export const DEFAULT_COLD_RAW_CAP_GB = 20;
 export const BYTES_PER_GB = 1024 * 1024 * 1024;
 const CONFIG_LIMIT = 64 * 1024;
-const TEXT_DECOMPRESS_LIMIT = 64 * 1024 * 1024;
-const RAW_DECOMPRESS_LIMIT = 512 * 1024 * 1024;
+const DEFAULT_TEXT_ENTRY_LIMIT = 64 * 1024 * 1024;
+const DEFAULT_TEXT_TOTAL_LIMIT = 64 * 1024 * 1024;
+const STREAM_IO_CHUNK_BYTES = 256 * 1024;
 
 export const COLD_ID_RE = /^[jqbw][0-9a-f]{16}$/;
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -30,6 +43,17 @@ export interface ColdArchiveItem {
   month: string;
   text?: ColdMemberStat;
   raw?: ColdMemberStat;
+}
+
+export interface ColdArchiveWriteOptions {
+  frameBytes?: number;
+  maxSyncFrameBytes?: number;
+}
+
+export interface ReadColdJobTextOptions {
+  names?: readonly string[];
+  maxEntryBytes?: number;
+  maxTotalBytes?: number;
 }
 
 export function coldArchiveRoot(home: string): string {
@@ -91,22 +115,52 @@ function ensureMonthDir(home: string, month: string): string {
   return dir;
 }
 
-function readRegularNoFollow(file: string): { data: Buffer; stat: fs.Stats } | null {
-  let fd: number;
-  try {
-    fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'ELOOP') return null;
-    throw error;
-  }
+function forEachFileChunk(entry: TarFileEntry, onChunk: (chunk: Buffer) => void): void {
+  const fd = fs.openSync(entry.filePath, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW);
   try {
     const stat = fs.fstatSync(fd);
-    if (!stat.isFile()) return null;
-    return { data: fs.readFileSync(fd), stat };
+    if (!stat.isFile()) throw new Error(`source_not_regular:${entry.name}`);
+    if (
+      (entry.dev !== undefined && stat.dev !== entry.dev) ||
+      (entry.ino !== undefined && stat.ino !== entry.ino) ||
+      stat.size !== entry.size
+    ) {
+      throw new Error(`source_changed:${entry.name}`);
+    }
+    const buf = Buffer.allocUnsafe(Math.min(STREAM_IO_CHUNK_BYTES, Math.max(1, entry.size)));
+    let remaining = entry.size;
+    while (remaining > 0) {
+      const count = fs.readSync(fd, buf, 0, Math.min(buf.length, remaining), null);
+      if (count <= 0) throw new Error(`source_changed:${entry.name}`);
+      onChunk(buf.subarray(0, count));
+      remaining -= count;
+    }
+    const probe = Buffer.allocUnsafe(1);
+    if (fs.readSync(fd, probe, 0, 1, null) > 0) throw new Error(`source_changed:${entry.name}`);
   } finally {
     fs.closeSync(fd);
   }
+}
+
+function hashInput(entry: TarInput): string {
+  const hash = createHash('sha256');
+  if (isTarFileEntry(entry)) {
+    forEachFileChunk(entry, (chunk) => hash.update(chunk));
+  } else {
+    hash.update(entry.data);
+  }
+  return hash.digest('hex');
+}
+
+function writeInputToTar(writer: TarZstFrameWriter, entry: TarInput): void {
+  const size = isTarFileEntry(entry) ? entry.size : entry.data.length;
+  writer.beginEntry({ name: entry.name, size, mode: entry.mode ?? 0o600, mtime: entry.mtime });
+  if (isTarFileEntry(entry)) {
+    forEachFileChunk(entry, (chunk) => writer.writeEntryData(chunk));
+  } else if (entry.data.length > 0) {
+    writer.writeEntryData(entry.data);
+  }
+  writer.endEntry();
 }
 
 function listColdMonths(home: string): string[] {
@@ -139,59 +193,179 @@ function findExistingMonth(home: string, id: string): string | null {
   return findColdMember(home, id, 'text')?.month ?? findColdMember(home, id, 'raw')?.month ?? null;
 }
 
-/** Atomically create or merge entries into $HUD_HOME/archive/cold/YYYY-MM/<id>.<part>.tar.zst. */
+/** Atomically create or merge entries into $HUD_HOME/archive/cold/YYYY-MM/<id>.<part>.tar.zst with bounded memory. */
 export function mergeColdMember(
   home: string,
   month: string,
   id: string,
   part: ColdPart,
-  incoming: readonly TarEntry[],
+  incoming: readonly TarInput[],
   mtimeMs?: number,
+  options: ColdArchiveWriteOptions = {},
 ): { path: string; written: boolean } {
   if (!COLD_ID_RE.test(id)) throw new Error(`invalid_archive_id:${id}`);
   const dir = ensureMonthDir(home, month);
   const target = join(dir, `${id}.${part}.tar.zst`);
   if (!incoming.length) return { path: target, written: false };
 
-  const merged = new Map<string, TarEntry>();
-  let hadExisting = false;
-  const existingFile = readRegularNoFollow(target);
-  if (existingFile) {
-    hadExisting = true;
-    const limit = part === 'text' ? TEXT_DECOMPRESS_LIMIT : RAW_DECOMPRESS_LIMIT;
-    for (const entry of decodeTarZst(existingFile.data, limit)) {
-      merged.set(entry.name, entry);
-    }
-  } else {
-    // Reject non-regular targets (e.g. a directory or symlink sitting at the member path).
-    const st = fs.lstatSync(target, { throwIfNoEntry: false });
-    if (st) throw Object.assign(new Error(`invalid_archive_target:${target}`), { code: st.isDirectory() ? 'EISDIR' : 'EEXIST' });
-  }
-
-  let changed = !hadExisting;
+  const incomingMap = new Map<string, TarInput>();
   for (const entry of incoming) {
     if (!isSafeTarPath(entry.name)) throw new Error(`invalid_tar_path:${entry.name}`);
-    const prev = merged.get(entry.name);
-    if (!prev || !prev.data.equals(entry.data)) {
-      merged.set(entry.name, entry);
-      changed = true;
+    incomingMap.set(entry.name, entry);
+  }
+  const sortedIncoming = [...incomingMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+  let existingFd: number | null = null;
+  let existingSize = 0;
+  try {
+    const fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK | fs.constants.O_NOFOLLOW);
+    try {
+      const st = fs.fstatSync(fd);
+      if (!st.isFile()) {
+        throw Object.assign(new Error(`invalid_archive_target:${target}`), { code: st.isDirectory() ? 'EISDIR' : 'EEXIST' });
+      }
+      existingFd = fd;
+      existingSize = st.size;
+    } catch (error) {
+      fs.closeSync(fd);
+      throw error;
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') {
+      existingFd = null;
+    } else if (code === 'ELOOP' || code === 'EISDIR') {
+      throw Object.assign(new Error(`invalid_archive_target:${target}`), { code });
+    } else {
+      throw error;
     }
   }
-  if (!changed) return { path: target, written: false };
 
-  const ordered = [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
-  const payload = encodeTarZst(ordered);
-  writePrivateFile(target, payload, { mkdir: false, dotPrefix: true });
-  if (mtimeMs !== undefined && Number.isFinite(mtimeMs)) {
-    const sec = mtimeMs / 1000;
-    try { fs.utimesSync(target, sec, sec); } catch { /* Best-effort timestamp stamp. */ }
+  const frameReadOpts = {
+    maxFrameDecompressedBytes: options.maxSyncFrameBytes ?? DEFAULT_MAX_SYNC_FRAME_BYTES,
+  };
+
+  try {
+    let existingSorted = true;
+    if (existingFd !== null) {
+      const existingMeta = new Map<string, { size: number; sha256: string }>();
+      let prevName: string | null = null;
+      let curName = '';
+      let curSize = 0;
+      let curHash: ReturnType<typeof createHash> | null = null;
+      streamTarZstFileSync(existingFd, existingSize, {
+        onEntryStart(meta) {
+          if (prevName !== null && prevName.localeCompare(meta.name) >= 0) existingSorted = false;
+          prevName = meta.name;
+          curName = meta.name;
+          curSize = meta.size;
+          curHash = createHash('sha256');
+        },
+        onEntryData(chunk) {
+          curHash!.update(chunk);
+        },
+        onEntryEnd() {
+          existingMeta.set(curName, { size: curSize, sha256: curHash!.digest('hex') });
+          curHash = null;
+        },
+      }, frameReadOpts);
+
+      let changed = false;
+      for (const entry of sortedIncoming) {
+        const prev = existingMeta.get(entry.name);
+        if (!prev) {
+          changed = true;
+          break;
+        }
+        const incomingSize = isTarFileEntry(entry) ? entry.size : entry.data.length;
+        if (prev.size !== incomingSize || prev.sha256 !== hashInput(entry)) {
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) return { path: target, written: false };
+    }
+
+    const temp = join(dir, `.${basename(target)}.${process.pid}.${randomUUID()}.tmp`);
+    const outFd = fs.openSync(temp, 'wx', 0o600);
+    let renamed = false;
+    try {
+      try {
+        const writer = new TarZstFrameWriter(outFd, options.frameBytes);
+        if (existingFd === null) {
+          for (const entry of sortedIncoming) writeInputToTar(writer, entry);
+        } else if (existingSorted) {
+          let nextIncoming = 0;
+          let skipping = false;
+          streamTarZstFileSync(existingFd, existingSize, {
+            onEntryStart(meta) {
+              while (nextIncoming < sortedIncoming.length && sortedIncoming[nextIncoming]!.name.localeCompare(meta.name) < 0) {
+                writeInputToTar(writer, sortedIncoming[nextIncoming++]!);
+              }
+              if (incomingMap.has(meta.name)) {
+                skipping = true;
+              } else {
+                skipping = false;
+                writer.beginEntry(meta);
+              }
+            },
+            onEntryData(chunk) {
+              if (!skipping) writer.writeEntryData(chunk);
+            },
+            onEntryEnd() {
+              if (!skipping) writer.endEntry();
+              skipping = false;
+            },
+          }, frameReadOpts);
+          while (nextIncoming < sortedIncoming.length) {
+            writeInputToTar(writer, sortedIncoming[nextIncoming++]!);
+          }
+        } else {
+          let skipping = false;
+          streamTarZstFileSync(existingFd, existingSize, {
+            onEntryStart(meta) {
+              if (incomingMap.has(meta.name)) {
+                skipping = true;
+              } else {
+                skipping = false;
+                writer.beginEntry(meta);
+              }
+            },
+            onEntryData(chunk) {
+              if (!skipping) writer.writeEntryData(chunk);
+            },
+            onEntryEnd() {
+              if (!skipping) writer.endEntry();
+              skipping = false;
+            },
+          }, frameReadOpts);
+          for (const entry of sortedIncoming) writeInputToTar(writer, entry);
+        }
+        writer.finish();
+        fs.fchmodSync(outFd, 0o600);
+      } finally {
+        fs.closeSync(outFd);
+      }
+      fs.renameSync(temp, target);
+      renamed = true;
+    } finally {
+      if (!renamed) {
+        try { fs.unlinkSync(temp); } catch { /* Preserve original failure. */ }
+      }
+    }
+    if (mtimeMs !== undefined && Number.isFinite(mtimeMs)) {
+      const sec = mtimeMs / 1000;
+      try { fs.utimesSync(target, sec, sec); } catch { /* Best-effort timestamp stamp. */ }
+    }
+    return { path: target, written: true };
+  } finally {
+    if (existingFd !== null) fs.closeSync(existingFd);
   }
-  return { path: target, written: true };
 }
 
-/** Collect all regular files inside a directory tree without following any symlink. */
-function collectTree(rootDir: string, relPrefix = ''): TarEntry[] {
-  const out: TarEntry[] = [];
+/** Collect regular file descriptors (metadata only) inside a directory tree without following any symlink. */
+function collectTree(rootDir: string, relPrefix = ''): TarFileEntry[] {
+  const out: TarFileEntry[] = [];
   const walk = (absDir: string, prefix: string) => {
     const names = fs.readdirSync(absDir).sort();
     for (const name of names) {
@@ -203,9 +377,15 @@ function collectTree(rootDir: string, relPrefix = ''): TarEntry[] {
         walk(abs, rel);
       } else if (st.isFile()) {
         if (isSkippedJobPath(rel)) continue;
-        const read = readRegularNoFollow(abs);
-        if (!read) continue;
-        out.push({ name: rel, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+        out.push({
+          name: rel,
+          filePath: abs,
+          size: st.size,
+          dev: st.dev,
+          ino: st.ino,
+          mode: 0o600,
+          mtime: Math.floor(st.mtimeMs / 1000),
+        });
       }
     }
   };
@@ -213,8 +393,8 @@ function collectTree(rootDir: string, relPrefix = ''): TarEntry[] {
   return out;
 }
 
-/** Snapshot any regular flow files in $HUD_HOME/flows/ owned by job j<hex>. */
-function collectJobOwnedFlowEntries(home: string, jobId: string): TarEntry[] {
+/** Snapshot metadata for regular flow files in $HUD_HOME/flows/ owned by job j<hex>. */
+function collectJobOwnedFlowEntries(home: string, jobId: string): TarFileEntry[] {
   const hex = jobId.slice(1);
   const flowsDir = join(home, 'flows');
   let names: string[];
@@ -227,15 +407,22 @@ function collectJobOwnedFlowEntries(home: string, jobId: string): TarEntry[] {
   }
   const landRe = new RegExp(`^f${hex}(?:-[1-9]\\d*)?(?:\\.json(?:\\.(?:cancel|noticed|observed|gate-[1-9]\\d*(?:-rerun)?\\.log))?)?$`);
   const wfRe = new RegExp(`^j${hex}(?:\\.json)?$`);
-  const entries: TarEntry[] = [];
+  const entries: TarFileEntry[] = [];
   for (const name of names) {
     if (!landRe.test(name) && !wfRe.test(name)) continue;
     const abs = join(flowsDir, name);
     const st = fs.lstatSync(abs, { throwIfNoEntry: false });
     if (!st || st.isSymbolicLink()) continue;
     if (st.isFile()) {
-      const read = readRegularNoFollow(abs);
-      if (read) entries.push({ name: `flows/${name}`, data: read.data, mode: 0o600, mtime: Math.floor(read.stat.mtimeMs / 1000) });
+      entries.push({
+        name: `flows/${name}`,
+        filePath: abs,
+        size: st.size,
+        dev: st.dev,
+        ino: st.ino,
+        mode: 0o600,
+        mtime: Math.floor(st.mtimeMs / 1000),
+      });
     } else if (st.isDirectory()) {
       for (const child of collectTree(abs, `flows/${name}`)) entries.push(child);
     }
@@ -247,11 +434,12 @@ function collectJobOwnedFlowEntries(home: string, jobId: string): TarEntry[] {
 export function archiveJobRawEntries(
   home: string,
   jobId: string,
-  entries: readonly TarEntry[],
+  entries: readonly TarInput[],
   timestampMs: number,
+  options?: ColdArchiveWriteOptions,
 ): { path: string; written: boolean } {
   const month = findExistingMonth(home, jobId) ?? monthFromMs(timestampMs);
-  return mergeColdMember(home, month, jobId, 'raw', entries, timestampMs);
+  return mergeColdMember(home, month, jobId, 'raw', entries, timestampMs, options);
 }
 
 /** Archive a whole expiring job directory (plus any owned flow records) before deletion. */
@@ -262,10 +450,11 @@ export function archiveJobCold(
   job: Job | null,
   status: Partial<JobStatus>,
   now: number,
+  options?: ColdArchiveWriteOptions,
 ): { wroteText: boolean; wroteRaw: boolean; month: string } {
   const all = collectTree(dir);
-  const textEntries: TarEntry[] = [];
-  const rawEntries: TarEntry[] = [];
+  const textEntries: TarInput[] = [];
+  const rawEntries: TarInput[] = [];
   for (const entry of all) {
     if (isRawJobPath(entry.name)) rawEntries.push(entry);
     else textEntries.push(entry);
@@ -275,8 +464,8 @@ export function archiveJobCold(
   }
   const ts = epoch(status.ended_at) ?? epoch(status.settled_at) ?? epoch(job?.reaped_at) ?? now;
   const month = findExistingMonth(home, id) ?? monthFromMs(ts);
-  const textRes = textEntries.length ? mergeColdMember(home, month, id, 'text', textEntries, ts) : { written: false };
-  const rawRes = rawEntries.length ? mergeColdMember(home, month, id, 'raw', rawEntries, ts) : { written: false };
+  const textRes = textEntries.length ? mergeColdMember(home, month, id, 'text', textEntries, ts, options) : { written: false };
+  const rawRes = rawEntries.length ? mergeColdMember(home, month, id, 'raw', rawEntries, ts, options) : { written: false };
   return { wroteText: textRes.written, wroteRaw: rawRes.written, month };
 }
 
@@ -284,22 +473,24 @@ export function archiveJobCold(
 export function archiveJobFlowsCold(
   home: string,
   jobId: string,
-  entries: readonly TarEntry[],
+  entries: readonly TarInput[],
   timestampMs: number,
+  options?: ColdArchiveWriteOptions,
 ): { path: string; written: boolean } {
   const month = findExistingMonth(home, jobId) ?? monthFromMs(timestampMs);
-  return mergeColdMember(home, month, jobId, 'text', entries, timestampMs);
+  return mergeColdMember(home, month, jobId, 'text', entries, timestampMs, options);
 }
 
 /** Archive a standalone flow run (q*, b*, w*) into its own <flow>.text.tar.zst. */
 export function archiveFlowCold(
   home: string,
   flowId: string,
-  entries: readonly TarEntry[],
+  entries: readonly TarInput[],
   timestampMs: number,
+  options?: ColdArchiveWriteOptions,
 ): { path: string; written: boolean } {
   const month = findExistingMonth(home, flowId) ?? monthFromMs(timestampMs);
-  return mergeColdMember(home, month, flowId, 'text', entries, timestampMs);
+  return mergeColdMember(home, month, flowId, 'text', entries, timestampMs, options);
 }
 
 /** Enforce retention.coldRawCapGB by deleting oldest *.raw.tar.zst members first; never deletes text members. */
@@ -367,55 +558,152 @@ export function listColdArchive(home: string, options: { month?: string } = {}):
   return items;
 }
 
-/** Read all entries from <id>.text.tar.zst into memory (used by hud_read on pruned jobs). */
-export function readColdJobText(home: string, id: string): { path: string; month: string; entries: Map<string, Buffer> } | null {
+/** Stream entries from <id>.text.tar.zst, optionally filtering to specific names so huge sibling entries never consume memory. */
+export async function readColdJobText(
+  home: string,
+  id: string,
+  options: ReadColdJobTextOptions = {},
+): Promise<{ path: string; month: string; entries: Map<string, Buffer> } | null> {
   const found = findColdMember(home, id, 'text');
   if (!found) return null;
-  const raw = readRegularNoFollow(found.path);
-  if (!raw) return null;
+  const wanted = options.names ? new Set(options.names) : null;
+  const maxEntryBytes = options.maxEntryBytes ?? DEFAULT_TEXT_ENTRY_LIMIT;
+  const maxTotalBytes = options.maxTotalBytes ?? DEFAULT_TEXT_TOTAL_LIMIT;
   const entries = new Map<string, Buffer>();
-  for (const entry of decodeTarZst(raw.data, TEXT_DECOMPRESS_LIMIT)) {
-    entries.set(entry.name, entry.data);
-  }
+  let keptTotalBytes = 0;
+  let curName: string | null = null;
+  let curChunks: Buffer[] = [];
+  const ok = await streamTarZstFile(found.path, {
+    onEntryStart(meta) {
+      if (wanted && !wanted.has(meta.name)) {
+        curName = null;
+        return;
+      }
+      if (meta.size > maxEntryBytes) throw new Error(`cold_entry_too_large:${meta.name}`);
+      if (keptTotalBytes + meta.size > maxTotalBytes) throw new Error(`cold_read_limit_exceeded:${meta.name}`);
+      keptTotalBytes += meta.size;
+      curName = meta.name;
+      curChunks = [];
+    },
+    onEntryData(chunk) {
+      if (curName !== null) curChunks.push(Buffer.from(chunk));
+    },
+    onEntryEnd() {
+      if (curName !== null) {
+        entries.set(curName, curChunks.length === 1 ? curChunks[0]! : Buffer.concat(curChunks));
+        curName = null;
+        curChunks = [];
+      }
+    },
+  });
+  if (!ok) return null;
   return { path: found.path, month: found.month, entries };
 }
 
-/** Extract <id>.text.tar.zst and/or <id>.raw.tar.zst byte-identically into outDir. */
-export function extractColdArchive(
+/** Descend component-by-component from a pinned directory fd with O_NOFOLLOW, then create the leaf file exclusively (0600). */
+function openExtractFile(rootFd: number, relPath: string): number {
+  const parts = relPath.split('/');
+  let curFd = rootFd;
+  try {
+    for (let i = 0; i < parts.length - 1; i++) {
+      const seg = parts[i]!;
+      const segPath = `/proc/self/fd/${curFd}/${seg}`;
+      try {
+        fs.mkdirSync(segPath, 0o700);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+      const nextFd = fs.openSync(segPath, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+      try {
+        fs.fchmodSync(nextFd, 0o700);
+      } catch (error) {
+        fs.closeSync(nextFd);
+        throw error;
+      }
+      if (curFd !== rootFd) fs.closeSync(curFd);
+      curFd = nextFd;
+    }
+    const leaf = parts[parts.length - 1]!;
+    const leafPath = `/proc/self/fd/${curFd}/${leaf}`;
+    const fileFd = fs.openSync(
+      leafPath,
+      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW,
+      0o600,
+    );
+    try {
+      fs.fchmodSync(fileFd, 0o600);
+    } catch (error) {
+      fs.closeSync(fileFd);
+      throw error;
+    }
+    return fileFd;
+  } finally {
+    if (curFd !== rootFd) fs.closeSync(curFd);
+  }
+}
+
+/** Stream-extract <id>.text.tar.zst and/or <id>.raw.tar.zst byte-identically into a newly created private (0700) directory without following symlinks. */
+export async function extractColdArchive(
   home: string,
   id: string,
   outDir: string,
   part: 'all' | 'text' | 'raw' = 'all',
-): { id: string; month: string; outDir: string; files: string[]; parts: ColdPart[] } | null {
+): Promise<{ id: string; month: string; outDir: string; files: string[]; parts: ColdPart[] } | null> {
   if (!COLD_ID_RE.test(id)) return null;
   const textFound = part === 'raw' ? null : findColdMember(home, id, 'text');
   const rawFound = part === 'text' ? null : findColdMember(home, id, 'raw');
   if (!textFound && !rawFound) return null;
 
   const targetRoot = resolve(outDir);
-  fs.mkdirSync(targetRoot, { recursive: true, mode: 0o700 });
-  const files: string[] = [];
-  const parts: ColdPart[] = [];
-  const writePart = (found: { path: string; month: string }, which: ColdPart) => {
-    const raw = readRegularNoFollow(found.path);
-    if (!raw) return;
-    const limit = which === 'text' ? TEXT_DECOMPRESS_LIMIT : RAW_DECOMPRESS_LIMIT;
-    const decoded = decodeTarZst(raw.data, limit);
-    parts.push(which);
-    for (const entry of decoded) {
-      if (!isSafeTarPath(entry.name)) throw new Error(`unsafe_tar_path:${entry.name}`);
-      const dest = resolve(targetRoot, entry.name);
-      if (dest !== targetRoot && !dest.startsWith(targetRoot + sep)) throw new Error(`unsafe_extract_path:${entry.name}`);
-      fs.mkdirSync(dirname(dest), { recursive: true, mode: 0o700 });
-      writePrivateFile(dest, entry.data, { mkdir: false });
-      if (entry.mtime && entry.mtime > 0) {
-        try { fs.utimesSync(dest, entry.mtime, entry.mtime); } catch { /* Best-effort mtime restore. */ }
+  const parent = dirname(targetRoot);
+  if (parent !== targetRoot) fs.mkdirSync(parent, { recursive: true, mode: 0o700 });
+  // Atomically create a fresh destination directory; fails with EEXIST if any file, symlink, or directory already sits there.
+  fs.mkdirSync(targetRoot, 0o700);
+  const rootFd = fs.openSync(targetRoot, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+  try {
+    fs.fchmodSync(rootFd, 0o700);
+    const files: string[] = [];
+    const parts: ColdPart[] = [];
+    const writePart = async (found: { path: string; month: string }, which: ColdPart) => {
+      let activeFd: number | null = null;
+      let activeMeta: TarEntryMeta | null = null;
+      try {
+        const ok = await streamTarZstFile(found.path, {
+          onEntryStart(meta) {
+            if (!isSafeTarPath(meta.name)) throw new Error(`unsafe_tar_path:${meta.name}`);
+            activeFd = openExtractFile(rootFd, meta.name);
+            activeMeta = meta;
+          },
+          onEntryData(chunk) {
+            if (chunk.length > 0) writeAllSync(activeFd!, chunk);
+          },
+          onEntryEnd() {
+            const fd = activeFd!;
+            const meta = activeMeta!;
+            activeFd = null;
+            activeMeta = null;
+            try {
+              if (meta.mtime > 0) {
+                try { fs.futimesSync(fd, meta.mtime, meta.mtime); } catch { /* Best-effort mtime restore. */ }
+              }
+            } finally {
+              fs.closeSync(fd);
+            }
+            files.push(meta.name);
+          },
+        });
+        if (ok) parts.push(which);
+      } finally {
+        if (activeFd !== null) {
+          try { fs.closeSync(activeFd); } catch { /* Preserve original failure. */ }
+        }
       }
-      files.push(entry.name);
-    }
-  };
-  if (textFound) writePart(textFound, 'text');
-  if (rawFound) writePart(rawFound, 'raw');
-  const month = textFound?.month ?? rawFound!.month;
-  return { id, month, outDir: targetRoot, files, parts };
+    };
+    if (textFound) await writePart(textFound, 'text');
+    if (rawFound) await writePart(rawFound, 'raw');
+    const month = textFound?.month ?? rawFound!.month;
+    return { id, month, outDir: targetRoot, files, parts };
+  } finally {
+    fs.closeSync(rootFd);
+  }
 }

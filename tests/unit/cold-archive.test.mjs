@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -484,10 +485,10 @@ syncBuiltinESMExports();`);
   // Direct idempotency check on mergeColdMember.
   const noop = mergeColdMember(f.home, '2030-04', id, 'text', [{ name: 'report.md', data: reportBytes }]);
   assert.equal(noop.written, false);
-  assert.ok(readColdJobText(f.home, id)?.entries.get('report.md')?.equals(reportBytes));
+  assert.ok((await readColdJobText(f.home, id))?.entries.get('report.md')?.equals(reportBytes));
   assert.ok(listColdArchive(f.home).some((item) => item.id === flowId));
   const out = join(f.home, 'verify-extract');
-  assert.ok(extractColdArchive(f.home, id, out, 'text')?.files.includes('report.md'));
+  assert.ok((await extractColdArchive(f.home, id, out, 'text'))?.files.includes('report.md'));
 });
 
 test('watcher refresh scans never touch archive/cold and refresh cost is unchanged with 200 cold members', { timeout: 60000 }, async (t) => {
@@ -539,4 +540,266 @@ syncBuiltinESMExports();`;
   assert.equal(empty.coldOps, 0, 'zero cold archive syscalls with empty archive');
   assert.equal(populated.coldOps, 0, 'zero cold archive syscalls during watcher refresh with 200 cold entries');
   t.diagnostic(`watcher refresh (20 updates): 0 cold=${empty.elapsedMs.toFixed(1)}ms (0 cold ops), 200 cold=${populated.elapsedMs.toFixed(1)}ms (${populated.coldOps} cold ops)`);
+});
+
+function writePatternFile(file, totalBytes, pattern) {
+  fs.mkdirSync(dirname(file), { recursive: true });
+  const chunk = Buffer.allocUnsafe(Math.min(1024 * 1024, Math.max(pattern.length, 64 * 1024)));
+  for (let off = 0; off < chunk.length; off += pattern.length) {
+    pattern.copy(chunk, off, 0, Math.min(pattern.length, chunk.length - off));
+  }
+  const hash = createHash('sha256');
+  const fd = fs.openSync(file, 'w', 0o600);
+  try {
+    let remaining = totalBytes;
+    while (remaining > 0) {
+      const slice = remaining >= chunk.length ? chunk : chunk.subarray(0, remaining);
+      fs.writeSync(fd, slice, 0, slice.length);
+      hash.update(slice);
+      remaining -= slice.length;
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest('hex');
+}
+
+function hashFileSync(file) {
+  const hash = createHash('sha256');
+  const fd = fs.openSync(file, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(256 * 1024);
+    let total = 0;
+    while (true) {
+      const count = fs.readSync(fd, buf, 0, buf.length, null);
+      if (count <= 0) break;
+      hash.update(buf.subarray(0, count));
+      total += count;
+    }
+    return { size: total, sha256: hash.digest('hex') };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+test('streaming multi-frame encode/merge/extract handles both sides of frame boundary, tar/PAX overhead, and oversized single-frame refusal', async (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-cold-bounds-')));
+  cleanupFixture(t, { root });
+  const home = join(root, 'hud');
+  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+
+  const idBelow = 'j000000000000b001';
+  const idAbove = 'j000000000000b002';
+  const month = '2030-05';
+  const frameBytes = 4096;
+
+  // Below frame boundary (raw + text payload + tar header + EOF blocks <= 4096).
+  const smallData = Buffer.alloc(2000, 0x61);
+  mergeColdMember(home, month, idBelow, 'raw', [{ name: 'stdout.jsonl', data: smallData, mtime: 1700000100 }], Date.parse('2030-05-01T00:00:00.000Z'), { frameBytes });
+  mergeColdMember(home, month, idBelow, 'text', [{ name: 'report.md', data: smallData, mtime: 1700000100 }], Date.parse('2030-05-01T00:00:00.000Z'), { frameBytes });
+
+  // Raw and text bytes below 4096, but PAX long-path header + tar headers + EOF blocks cross 4096 into multiple zstd frames.
+  const longPath = `sessions/${'nested-'.repeat(18)}copy.jsonl`;
+  const longTextPath = `flows/${'nested-'.repeat(18)}gate-1.log`;
+  const boundaryData = Buffer.alloc(3072, 0x62);
+  mergeColdMember(home, month, idAbove, 'raw', [{ name: longPath, data: boundaryData, mtime: 1700000101 }], Date.parse('2030-05-01T00:00:00.000Z'), { frameBytes });
+  mergeColdMember(home, month, idAbove, 'text', [{ name: longTextPath, data: boundaryData, mtime: 1700000101 }], Date.parse('2030-05-01T00:00:00.000Z'), { frameBytes });
+
+  // Idempotent no-op merge on multi-frame archive, then merge an additional file into it.
+  const noop = mergeColdMember(home, month, idAbove, 'raw', [{ name: longPath, data: boundaryData, mtime: 1700000101 }], undefined, { frameBytes });
+  assert.equal(noop.written, false, 'multi-frame merge is idempotent');
+  const extraData = Buffer.alloc(5000, 0x63);
+  const merged = mergeColdMember(home, month, idAbove, 'raw', [{ name: 'stderr.log', data: extraData, mtime: 1700000102 }], undefined, { frameBytes });
+  assert.equal(merged.written, true);
+
+  const outBelow = join(root, 'out-below');
+  const outAbove = join(root, 'out-above');
+  await extractColdArchive(home, idBelow, outBelow, 'all');
+  await extractColdArchive(home, idAbove, outAbove, 'all');
+  assert.ok(fs.readFileSync(join(outBelow, 'stdout.jsonl')).equals(smallData));
+  assert.ok(fs.readFileSync(join(outBelow, 'report.md')).equals(smallData));
+  assert.ok(fs.readFileSync(join(outAbove, longPath)).equals(boundaryData));
+  assert.ok(fs.readFileSync(join(outAbove, longTextPath)).equals(boundaryData));
+  assert.ok(fs.readFileSync(join(outAbove, 'stderr.log')).equals(extraData));
+
+  // If an existing single-frame archive exceeds maxSyncFrameBytes, mergeColdMember refuses cleanly without corrupting the member.
+  const idLegacy = 'j000000000000b003';
+  const legacyPath = join(home, 'archive', 'cold', month, `${idLegacy}.raw.tar.zst`);
+  const legacyBytes = encodeTarZst([{ name: 'stdout.jsonl', data: Buffer.alloc(16 * 1024, 0x7a) }]);
+  put(legacyPath, legacyBytes);
+  assert.throws(
+    () => mergeColdMember(home, month, idLegacy, 'raw', [{ name: 'stderr.log', data: Buffer.from('new\n') }], undefined, { maxSyncFrameBytes: 4096 }),
+    /maxOutputLength|Cannot create|limit|zstd_frame_too_large/i,
+  );
+  assert.ok(fs.readFileSync(legacyPath).equals(legacyBytes), 'refused merge leaves existing archive untouched');
+});
+
+test('raw member above 512 MiB and text member above 64 MiB (with tar overhead) archive, merge, and round-trip byte-identically; hud_read still finds report.md', { timeout: 60000 }, async (t) => {
+  const f = await mcpFixture(t);
+  fs.chmodSync(f.env.HUD_HOME, 0o700);
+  const id = 'j000000000000c001';
+  const hex = id.slice(1);
+  const dir = join(f.env.HUD_HOME, 'jobs', id);
+  const ended = '2030-06-01T10:00:00.000Z';
+  const endedMs = Date.parse(ended);
+  fs.mkdirSync(dir, { recursive: true });
+
+  const jobReceipt = {
+    job: id,
+    role: 'imp',
+    cwd: f.root,
+    project_root: f.root,
+    created_at: '2030-06-01T09:00:00.000Z',
+    reaped_at: ended,
+    resume_s: 60,
+    dispatch_exit_code: 0,
+    model: 'synthetic/model',
+    thinking: 'high',
+    place: 'claude synthetic',
+    cli: { agent: 'claude' },
+  };
+  const statusReceipt = { state: 'closed', ended_at: ended, settled_at: ended, output_written: true };
+  const reportText = '# Large Archive Report\n\nVerdict: pass\nBlockers: none\n\nSynthetic report body alongside >64 MiB gate log.\n';
+
+  put(join(dir, 'job.json'), JSON.stringify(jobReceipt, null, 2));
+  put(join(dir, 'STATUS.json'), JSON.stringify(statusReceipt));
+  put(join(dir, 'report.md'), reportText);
+  writeReportMeta(dir, reportSignature(dir), { summary: 'Readable despite oversized sibling entry.', files: ['src/roles/cold-archive.ts'] });
+
+  // 1) Raw member just above the old 512 MiB bound (512 MiB file + tar headers/EOF > 512 MiB).
+  const rawSize = 512 * 1024 * 1024;
+  const stdoutPath = join(dir, 'stdout.jsonl');
+  const expectedRawHash = writePatternFile(stdoutPath, rawSize, Buffer.from('{"type":"synthetic","line":"raw-log-entry-0123456789abcdef"}\n'));
+
+  // Early prune moves the >512 MiB stdout.jsonl into <id>.raw.tar.zst and unlinks live copy.
+  assert.equal(pruneJobLogs(dir, jobReceipt, statusReceipt, endedMs + 60_000, f.env.HUD_HOME), true);
+  assert.equal(exists(stdoutPath), false, 'live stdout.jsonl unlinked after streaming archive');
+
+  // Add a later raw session copy so full expiry must merge into the existing >512 MiB raw member.
+  const sessionCopy = Buffer.from('{"type":"session","note":"merged-after-512mib"}\n');
+  put(join(dir, 'sessions', 'extra.jsonl'), sessionCopy);
+
+  // 2) Text member just above the old 64 MiB bound (64 MiB gate log + tar headers/report > 64 MiB).
+  const gateSize = 64 * 1024 * 1024;
+  const gatePath = join(f.env.HUD_HOME, 'flows', `f${hex}.json.gate-1.log`);
+  const expectedGateHash = writePatternFile(gatePath, gateSize, Buffer.from('gate[1]: synthetic verbose test output line 0123456789\n'));
+
+  const res = archiveJobCold(f.env.HUD_HOME, dir, id, jobReceipt, statusReceipt, endedMs + 25 * hour);
+  assert.equal(res.wroteText, true);
+  assert.equal(res.wroteRaw, true);
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.unlinkSync(gatePath);
+
+  // hud_read must still find report.md in the >64 MiB text member (not job_not_found!).
+  const digest = await f.call('hud_read', { job: id });
+  assert.equal(digest.archived, true);
+  assert.equal(digest.job, id);
+  assert.equal(digest.report_exists, true);
+  assert.equal(digest.digest.result, 'Readable despite oversized sibling entry.');
+  assert.equal(digest.digest.verdict, 'pass');
+
+  const full = await f.call('hud_read', { job: id, mode: 'full' });
+  assert.equal(full.archived, true);
+  assert.equal(full.report, reportText);
+
+  // hud archive extract must round-trip BOTH >64 MiB text and >512 MiB raw members byte-identically.
+  const outDir = join(f.root, 'extracted-large');
+  const ext = await runCli(['extract', id, '--out', outDir], { ...process.env, HUD_HOME: f.env.HUD_HOME });
+  assert.equal(ext.code, 0, ext.err);
+  assert.match(ext.out, /Extracted \d+ files \(text\+raw\)/);
+
+  assert.equal(fs.readFileSync(join(outDir, 'report.md'), 'utf8'), reportText);
+  assert.ok(fs.readFileSync(join(outDir, 'sessions', 'extra.jsonl')).equals(sessionCopy));
+  assert.deepEqual(hashFileSync(join(outDir, 'flows', `f${hex}.json.gate-1.log`)), { size: gateSize, sha256: expectedGateHash });
+  assert.deepEqual(hashFileSync(join(outDir, 'stdout.jsonl')), { size: rawSize, sha256: expectedRawHash });
+});
+
+test('hud archive extract drops --force, refuses existing paths, and never writes outside --out through symlinked intermediate dirs', async (t) => {
+  const root = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'hud-cold-extract-safe-')));
+  cleanupFixture(t, { root });
+  const home = join(root, 'hud');
+  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+  const env = { ...process.env, HUD_HOME: home };
+
+  // Help text reflects final options and omits --force.
+  const help = await runCli(['--help'], env);
+  assert.equal(help.code, 0, help.err);
+  assert.match(help.out, /hud archive extract <id> \[--out DIR\] \[--part all\|text\|raw\] \[--json\]/);
+  assert.equal(help.out.includes('--force'), false, 'help text must not advertise --force');
+
+  const id = 'j000000000000d001';
+  mergeColdMember(home, '2030-07', id, 'text', [
+    { name: 'brief.md', data: Buffer.from('# Brief\n'), mode: 0o600, mtime: 1700000200 },
+    { name: 'qa/q1.md', data: Buffer.from('Sensitive question\n'), mode: 0o600, mtime: 1700000201 },
+  ]);
+
+  // 1) --force flag is rejected.
+  const forceOut = join(root, 'force-out');
+  const forceRes = await runCli(['extract', id, '--out', forceOut, '--force'], env);
+  assert.notEqual(forceRes.code, 0, '--force must be rejected');
+  assert.equal(exists(forceOut), false, 'rejected --force must not create outDir');
+
+  // 2) Existing non-empty directory fails and leaves contents untouched.
+  const existingNonEmpty = join(root, 'existing-non-empty');
+  put(join(existingNonEmpty, 'keep.txt'), 'original\n');
+  const nonEmptyRes = await runCli(['extract', id, '--out', existingNonEmpty], env);
+  assert.notEqual(nonEmptyRes.code, 0, 'existing non-empty dir must fail');
+  assert.equal(fs.readFileSync(join(existingNonEmpty, 'keep.txt'), 'utf8'), 'original\n');
+  assert.equal(exists(join(existingNonEmpty, 'brief.md')), false);
+
+  // 3) Existing empty directory also fails (extract requires a newly created directory).
+  const existingEmpty = join(root, 'existing-empty');
+  fs.mkdirSync(existingEmpty, { mode: 0o755 });
+  const emptyRes = await runCli(['extract', id, '--out', existingEmpty], env);
+  assert.notEqual(emptyRes.code, 0, 'existing empty dir must fail');
+
+  // 4) Existing directory containing a symlinked intermediate directory never writes outside --out.
+  const outside1 = join(root, 'outside-1');
+  fs.mkdirSync(outside1, { mode: 0o700 });
+  const preLinked = join(root, 'pre-linked');
+  fs.mkdirSync(preLinked, { mode: 0o700 });
+  fs.symlinkSync(outside1, join(preLinked, 'qa'));
+  const preLinkedRes = await runCli(['extract', id, '--out', preLinked], env);
+  assert.notEqual(preLinkedRes.code, 0, 'pre-existing symlinked target tree must fail');
+  assert.deepEqual(fs.readdirSync(outside1), [], 'nothing written outside --out');
+
+  // 5) Dangling symlink at --out fails and never creates outside target.
+  const outsideDangling = join(root, 'outside-dangling');
+  const danglingOut = join(root, 'dangling-out');
+  fs.symlinkSync(outsideDangling, danglingOut);
+  const danglingRes = await runCli(['extract', id, '--out', danglingOut], env);
+  assert.notEqual(danglingRes.code, 0, 'dangling symlink target must fail');
+  assert.equal(exists(outsideDangling), false, 'dangling symlink target must not be created');
+
+  // 6) Mid-extraction symlinked intermediate directory (qa -> outside2) is blocked by O_NOFOLLOW and never writes outside --out.
+  const outside2 = join(root, 'outside-2');
+  fs.mkdirSync(outside2, { mode: 0o700 });
+  const raceOut = join(root, 'race-out');
+  const origMkdirSync = fs.mkdirSync;
+  fs.mkdirSync = (p, opts) => {
+    const out = origMkdirSync(p, opts);
+    if (p === raceOut) fs.symlinkSync(outside2, join(raceOut, 'qa'));
+    return out;
+  };
+  syncBuiltinESMExports();
+  try {
+    await assert.rejects(
+      () => extractColdArchive(home, id, raceOut, 'text'),
+      (err) => err && (err.code === 'ELOOP' || err.code === 'ENOTDIR'),
+      'symlinked intermediate directory must fail with ELOOP or ENOTDIR',
+    );
+  } finally {
+    fs.mkdirSync = origMkdirSync;
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual(fs.readdirSync(outside2), [], 'mid-extraction symlinked qa/ must never write outside --out');
+
+  // 7) Fresh destination succeeds with private 0700 dirs and 0600 files.
+  const cleanOut = join(root, 'clean-out');
+  const okRes = await runCli(['extract', id, '--out', cleanOut], env);
+  assert.equal(okRes.code, 0, okRes.err);
+  assert.equal(modeOf(cleanOut), 0o700);
+  assert.equal(modeOf(join(cleanOut, 'qa')), 0o700);
+  assert.equal(modeOf(join(cleanOut, 'qa', 'q1.md')), 0o600);
+  assert.equal(fs.readFileSync(join(cleanOut, 'qa', 'q1.md'), 'utf8'), 'Sensitive question\n');
 });

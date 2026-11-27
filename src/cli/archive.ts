@@ -1,5 +1,4 @@
 /** Inspect and extract compressed cold archives under $HUD_HOME/archive/cold/YYYY-MM/. */
-import * as fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import {
   COLD_ID_RE,
@@ -13,7 +12,7 @@ import { CliError, privateHome } from './private-home.js';
 
 const USAGE =
   'Usage: hud archive list [--month YYYY-MM] [--json]\n' +
-  '       hud archive extract <id> [--out DIR] [--part all|text|raw] [--force] [--json]\n';
+  '       hud archive extract <id> [--out DIR] [--part all|text|raw] [--json]\n';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -74,7 +73,6 @@ export async function archiveCommand(args: readonly string[], io: HudIO): Promis
     if (!id || !COLD_ID_RE.test(id)) throw new CliError('invalid or missing archive id (expected j/q/b/w + 16 hex)');
     let outDir: string | undefined;
     let part: 'all' | 'text' | 'raw' = 'all';
-    let force = false;
     let json = false;
     for (let i = 1; i < rest.length; i++) {
       const arg = rest[i]!;
@@ -86,8 +84,6 @@ export async function archiveCommand(args: readonly string[], io: HudIO): Promis
         const value = rest[++i];
         if (value !== 'all' && value !== 'text' && value !== 'raw') throw new CliError('invalid --part (expected all|text|raw)');
         part = value;
-      } else if (arg === '--force') {
-        force = true;
       } else if (arg === '--json') {
         json = true;
       } else {
@@ -96,14 +92,19 @@ export async function archiveCommand(args: readonly string[], io: HudIO): Promis
     }
     const home = privateHome(io.env);
     const target = resolve(outDir ?? join(process.cwd(), id));
-    const st = fs.lstatSync(target, { throwIfNoEntry: false });
-    if (st) {
-      if (!st.isDirectory()) throw new CliError(`target path is not a directory: ${target}`);
-      if (!force && fs.readdirSync(target).length > 0) {
-        throw new CliError(`target directory is not empty (pass --force to overwrite): ${target}`);
+    let extracted: Awaited<ReturnType<typeof extractColdArchive>>;
+    try {
+      extracted = await extractColdArchive(home, id, target, part);
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === 'EEXIST') {
+        throw new CliError(`target path already exists (extract requires a new directory): ${target}`);
       }
+      if (err.code === 'ELOOP' || err.code === 'ENOTDIR') {
+        throw new CliError(`unsafe extraction target: ${err.message}`);
+      }
+      throw error;
     }
-    const extracted = extractColdArchive(home, id, target, part);
     if (!extracted) throw new CliError(`archive_not_found: ${id}`);
     if (json) {
       await io.stdout(JSON.stringify(extracted, null, 2) + '\n');
