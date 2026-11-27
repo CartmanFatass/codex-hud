@@ -575,7 +575,8 @@ export async function resumeQueueAfterAnswer(home: string, jobId: string, reques
       item.answered_at = at;
       item.changed_at = at;
       const alreadyRecorded = cur.decisions?.some(
-        d => d.kind === 'question' && d.decision === 'answer' && d.ticket === item.ticket && d.question === request,
+        d => d.kind === 'question' && d.decision === 'answer' && d.ticket === item.ticket && d.question === request &&
+          (!d.worker_job || d.worker_job === jobId),
       );
       if (!alreadyRecorded) {
         recordDecision(cur, { step: 'tickets', kind: 'question', job: 'main', decision: 'answer', ticket: item.ticket, worker_job: jobId, question: request, at });
@@ -585,7 +586,8 @@ export async function resumeQueueAfterAnswer(home: string, jobId: string, reques
       cur.steps ??= {};
       cur.steps.review = { ...(cur.steps.review ?? { state: 'running' as const }), changed_at: at };
       const alreadyRecorded = cur.decisions?.some(
-        d => d.kind === 'question' && d.decision === 'answer' && d.step === 'review' && d.question === request,
+        d => d.kind === 'question' && d.decision === 'answer' && d.step === 'review' && d.question === request &&
+          (!d.worker_job || d.worker_job === jobId),
       );
       if (!alreadyRecorded) {
         recordDecision(cur, { step: 'review', kind: 'question', job: 'main', decision: 'answer', worker_job: jobId, question: request, at });

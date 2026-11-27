@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { reportSignature } from '../../dist/roles/cli-turn.js';
 import { readExecutionRuns } from '../../dist/collectors/execution-runs.js';
-import { writeTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
+import { resumeQueueAfterAnswer } from '../../dist/mcp/ticket-queue.js';
+import { readTicketQueue, writeTicketQueue } from '../../dist/mcp/ticket-queue-state.js';
 import { readTicketFeature, serializeTicketFeature, ticketFeaturePath } from '../../dist/tickets/store.js';
 import { runLock } from '../../dist/workflows/store.js';
 import { fixture, fallbackRole, taskCall, taskRpc, until, resultValue } from '../helpers/thin-mcp-harness.mjs';
@@ -478,4 +480,111 @@ test('ticket queue cancel stops new dispatches and leaves the running worker alo
   assert.deepEqual(status.jobs, [{ job: first, ticket: 'sample/01' }]);
   assert.deepEqual(status.landed, []);
   assert.equal(f.status(first).state, 'closed');
+});
+
+test('resumeQueueAfterAnswer keys question dedupe on worker_job across reviewer rounds, keeps repeats idempotent, and honors legacy decisions', async t => {
+  const base = fs.mkdtempSync(join(tmpdir(), 'hud-q-answer-dedupe-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const home = join(base, 'hud');
+  const root = join(base, 'repo');
+  fs.mkdirSync(join(home, 'flows'), { recursive: true });
+  fs.mkdirSync(root, { recursive: true });
+  const now = '2026-01-01T00:00:00.000Z';
+
+  // Two different reviewer jobs on one run both ask q1 and are answered directly.
+  const reviewFlow = 'q00000000000000d1';
+  const reviewer1 = 'j00000000000000r1';
+  const reviewer2 = 'j00000000000000r2';
+  writeTicketQueue(home, {
+    flow: reviewFlow, root, cwd: root, project_root: root, feature: 'sample', pane: '',
+    task: false, max_parallel: 1, created_at: now, updated_at: now, state: 'paused',
+    handback: { step: 'review', choices: ['resume', 'stop'], kind: 'question', job: reviewer1, question: 'q1' },
+    review_job: reviewer1,
+    steps: { tickets: { state: 'done' }, review: { state: 'failed' }, accept: { state: 'waiting' } },
+    tickets: [],
+  }, true);
+
+  await resumeQueueAfterAnswer(home, reviewer1, 'q1', null, root);
+  await resumeQueueAfterAnswer(home, reviewer1, 'q1', null, root);
+  let saved = readTicketQueue(home, reviewFlow);
+  assert.deepEqual(
+    saved.decisions.map(d => ({ step: d.step, kind: d.kind, job: d.job, decision: d.decision, worker_job: d.worker_job, question: d.question })),
+    [{ step: 'review', kind: 'question', job: 'main', decision: 'answer', worker_job: reviewer1, question: 'q1' }],
+  );
+
+  // Repair-round reviewer on the same run also asks q1 and gets its own answer decision.
+  saved.review_job = reviewer2;
+  saved.handback = { step: 'review', choices: ['resume', 'stop'], kind: 'question', job: reviewer2, question: 'q1' };
+  writeTicketQueue(home, saved);
+  await resumeQueueAfterAnswer(home, reviewer2, 'q1', null, root);
+  await resumeQueueAfterAnswer(home, reviewer2, 'q1', null, root);
+  saved = readTicketQueue(home, reviewFlow);
+  assert.deepEqual(
+    saved.decisions.map(d => ({ step: d.step, kind: d.kind, job: d.job, decision: d.decision, worker_job: d.worker_job, question: d.question })),
+    [
+      { step: 'review', kind: 'question', job: 'main', decision: 'answer', worker_job: reviewer1, question: 'q1' },
+      { step: 'review', kind: 'question', job: 'main', decision: 'answer', worker_job: reviewer2, question: 'q1' },
+    ],
+  );
+
+  // Ticket-item branch: repeat for same job is idempotent, second job on same ticket records its own decision.
+  const ticketFlow = 'q00000000000000d2';
+  const worker1 = 'j00000000000000w1';
+  const worker2 = 'j00000000000000w2';
+  writeTicketQueue(home, {
+    flow: ticketFlow, root, cwd: root, project_root: root, feature: 'sample', pane: '',
+    task: false, max_parallel: 1, created_at: now, updated_at: now, state: 'paused',
+    handback: { step: 'tickets', choices: ['resume', 'stop'], kind: 'question', ticket: 'sample/01', job: worker1, question: 'q1' },
+    steps: { tickets: { state: 'failed' }, review: { state: 'waiting' }, accept: { state: 'waiting' } },
+    tickets: [{ ticket: 'sample/01', path: join(root, '.scratch/sample/issues/01.md'), role: 'imp', job: worker1 }],
+  }, true);
+
+  await resumeQueueAfterAnswer(home, worker1, 'q1', null, root);
+  await resumeQueueAfterAnswer(home, worker1, 'q1', null, root);
+  saved = readTicketQueue(home, ticketFlow);
+  assert.deepEqual(
+    saved.decisions.map(d => ({ step: d.step, ticket: d.ticket, worker_job: d.worker_job, question: d.question })),
+    [{ step: 'tickets', ticket: 'sample/01', worker_job: worker1, question: 'q1' }],
+  );
+
+  saved.tickets[0].job = worker2;
+  saved.handback = { step: 'tickets', choices: ['resume', 'stop'], kind: 'question', ticket: 'sample/01', job: worker2, question: 'q1' };
+  writeTicketQueue(home, saved);
+  await resumeQueueAfterAnswer(home, worker2, 'q1', null, root);
+  await resumeQueueAfterAnswer(home, worker2, 'q1', null, root);
+  saved = readTicketQueue(home, ticketFlow);
+  assert.deepEqual(
+    saved.decisions.map(d => ({ step: d.step, ticket: d.ticket, worker_job: d.worker_job, question: d.question })),
+    [
+      { step: 'tickets', ticket: 'sample/01', worker_job: worker1, question: 'q1' },
+      { step: 'tickets', ticket: 'sample/01', worker_job: worker2, question: 'q1' },
+    ],
+  );
+
+  // Legacy receipts without worker_job still count as duplicates so old receipts do not double-record.
+  const legacyFlow = 'q00000000000000d3';
+  const legacyWorker = 'j00000000000000l1';
+  const legacyReviewer = 'j00000000000000l2';
+  writeTicketQueue(home, {
+    flow: legacyFlow, root, cwd: root, project_root: root, feature: 'sample', pane: '',
+    task: false, max_parallel: 1, created_at: now, updated_at: now, state: 'paused',
+    handback: { step: 'tickets', choices: ['resume', 'stop'], kind: 'question', ticket: 'sample/02', job: legacyWorker, question: 'q1' },
+    review_job: legacyReviewer,
+    steps: { tickets: { state: 'failed' }, review: { state: 'failed' }, accept: { state: 'waiting' } },
+    tickets: [{ ticket: 'sample/02', path: join(root, '.scratch/sample/issues/02.md'), role: 'imp', job: legacyWorker }],
+    decisions: [
+      { step: 'tickets', kind: 'question', job: 'main', decision: 'answer', ticket: 'sample/02', question: 'q1', at: now },
+      { step: 'review', kind: 'question', job: 'main', decision: 'answer', question: 'q1', at: now },
+    ],
+  }, true);
+
+  await resumeQueueAfterAnswer(home, legacyWorker, 'q1', null, root);
+  saved = readTicketQueue(home, legacyFlow);
+  assert.equal(saved.decisions.length, 2);
+
+  saved.handback = { step: 'review', choices: ['resume', 'stop'], kind: 'question', job: legacyReviewer, question: 'q1' };
+  writeTicketQueue(home, saved);
+  await resumeQueueAfterAnswer(home, legacyReviewer, 'q1', null, root);
+  saved = readTicketQueue(home, legacyFlow);
+  assert.equal(saved.decisions.length, 2);
 });
