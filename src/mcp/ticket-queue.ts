@@ -188,7 +188,8 @@ export function inheritedRepairRounds(previous: TicketQueue | undefined): number
   const base = previous.repair_rounds ?? 0;
   if (base >= MAX_REPAIR_ROUNDS) return base;
   const lastAccept = previous.decisions?.filter(d => d.step === 'accept' && d.kind === 'accept').at(-1);
-  const unadmittedRepair = previous.steps?.accept?.state === 'failed'
+  const acceptState = previous.steps?.accept?.state;
+  const unadmittedRepair = (acceptState === 'failed' || acceptState === 'asking')
     && lastAccept?.decision === 'repair'
     && !lastAccept.close_error
     && previous.handback?.job === lastAccept.job;
@@ -434,7 +435,10 @@ export async function answerTicketQueueHandback(
         error: `Invalid choice for ${id} (${step}); expected one of: ${cur.handback.choices.join(', ')} (optional ": <reason>" or newline)`,
       };
     }
-    if (parsed.choice === 'resume') {
+    // At ordinary milestone acceptance, resume is main's finish verdict, not a retry of the settled lead.
+    const overridesEscalation = parsed.choice === 'resume' && cur.handback.kind === 'escalate'
+      && step === 'accept' && !cur.unattended;
+    if (parsed.choice === 'resume' && !overridesEscalation) {
       const at = new Date().toISOString();
       const handback = cur.handback;
       const decisionKind: RunDecision['kind'] = handback.kind === 'blocker' ? 'blocker'
@@ -470,6 +474,9 @@ export async function answerTicketQueueHandback(
       return { ok: true, queue: cur, resumed: true };
     }
     if (parsed.choice === 'stop') {
+      // Preserve any unadmitted repair round before clearing the hand-back and recording stop.
+      const repairRounds = inheritedRepairRounds(cur);
+      if (repairRounds > (cur.repair_rounds ?? 0)) cur.repair_rounds = repairRounds;
       const at = new Date().toISOString();
       const handback = cur.handback;
       const decisionKind: RunDecision['kind'] = handback.kind === 'blocker' ? 'blocker'
@@ -520,7 +527,7 @@ export async function answerTicketQueueHandback(
       cur.epoch = (cur.epoch ?? 0) + 1;
       if (repair.kind === 'cap') {
         cur.steps ??= {};
-        cur.steps[step] = { state: 'failed', reason: repair.reason, changed_at: at };
+        cur.steps[step] = { state: 'asking', reason: repair.reason, changed_at: at };
         cur.reason = repair.reason;
         cur.queued = undefined;
         cur.remaining = cur.remaining ?? [];
@@ -552,7 +559,7 @@ export async function answerTicketQueueHandback(
       });
       cur.epoch = (cur.epoch ?? 0) + 1;
       cur.steps ??= {};
-      cur.steps[step] = { state: 'failed', reason: msg, changed_at: at };
+      cur.steps[step] = { state: 'asking', reason: msg, changed_at: at };
       cur.reason = msg;
       cur.queued = undefined;
       cur.remaining = cur.remaining ?? [];
@@ -562,7 +569,8 @@ export async function answerTicketQueueHandback(
       writeTicketQueue(home, cur);
       return { ok: true, queue: cur, resumed: false };
     }
-    if (!cur.unattended && parsed.choice === 'finish' && cur.tickets.some(t => t.held)) {
+    const choice = overridesEscalation ? 'finish' : parsed.choice;
+    if (!cur.unattended && choice === 'finish' && cur.tickets.some(t => t.held)) {
       const held = cur.tickets.find(t => t.held)!;
       return {
         ok: false,
@@ -571,7 +579,8 @@ export async function answerTicketQueueHandback(
       };
     }
     const handback = cur.handback;
-    const verdict = parsed.reason ? `${parsed.choice}: ${parsed.reason}` : parsed.choice;
+    const reason = parsed.reason ?? (overridesEscalation ? 'escalation overridden by main' : undefined);
+    const verdict = reason ? `${choice}: ${reason}` : choice;
     const at = new Date().toISOString();
     recordDecision(cur, {
       step, kind: 'accept', job: 'main', decision: parsed.choice,
@@ -582,7 +591,7 @@ export async function answerTicketQueueHandback(
     });
     cur.epoch = (cur.epoch ?? 0) + 1;
     cur.steps ??= {};
-    cur.steps[step] = { state: 'done', answer: parsed.choice, changed_at: at };
+    cur.steps[step] = { state: 'done', answer: choice, changed_at: at };
     cur.verdict = verdict;
     delete cur.handback;
     delete cur.reason;

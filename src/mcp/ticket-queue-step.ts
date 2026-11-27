@@ -346,8 +346,8 @@ function pauseNotice(q: TicketQueue) {
 }
 
 /** Hand-back settlement for ticket-queue problems:
- * - assumption / blocker report gate: leaves the step asking, pauses the run, records pause-<epoch> in notices, and wakes main once.
- * - escalate / unattended run hold: pauses the run, records pause-<epoch> in notices, and wakes main once.
+ * - assumption / blocker report gate or answerable escalation: pauses with the step asking and a pause-<epoch> notice.
+ * - unattended manual hold: pauses with a notice but no resume/stop hand-back.
  * - other problems (land/check/worker/dispatch/to:main question): failed receipt with terminal notice. */
 export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
   const step = problem?.step ?? q.handback?.step ?? 'tickets';
@@ -377,7 +377,7 @@ export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
         ...(problem.assumption && { assumption: problem.assumption }),
       }),
     };
-    if (!manual && (problem?.kind === 'blocker' || problem?.kind === 'assumption')) setAsking();
+    if (!manual) setAsking();
     q.state = 'paused';
     q.notices = pauseNotice(q);
     return;
@@ -401,13 +401,8 @@ export function settleTicketHandback(q: TicketQueue, problem?: TicketProblem) {
       ...(problem.assumption && { assumption: problem.assumption }),
     }),
   };
-  if (problem?.kind === 'assumption' || problem?.kind === 'blocker') {
+  if (problem?.kind === 'assumption' || problem?.kind === 'blocker' || problem?.kind === 'escalate') {
     setAsking();
-    q.state = 'paused';
-    q.notices = pauseNotice(q);
-    return;
-  }
-  if (problem?.kind === 'escalate') {
     q.state = 'paused';
     q.notices = pauseNotice(q);
     return;

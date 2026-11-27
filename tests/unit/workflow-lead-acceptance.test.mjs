@@ -1153,7 +1153,21 @@ test('configurable escalation_rule reaches lead packet; escalate wakes main once
   const escNotices = await collectDeliveredNotices(f, flow, readEsc, 1);
   assert.equal(escNotices.length, 1);
   assert.match(escNotices[0], /escalated: Would delete a user-visible feature/);
+  assert.match(escNotices[0], new RegExp(`hud_respond job=${flow} answer=<resume\\|stop>`));
   assert.equal((await f.call('hud_read', { job: flow })).changes, undefined);
+  assert.equal(escalated.steps.accept.state, 'asking');
+
+  const resumed = await f.call('hud_respond', { job: flow, answer: 'resume: Owner confirmed the existing behavior.' });
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.flow, flow);
+  assert.equal(resumed.state, 'completed');
+  assert.equal(resumed.verdict, 'finish: Owner confirmed the existing behavior.');
+  assert.equal(resumed.handback, undefined);
+  const finished = f.flow(flow);
+  assert.equal(finished.steps.accept.state, 'done');
+  assert.equal(finished.steps.accept.answer, 'finish');
+  assert.equal(finished.active_lead, undefined);
+  assert.deepEqual(finished.decisions.map(d => [d.job, d.decision]), [[leadId, 'escalate'], ['main', 'resume']]);
 
   // Separate feature with handback_to: main wakes main directly at accept with zero lead jobs.
   f.writeJsonTicket(1, {}, 'direct');
@@ -1174,6 +1188,30 @@ test('configurable escalation_rule reaches lead packet; escalate wakes main once
   assert.equal(directNotices.length, 1);
   assert.match(directNotices[0], /hand-back at accept/);
   assert.match(directNotices[0], new RegExp(`hud_respond job=${directFlow} answer=<finish\\|repair\\|escalate>`));
+});
+
+test('hud_respond stop cancels an ordinary lead escalation without undoing the land', { timeout: 45_000 }, async t => {
+  const f = await setupWorkflowProject(t, { count: 1 });
+  const { flow } = await f.call('hud_tickets', { op: 'run', feature: 'sample', cwd: f.root });
+  const [job] = await f.jobs(flow, 1);
+  await f.settle(job);
+  await until(() => Boolean(f.flow(flow).review_job), 15_000);
+  await f.settleReview(f.flow(flow).review_job);
+  await until(() => f.flow(flow).active_lead?.kind === 'accept', 15_000);
+  const lead = f.flow(flow).active_lead.job;
+  await f.settleLead(lead, 'Decision: escalate\nReason: Needs an owner choice.\n');
+  const paused = await f.end(flow);
+  assert.equal(paused.state, 'paused');
+  assert.equal(paused.steps.accept.state, 'asking');
+  assert.deepEqual(paused.handback.choices, ['resume', 'stop']);
+
+  const stopped = await f.call('hud_respond', { job: flow, answer: 'stop: Keep the current land.' });
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.state, 'cancelled');
+  assert.equal(stopped.handback, undefined);
+  assert.deepEqual(stopped.landed, ['sample/01']);
+  assert.equal(f.flow(flow).steps.accept.state, 'cancelled');
+  assert.deepEqual(stopped.decisions.map(d => [d.job, d.decision]), [[lead, 'escalate'], ['main', 'stop']]);
 });
 
 test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, escalate) and rejects invalid choices or non-asking runs', { timeout: 60_000 }, async t => {
@@ -1253,12 +1291,14 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
   assert.equal(escalated.state, 'paused');
   assert.equal(escalated.handback.kind, 'escalate');
   assert.match(escalated.reason, /escalated: Would delete a user-visible option\./);
-  assert.equal(f.flow(escFlow).steps.accept.state, 'failed');
+  assert.equal(f.flow(escFlow).steps.accept.state, 'asking');
   assert.equal(f.flow(escFlow).decisions[0].decision, 'escalate');
 
-  const afterEsc = await f.call('hud_respond', { job: escFlow, answer: 'finish' });
-  assert.equal(afterEsc.ok, false);
-  assert.equal(afterEsc.code, 'no_pending_handback');
+  const afterEsc = await f.call('hud_respond', { job: escFlow, answer: 'resume' });
+  assert.equal(afterEsc.ok, true);
+  assert.equal(afterEsc.state, 'completed');
+  assert.equal(afterEsc.verdict, 'finish: escalation overridden by main');
+  assert.deepEqual(afterEsc.decisions.map(d => d.decision), ['escalate', 'resume']);
 
   // 3. repair loops tickets -> review -> accept in the SAME run, bounded to 2 repair rounds.
   f.writeJsonTicket(1, {}, 'rep');
@@ -1302,10 +1342,16 @@ test('hud_respond answers main hand-back (finish, repair bounded to 2 rounds, es
       assert.equal(bounded.repair_rounds, 2);
       assert.equal(bounded.handback.kind, 'escalate');
       assert.match(bounded.reason, /max repair rounds \(2\) reached: Still broken\./);
+      assert.equal(f.flow(repFlow).steps.accept.state, 'asking');
     }
   }
   assert.equal(f.flow(repFlow).reviews.length, 3);
   assert.equal(f.flow(repFlow).decisions.length, 3);
+  const stopped = await f.call('hud_respond', { job: repFlow, answer: 'stop' });
+  assert.equal(stopped.ok, true);
+  assert.equal(stopped.state, 'cancelled');
+  assert.equal(stopped.repair_rounds, 2);
+  assert.equal(f.flow(repFlow).steps.accept.state, 'cancelled');
 });
 
 test('restarting a paused run clears its Execution wait and hud_respond cannot revive it', { timeout: 45_000 }, async t => {
@@ -1475,6 +1521,12 @@ test('repair rounds are bounded to at most 2, then escalate and wake main once',
   const escNotices = await collectDeliveredNotices(f, flow, readEsc, 1);
   assert.equal(escNotices.length, 1);
   assert.match(escNotices[0], /max repair rounds \(2\) reached/);
+  assert.equal(escalated.steps.accept.state, 'asking');
+  const resumed = await f.call('hud_respond', { job: flow, answer: 'resume' });
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.state, 'completed');
+  assert.equal(resumed.repair_rounds, 2);
+  assert.deepEqual(resumed.decisions.map(d => d.decision), ['repair', 'repair', 'repair', 'resume']);
 });
 
 test('repair ticket repairs ref is admitted onto q.tickets[] and archived on ticket_queue event naming B, not A', { timeout: 60_000 }, async t => {
