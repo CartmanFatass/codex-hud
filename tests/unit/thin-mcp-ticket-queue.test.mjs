@@ -561,10 +561,19 @@ test('resumeQueueAfterAnswer keys question dedupe on worker_job across reviewer 
     ],
   );
 
-  // Legacy receipts without worker_job still count as duplicates so old receipts do not double-record.
+  // Legacy receipts without worker_job: ticket-item dedupe stays ticket+question;
+  // review dedupe only matches when the legacy decision cannot predate the current reviewer job.
   const legacyFlow = 'q00000000000000d3';
   const legacyWorker = 'j00000000000000l1';
   const legacyReviewer = 'j00000000000000l2';
+  const upgradedReviewer = 'j00000000000000l3';
+  const round0CreatedAt = '2026-01-01T00:00:00.000Z';
+  const round0AnswerAt = '2026-01-01T00:01:00.000Z';
+  const round1CreatedAt = '2026-01-01T00:05:00.000Z';
+  fs.mkdirSync(join(home, 'jobs', legacyReviewer), { recursive: true });
+  fs.writeFileSync(join(home, 'jobs', legacyReviewer, 'job.json'), JSON.stringify({ job: legacyReviewer, created_at: round0CreatedAt }));
+  fs.mkdirSync(join(home, 'jobs', upgradedReviewer), { recursive: true });
+  fs.writeFileSync(join(home, 'jobs', upgradedReviewer, 'job.json'), JSON.stringify({ job: upgradedReviewer, created_at: round1CreatedAt }));
   writeTicketQueue(home, {
     flow: legacyFlow, root, cwd: root, project_root: root, feature: 'sample', pane: '',
     task: false, max_parallel: 1, created_at: now, updated_at: now, state: 'paused',
@@ -573,18 +582,37 @@ test('resumeQueueAfterAnswer keys question dedupe on worker_job across reviewer 
     steps: { tickets: { state: 'failed' }, review: { state: 'failed' }, accept: { state: 'waiting' } },
     tickets: [{ ticket: 'sample/02', path: join(root, '.scratch/sample/issues/02.md'), role: 'imp', job: legacyWorker }],
     decisions: [
-      { step: 'tickets', kind: 'question', job: 'main', decision: 'answer', ticket: 'sample/02', question: 'q1', at: now },
-      { step: 'review', kind: 'question', job: 'main', decision: 'answer', question: 'q1', at: now },
+      { step: 'tickets', kind: 'question', job: 'main', decision: 'answer', ticket: 'sample/02', question: 'q1', at: round0AnswerAt },
+      { step: 'review', kind: 'question', job: 'main', decision: 'answer', question: 'q1', at: round0AnswerAt },
     ],
   }, true);
 
+  // Ticket-item legacy rule unchanged: legacy decision without worker_job suppresses repeat for same ticket+question.
   await resumeQueueAfterAnswer(home, legacyWorker, 'q1', null, root);
   saved = readTicketQueue(home, legacyFlow);
   assert.equal(saved.decisions.length, 2);
 
+  // Repeat delivery for the same current reviewer when earlier record lacks worker_job: not double-recorded.
   saved.handback = { step: 'review', choices: ['resume', 'stop'], kind: 'question', job: legacyReviewer, question: 'q1' };
   writeTicketQueue(home, saved);
   await resumeQueueAfterAnswer(home, legacyReviewer, 'q1', null, root);
   saved = readTicketQueue(home, legacyFlow);
   assert.equal(saved.decisions.length, 2);
+
+  // Mixed-version sequence: round-0 legacy review/q1 decision predates round-1 reviewer, so round-1's q1 answer is recorded once.
+  saved.repair_rounds = 1;
+  saved.review_job = upgradedReviewer;
+  saved.handback = { step: 'review', choices: ['resume', 'stop'], kind: 'question', job: upgradedReviewer, question: 'q1' };
+  writeTicketQueue(home, saved);
+  await resumeQueueAfterAnswer(home, upgradedReviewer, 'q1', null, root);
+  await resumeQueueAfterAnswer(home, upgradedReviewer, 'q1', null, root);
+  saved = readTicketQueue(home, legacyFlow);
+  assert.deepEqual(
+    saved.decisions.map(d => ({ step: d.step, kind: d.kind, job: d.job, decision: d.decision, ticket: d.ticket, worker_job: d.worker_job, question: d.question })),
+    [
+      { step: 'tickets', kind: 'question', job: 'main', decision: 'answer', ticket: 'sample/02', worker_job: undefined, question: 'q1' },
+      { step: 'review', kind: 'question', job: 'main', decision: 'answer', ticket: undefined, worker_job: undefined, question: 'q1' },
+      { step: 'review', kind: 'question', job: 'main', decision: 'answer', ticket: undefined, worker_job: upgradedReviewer, question: 'q1' },
+    ],
+  );
 });

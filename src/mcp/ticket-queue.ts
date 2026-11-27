@@ -19,7 +19,7 @@ import { validLandConfig } from './land.js';
 import { activeLand, landAttempt, readLand } from './land-state.js';
 import { checkFeatureTickets, checkTicketPaths, declaredReadyTickets, ticketObjectiveOwner, ticketReadiness } from './local-tickets.js';
 import { dispatchBase, resolveWorkspace } from './dispatch/proc.js';
-import { BUNDLED_ROOT } from './paths.js';
+import { BUNDLED_ROOT, jobFiles } from './paths.js';
 import { jobCache } from './store/job-store.js';
 import { ensureJobWatcher } from './watch-pid.js';
 import {
@@ -86,6 +86,14 @@ function launchFailed(home: string, job: string | undefined) {
   if (!job) return false;
   try { return JSON.parse(fs.readFileSync(join(home, 'jobs', job, 'STATUS.json'), 'utf8'))?.exit_reason === 'dispatch_failed'; }
   catch { return false; }
+}
+function jobCreatedAtMs(home: string, job: string): number | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(join(home, 'jobs', job, jobFiles.job), 'utf8'))?.created_at;
+    if (typeof raw !== 'string') return null;
+    const ms = Date.parse(raw);
+    return Number.isFinite(ms) ? ms : null;
+  } catch { return null; }
 }
 /** Cancel a working or paused ticket-queue run without signalling any process, keeping holds and evidence intact. */
 export async function cancelTicketQueueRun(
@@ -585,10 +593,14 @@ export async function resumeQueueAfterAnswer(home: string, jobId: string, reques
     } else if (cur.review_job === jobId) {
       cur.steps ??= {};
       cur.steps.review = { ...(cur.steps.review ?? { state: 'running' as const }), changed_at: at };
-      const alreadyRecorded = cur.decisions?.some(
-        d => d.kind === 'question' && d.decision === 'answer' && d.step === 'review' && d.question === request &&
-          (!d.worker_job || d.worker_job === jobId),
-      );
+      const reviewCreatedAtMs = jobCreatedAtMs(home, jobId);
+      const alreadyRecorded = cur.decisions?.some(d => {
+        if (d.kind !== 'question' || d.decision !== 'answer' || d.step !== 'review' || d.question !== request) return false;
+        if (d.worker_job) return d.worker_job === jobId;
+        if (reviewCreatedAtMs === null) return false;
+        const decisionAtMs = Date.parse(d.at);
+        return Number.isFinite(decisionAtMs) && decisionAtMs >= reviewCreatedAtMs;
+      });
       if (!alreadyRecorded) {
         recordDecision(cur, { step: 'review', kind: 'question', job: 'main', decision: 'answer', worker_job: jobId, question: request, at });
       }
