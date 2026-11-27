@@ -112,21 +112,24 @@ function cardRows(job: ExecutionJob, from: string, selected: boolean, width: num
 
 const cardItem = (job: Pick<ExecutionJob, 'jobId'>) => `project:exec:${job.jobId}`;
 
-function endedState(result: EndedExecutionJob['result']): { glyph: string; ink: Ink } {
+function endedState(result: ExecutionRun['result']): { glyph: string; ink: Ink } {
   const b = theme.board;
   switch (result) {
     case 'done': case 'landed': return { glyph: stateMark.done(), ink: b.success };
     case 'not landed': return { glyph: mark('◌', 'o', '\uF05D'), ink: muted };
     case 'failed': return { glyph: stateMark.failed(), ink: b.danger };
-    case 'stopped': return { glyph: stateMark.stopped(), ink: muted };
+    case 'stopped': case 'cancelled': case 'superseded': return { glyph: stateMark.stopped(), ink: muted };
     default: return { glyph: mark('·', '.'), ink: muted };
   }
 }
 
 function endedRow(entry: EndedExecutionJob | (ExecutionRun & { endedAt: number }), selected: string | undefined, width: number, now: number): MonitorRow {
-  const state = endedState(entry.result);
+  const { result } = entry, state = endedState(result);
   const age = muted(compactAge(entry.endedAt, now));
-  const facts = entry.result ? `${state.ink(t(entry.result))} ${age}` : age;
+  const outcome = result ? state.ink(t(result === 'superseded' ? 'queue: superseded' : result)) : '';
+  const facts = outcome ? `${outcome} ${age}` : age;
+  const terminalQueue = 'flow' in entry && entry.kind === 'queue' && (result === 'cancelled' || result === 'superseded');
+  const landed = terminalQueue ? entry.tickets.filter((ticket) => ticket.stage === 'landed').length : 0;
   const at = 'flow' in entry ? { item: runItem(entry.flow), execRun: entry.flow }
     : { item: cardItem(entry), execJob: { target: jobTarget(entry.worker), dir: entry.dir, tab: false } };
   const title = !('flow' in entry) ? titleOf(entry) : entry.kind === 'queue'
@@ -136,7 +139,9 @@ function endedRow(entry: EndedExecutionJob | (ExecutionRun & { endedAt: number }
   const marker = selected === at.item ? `${theme.board.active(mark('▸', '>'))} ` : '  ';
   const prefix = `${marker}${state.ink(state.glyph)} `;
   const left = visualLength(prefix + icon) + visualLength(facts) + 4 <= width ? `${prefix}${icon} ` : prefix;
-  const right = visualLength(left) + visualLength(facts) + 2 <= width ? facts : age;
+  const detail = landed ? `${outcome}${muted(` · ${t('{n} landed', { n: landed })}`)} ${age}` : '';
+  const right = detail && visualLength(left + title + detail) + 1 <= width ? detail
+    : visualLength(left + facts) + 2 <= width ? facts : terminalQueue ? outcome : age;
   return { ...at, text: fit(pair(left + theme.board.text(title), right, width), width) };
 }
 

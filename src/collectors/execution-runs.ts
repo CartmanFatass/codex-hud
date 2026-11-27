@@ -142,11 +142,11 @@ export interface ExecutionRun {
   /** Authoritative queue feature for legacy bare ticket numbers, not the display label. */
   readonly feature?: string;
   readonly unattended: boolean;
-  readonly state: TicketQueue['state'];
+  readonly state: TicketQueue['state'] | 'superseded';
   readonly createdAt: number | null;
   readonly updatedAt: number | null;
   readonly endedAt?: number;
-  readonly result?: 'failed' | 'landed' | 'not landed' | 'done' | 'stopped';
+  readonly result?: 'failed' | 'landed' | 'not landed' | 'done' | 'stopped' | 'cancelled' | 'superseded';
   readonly jobIds?: readonly string[];
   /** Standalone land's current step and worker, separate from its historical diagram nodes. */
   readonly landActivity?: {
@@ -1251,7 +1251,7 @@ function readFixedExecutionRun(
     jobIds: nodes.flatMap((node) => node.jobId ? [node.jobId] : []) };
 }
 
-const STATE_RANK: Record<TicketQueue['state'], number> = {
+const STATE_RANK: Record<ExecutionRun['state'], number> = {
   paused: 0,
   working: 1,
   failed: 2,
@@ -1261,7 +1261,8 @@ const STATE_RANK: Record<TicketQueue['state'], number> = {
   superseded: 2,
 };
 
-function endedResult(tickets: readonly ExecutionRunTicket[]): ExecutionRun['result'] {
+function endedResult(state: ExecutionRun['state'], tickets: readonly ExecutionRunTicket[]): ExecutionRun['result'] {
+  if (state === 'cancelled' || state === 'superseded') return state;
   if (tickets.some((ticket) => ticket.stage === 'failed')) return 'failed';
   if (tickets.some((ticket) => ticket.landingUnknown)) return undefined;
   return tickets.length && tickets.every((ticket) => ticket.stage === 'landed') ? 'landed' : 'not landed';
@@ -1304,7 +1305,7 @@ export function readExecutionRuns(
       if (items.length) ticketFacts ??= scanTicketStore(scope.root);
       const tickets = ticketFacts ? withTicketFacts(items, q.feature, ticketFacts.lookup) : items;
       const steps = readSteps(q);
-      const result = open ? undefined : endedResult(tickets);
+      const result = open ? undefined : endedResult(q.state, tickets);
       const heldCount = (q.tickets ?? []).filter((item) => item?.held).length + (q.held ? 1 : 0);
       const reviewWorker = q.review_job ? workers.get(q.review_job) : undefined;
       const reviewInfo = q.review_job
