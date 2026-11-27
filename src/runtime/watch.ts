@@ -11,7 +11,7 @@ import { createConnection } from 'node:net';
 import { createInterface } from 'node:readline';
 import { setTimeout } from 'node:timers';
 import { buildStamp, publishGeneration } from '../../scripts/dist-lock.mjs';
-import { isHudHerdrFork } from './herdr-socket.js';
+import { hasHerdrSidebar, herdrEndpoint, isHudHerdrFork } from './herdr-socket.js';
 
 type Runtime = ReturnType<typeof import('./watch-runtime.js').openRuntime>;
 type Handoff = NonNullable<Awaited<ReturnType<Runtime['pause']>>>;
@@ -62,6 +62,17 @@ export async function openWatcher(probe: boolean) {
   let stopping = false, reloading = false, connecting = false, socket: ReturnType<typeof createConnection> | undefined;
   let reconnectTimer: NodeJS.Timeout | undefined, reconnectMs = 5000, warned = false;
   let runtime: Runtime;
+  let stopSidebar: (() => void) | undefined;
+  const startSidebar = () => {
+    if (!sidebar) return;
+    stopSidebar = sidebar.runSidebar(home, process.cwd(), { fallback: true, async activate(destination) {
+      const [{ controlPanelDock }, { installationRoot }] = await Promise.all([import('../cli/panel.js'), import('../cli/compat.js')]);
+      await controlPanelDock('open', process.env, {
+        node: process.execPath, release: installationRoot(), cwd: destination.root ?? process.cwd(), selection: [],
+        sidebar: destination, isCurrent: () => !stopping && !reloading,
+      });
+    } });
+  };
   function log(message: string) {
     try { fs.appendFileSync(logFile, `${new Date().toISOString()} ${message}\n`); }
     catch (error) { console.error(`watch log: ${(error as Error).message}; ${message}`); }
@@ -131,6 +142,7 @@ export async function openWatcher(probe: boolean) {
     stopping = true;
     probeAbort?.abort();
     buildWatch?.close();
+    stopSidebar?.();
     disconnect();
     // On idle exit, unlink watch.pid before re-checking for newly created/resumed work
     // so an overlapping ensureJobWatcher cannot observe our stale PID and skip spawning.
@@ -172,6 +184,7 @@ export async function openWatcher(probe: boolean) {
     try {
       writePrivateFile(handoffFile, serializeHandoff(state), { mkdir: false });
       buildWatch?.close();
+      stopSidebar?.();
       disconnect();
       if (execve) execve(process.execPath, argv, env);
       // Fallback without process.execve: release watch.pid and hand off to a detached replacement.
@@ -183,19 +196,21 @@ export async function openWatcher(probe: boolean) {
       unlinkIfPresent(handoffFile);
       log(`keeping previous build: ${(error as Error).message}`);
       stamp = seen;
-      if (!stopping) { watchBuild(onChange); runtime.start(state); subscribe(); }
+      if (!stopping) { watchBuild(onChange); runtime.start(state); startSidebar(); subscribe(); }
     }
   }
   const alreadyRunning = () => watcherReady(pidFile, binScript('hud-watch'));
   if (alreadyRunning()) return;
   const { openRuntime } = await import('./watch-runtime.js');
+  const sidebar = initialEnv.HUD_JOB_DIR === undefined && herdrEndpoint(initialEnv) && await hasHerdrSidebar(initialEnv)
+    ? await import('./sidebar.js') : undefined;
   stamp = buildStamp();
   return async () => {
     // The dist lock is shared by readers; release it before taking the per-home startup mutex.
     const state = await withAbstractLock('watch-start', fs.realpathSync(home), () => {
       if (alreadyRunning()) return;
       const state = reloaded ? readHandoff(handoffFile) : (unlinkIfPresent(handoffFile), null);
-      runtime = openRuntime(event);
+      runtime = openRuntime(event, !!sidebar);
       if (!reloaded) {
         const oldLog = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
         fs.writeFileSync(logFile, oldLog.split('\n').filter(Boolean).slice(-200).join('\n') + (oldLog ? '\n' : ''), { mode: 0o600 });
@@ -220,6 +235,7 @@ export async function openWatcher(probe: boolean) {
     if (stopping) return;
     watchBuild(checkBuild);
     runtime.start(state);
+    startSidebar();
     checkBuild();
   };
 }

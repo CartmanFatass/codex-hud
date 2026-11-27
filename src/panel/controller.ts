@@ -29,7 +29,8 @@ import { roleRegistry } from '../roles/roster.js';
 import { parseRosterRoot, formatRosterRoot } from '../roles/selection.js';
 import { defaultSettings, saveSettings, type HudSettings } from '../settings.js';
 import { runtimeSettings, applyDisplaySettings } from '../settings-runtime.js';
-import { herdrEndpoint, request as herdrRequest, watchHerdrDockResized } from '../runtime/herdr-socket.js';
+import { hasHerdrSidebar, herdrEndpoint, request as herdrRequest, watchHerdrDockResized } from '../runtime/herdr-socket.js';
+import { runSidebar } from '../runtime/sidebar.js';
 import { clampDockHeight, clampDockWidth } from '../utils/pane-width.js';
 import { buildSnapshot, SnapshotWriter } from '../snapshot.js';
 import type { SubagentTree } from '../types.js';
@@ -51,6 +52,7 @@ import { countProjectLiveJobs, countProjectWaitingRuns, type ExecutionView } fro
 import { callsByFeature, ModelRuntimeStore } from '../collectors/model-runtime-store.js';
 import { computeRepaintDelay, createCollectionScheduler } from './scheduler.js';
 import { createSettingsFlow } from './settings-flow.js';
+import { initialSidebarDestination, openSidebarDestination } from './sidebar-navigation.js';
 
 const HUD_CWD = process.env.CODEX_HUD_CWD || process.cwd();
 const HUD_CWD_REAL = (() => {
@@ -144,6 +146,9 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
   setLanguage(resolveLanguage(settings.language));
   if (settingsFailure) settingsError = t('Settings: {reason}', { reason: String(settingsFailure) });
   let state = place?.state ?? initialMonitorState();
+  const sidebarStart = initialSidebarDestination(process.env.HUD_SIDEBAR_TARGET, projects);
+  delete process.env.HUD_SIDEBAR_TARGET;
+  if (!place && sidebarStart) state = openSidebarDestination(state, sidebarStart);
   let expData = resourcesShown(state) ? readExpData(jobPipeline.home) : undefined;
   // The first read of a long rollout takes seconds; until then say so.
   let collected = false;
@@ -513,7 +518,8 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
     }
     settingsFlow.syncExternal(settings, changed);
   };
-  let stopDockWatch: (() => void) | undefined;
+  let stopDockWatch: (() => void) | undefined, stopSidebar: (() => void) | undefined;
+  const sidebarProbe = new AbortController();
 
   const scheduler = createCollectionScheduler(settings.refreshMs, {
     isClosed,
@@ -634,6 +640,27 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       render();
       syncModelListDiscovery();
       if (inHerdrDock) {
+        void hasHerdrSidebar(process.env, sidebarProbe.signal).then(supported => {
+          if (!supported || isClosed()) return;
+          stopSidebar = runSidebar(jobPipeline.home, HUD_CWD_REAL, { async activate(destination) {
+            const shown = await herdrRequest('dock.show', { focus: true }, { timeoutMs: 500, signal: sidebarProbe.signal });
+            if (isClosed() || !shown?.result?.shown) return;
+            // A step can belong to a project registered since the panel last collected.
+            registered = projectList(jobPipeline.home, HUD_CWD_REAL);
+            projects = projectChoices();
+            settingsFlow.navigate(() => {
+              state = openSidebarDestination(framePlace(state), destination);
+              tree = undefined;
+              if (resourcesShown(state)) reloadExp();
+              syncExecution();
+              syncModelListDiscovery();
+              if (scheduler.isPaused()) scheduler.wake();
+              else void scheduler.collect(true);
+              render();
+            });
+            if (scheduler.isPaused()) scheduler.wake();
+          } });
+        }).catch(() => {});
         stopDockWatch = watchHerdrDockResized(process.env, (side, size) => {
           if (isClosed()) return;
           const patch = side === 'bottom'
@@ -647,6 +674,8 @@ export async function runPanel(reload: PanelReload, installCleanup?: InstallClea
       scheduler.start(settings.refreshMs);
     },
     dispose() {
+      sidebarProbe.abort();
+      stopSidebar?.();
       stopDockWatch?.();
       stopDockWatch = undefined;
       flushDockResize();

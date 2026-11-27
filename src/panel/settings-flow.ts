@@ -64,7 +64,7 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
   let page = place ? openPage(saved, place) : null;
   let settingsFrame: SettingsFrame | undefined;
   let help: MonitorState | undefined;
-  let leave: (SettingsConfirmationState & { destination?: string }) | null = null;
+  let leave: (SettingsConfirmationState & { destination?: () => void }) | null = null;
   let confirmationFrame: SettingsConfirmationFrame | undefined;
   let unattended = unattendedOn(getHudHome()), toggling = false;
   const observeUnattended = () => { unattended = unattendedOn(getHudHome()); };
@@ -137,12 +137,17 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
       return false;
     }
   };
-  const requestLeave = () => {
-    if (page && settingsDirty(page)) leave = { choice: 'cancel', destination: undefined };
-    else page = null;
+  const requestLeave = (destination?: () => void) => {
+    if (page && settingsDirty(page)) leave = { choice: 'cancel', destination };
+    else {
+      page = null;
+      help = undefined;
+      destination?.();
+    }
   };
   return {
     get open() { return page !== null; },
+    navigate(destination: () => void) { help = undefined; requestLeave(destination); effects.repaint(); },
     isDirty: () => page !== null && settingsDirty(page),
     observeUnattended,
     /** Adopt external persisted dock-size updates (e.g. from drag resize) without clobbering unsaved edits. */
@@ -198,11 +203,9 @@ export function createSettingsFlow(saved: HudSettings, place: PanelPlace['settin
         const destination = leave.destination;
         leave = null;
         page = null;
-        if (!destination) {
-          effects.repaint();
-          return;
-        }
-        input = { type: 'key', key: destination };
+        destination?.();
+        effects.repaint();
+        return;
       }
       if (!page || !settingsFrame) return input;
       if (help) {

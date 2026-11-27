@@ -43,7 +43,8 @@ export interface HerdrReply {
     cols?: number;
     rows?: number;
     focused?: boolean;
-    capabilities?: { hidden_tabs?: boolean; hidden_tabs_peek?: boolean; pane_strip?: boolean; guarded_prompt?: boolean; agy_background_work?: boolean; dock?: boolean };
+    capabilities?: { hidden_tabs?: boolean; hidden_tabs_peek?: boolean; pane_strip?: boolean; guarded_prompt?: boolean; agy_background_work?: boolean; dock?: boolean; sidebar_hud?: boolean };
+    workspaces?: Array<{ workspace_id: string; worktree?: { repo_root: string; checkout_path: string } }>;
     strip?: PaneStripInfo;
     pane?: {
       pane_id: string;
@@ -144,6 +145,11 @@ export async function hasHerdrHiddenTabsPeek(env = process.env): Promise<boolean
 export async function hasHerdrDock(env = process.env): Promise<boolean> {
   const reply = await request('ping', {}, { timeoutMs: 500, env });
   return !reply?.error && reply?.result?.capabilities?.dock === true;
+}
+
+export async function hasHerdrSidebar(env = process.env, signal?: AbortSignal): Promise<boolean> {
+  const reply = await request('ping', {}, { timeoutMs: 500, env, signal });
+  return !reply?.error && reply?.result?.capabilities?.sidebar_hud === true;
 }
 
 export async function probeHerdrPaneStrip(env = process.env): Promise<{
@@ -253,11 +259,12 @@ export function watchHerdrPane(pane: string, env: NodeJS.ProcessEnv, changed: ()
   return stop;
 }
 
-/** Subscribe to interactive dock drag resizes (`dock.resized`), reconnecting across server handoffs. */
-export function watchHerdrDockResized(
-  env: NodeJS.ProcessEnv,
-  onResized: (side: DockSide, size: number) => void,
-): () => void {
+/** Subscribe to session events, reconnecting across server handoffs. */
+export function watchHerdrEvents(env: NodeJS.ProcessEnv, types: readonly string[], hooks: {
+  ready?(): void;
+  dropped?(): void;
+  event(kind: string, data: Record<string, unknown>): void;
+}): () => void {
   const endpoint = herdrEndpoint(env);
   if (!endpoint) return () => {};
   let stopped = false;
@@ -265,7 +272,7 @@ export function watchHerdrDockResized(
   let lines: ReturnType<typeof createInterface> | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let reconnectMs = 500;
-  const subId = `hud-dock-resized-${process.pid}`;
+  const subId = `hud-events-${process.pid}`;
 
   const cleanupPeer = () => {
     lines?.close();
@@ -281,6 +288,7 @@ export function watchHerdrDockResized(
     const drop = (retry: boolean) => {
       if (socket !== peer) return;
       cleanupPeer();
+      hooks.dropped?.();
       if (stopped || !retry) return;
       const delayMs = reconnectMs;
       reconnectMs = Math.min(5000, reconnectMs * 2);
@@ -292,20 +300,15 @@ export function watchHerdrDockResized(
     };
     peer.on('connect', () => {
       if (socket !== peer) return;
-      peer.write(JSON.stringify({ id: subId, method: 'events.subscribe', params: { subscriptions: [{ type: 'dock.resized' }] } }) + '\n');
+      peer.write(JSON.stringify({ id: subId, method: 'events.subscribe', params: { subscriptions: types.map(type => ({ type })) } }) + '\n');
     });
     reader.on('line', (raw) => {
       if (socket !== peer || stopped) return;
       try {
-        const msg = JSON.parse(raw) as { id?: string; error?: unknown; event?: string; data?: { side?: unknown; size?: unknown } };
+        const msg = JSON.parse(raw) as { id?: string; error?: unknown; event?: string; data?: Record<string, unknown> };
         if (msg.error) { drop(false); return; }
-        if (msg.id === subId) { reconnectMs = 500; return; }
-        if (String(msg.event ?? '').replaceAll('.', '_') !== 'dock_resized') return;
-        const side = msg.data?.side;
-        const size = Number(msg.data?.size);
-        if ((side === 'right' || side === 'left' || side === 'bottom') && Number.isInteger(size) && size > 0) {
-          onResized(side, size);
-        }
+        if (msg.id === subId) { reconnectMs = 500; hooks.ready?.(); return; }
+        if (typeof msg.event === 'string' && msg.data) hooks.event(msg.event.replaceAll('.', '_'), msg.data);
       } catch {
         drop(true);
       }
@@ -321,6 +324,14 @@ export function watchHerdrDockResized(
     if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     cleanupPeer();
   };
+}
+
+export function watchHerdrDockResized(env: NodeJS.ProcessEnv, onResized: (side: DockSide, size: number) => void): () => void {
+  return watchHerdrEvents(env, ['dock.resized'], { event(kind, data) {
+    if (kind !== 'dock_resized') return;
+    const side = data.side, size = Number(data.size);
+    if ((side === 'right' || side === 'left' || side === 'bottom') && Number.isInteger(size) && size > 0) onResized(side, size);
+  } });
 }
 
 // Herdr subscription sockets cannot carry requests; each query gets its own connection.

@@ -7,11 +7,11 @@ import { isProcAlive, isValidPid, readProcCmdline } from '../utils/proc.js';
 
 const launching = new Map<string, ReturnType<typeof spawn>>();
 
-export function ensureJobWatcher(home: string, needed = () => true) {
+export function ensureJobWatcher(home: string, needed = () => true, herdrEndpoint?: string) {
   const script = binScript('hud-watch');
   if (launching.has(home) || watcherReady(join(home, 'watch.pid'), script) || !needed()) return;
   mkdirSync(join(home, 'jobs'), { recursive: true, mode: 0o700 });
-  const env = { ...process.env, HUD_HOME: home };
+  const env = { ...process.env, HUD_HOME: home, ...(herdrEndpoint && { HERDR_SOCKET_PATH: herdrEndpoint }) };
   const child = spawn(process.execPath, [...v8HeapArgs('watch', env), script], {
     detached: true, stdio: ['ignore', 'ignore', 'ignore', 'ipc'], env,
   });

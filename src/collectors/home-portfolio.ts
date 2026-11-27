@@ -167,7 +167,8 @@ export class HomePortfolioCollector {
         } });
       }
     } catch { /* Unreadable service receipts give no display evidence. */ }
-    requests.sort((a, b) => compareOwnerRequests(a.item, b.item, priority(a.project), priority(b.project)));
+    requests.sort((a, b) => compareOwnerRequests(a.item, b.item, priority(a.project), priority(b.project)) ||
+      a.project.registrationIndex - b.project.registrationIndex);
     const recentAdvice = this.advice.read(now);
     return { projects: projects.sort(compareProjects), requests, ...(unattended && { unattended }), ...(recentAdvice.length && { recentAdvice }) };
   }

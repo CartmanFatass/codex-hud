@@ -51,6 +51,7 @@ codexH
 ```
 
 The panel is opt-in: `/hud` shows or collapses the same herdr dock in Claude, Codex and pi (keeping its process and state alive); it never opens at launch.
+On a herdr fork with `sidebar_hud`, the sidebar also shows Home's open owner-request count and first request, plus a launcher for Home, Project, Execution and Control. Clicking a launcher opens that page in the existing dock. The dock panel, or `hud-watch` while it is closed, updates the sidebar from file events; a dead publisher's lease expires instead of leaving its last request on screen.
 Uninstall with `hud uninstall` or `./install --uninstall`; `--with names` removes only those extensions, leaving core commands intact.
 HUD data and unrelated owner settings remain.
 Claude settings follow symlinks with a one-time plain backup; Codex backs up resolved `config.toml` before official MCP commands and warns if comments are dropped.

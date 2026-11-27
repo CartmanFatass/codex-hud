@@ -150,6 +150,7 @@ function warn(kind: string, message: string) {
 }
 let watcher: fs.FSWatcher | undefined, flowsWatcher: fs.FSWatcher | undefined, settingsWatcher: fs.FSWatcher | undefined, timer: NodeJS.Timeout;
 let autoLandRetryTimer: NodeJS.Timeout | undefined;
+let keepSidebar = false;
 let notify: (event: 'subscribe' | 'idle') => void, subscribed = false,
   queued = false,
   queuedRetryWatch = false,
@@ -1513,7 +1514,7 @@ function scan(retryWatch = false) {
   const hasInFlight = inFlightReaps.size > 0 || inFlightWorktrees.size > 0 || inFlightAutoLands.size > 0 || inFlightStarts.size > 0 || permissionChecks.size > 0 || permissionNoticeChecks.size > 0 || flowNoticeChecks.size > 0;
   if ((open || hasInFlight || nearest !== Infinity) && !watching) nearest = Math.min(nearest, Date.now() + degradedMs);
   if (nearest !== Infinity) timer = setTimeout(() => schedule(true), Math.max(1, Math.min(0x7fffffff, Math.ceil(nearest - Date.now()))));
-  if (!queued && !open && !hasInFlight && nearest === Infinity) {
+  if (!keepSidebar && !queued && !open && !hasInFlight && nearest === Infinity) {
     stopScheduling();
     notify('idle');
   }
@@ -1589,7 +1590,8 @@ function startWatch() {
   } catch (error) { warn('watch error', `watch error: ${(error as Error).message}`); }
 }
 
-export function openRuntime(emit: typeof notify) {
+export function openRuntime(emit: typeof notify, sidebar = false) {
+  keepSidebar = sidebar;
   notify = emit;
   return {
     shutdown,

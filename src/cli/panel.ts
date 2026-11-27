@@ -10,6 +10,7 @@ import { resolveHudEnv } from '../utils/hud-env.js';
 import type { Harness } from '../core/types/identity.js';
 import { foreground, installationRoot } from './compat.js';
 import type { HudIO } from './hud.js';
+import type { SidebarDestination } from '../panel/sidebar-navigation.js';
 import { parseRosterRoot, formatRosterRoot } from '../roles/selection.js';
 import { v8HeapArgs } from '../../scripts/dist-lock.mjs';
 import { CliError } from './private-home.js';
@@ -94,6 +95,7 @@ export async function controlPanelDock(operation: PanelOperation, env: NodeJS.Pr
   cwd: string;
   selection: readonly string[];
   width?: number;
+  sidebar?: SidebarDestination;
   isCurrent?: () => boolean;
 }): Promise<'opened' | 'shown' | 'hidden' | 'closed'> {
   requirePanelOwner(env);
@@ -111,6 +113,7 @@ export async function controlPanelDock(operation: PanelOperation, env: NodeJS.Pr
     // Only forward display configuration, not the caller's credentials or control environment.
     const dockEnv: Record<string, string> = { HUD_HOME: getHudHome(env), HUD_SETTINGS_PATH: settingsFile,
       HUD_DOCK_CALLER_PANE: env.HERDR_PANE_ID ?? '' };
+    if (launch.sidebar) dockEnv.HUD_SIDEBAR_TARGET = JSON.stringify(launch.sidebar);
     for (const key of ['HUD_THEME', 'HUD_ICONS', 'HUD_BAR_STYLE', 'HUD_BAR_FIELDS', 'HUD_TREE_WIDTH'] as const) {
       const value = resolveHudEnv(env, key);
       if (value !== undefined) dockEnv[key] = value;
@@ -124,6 +127,7 @@ export async function controlPanelDock(operation: PanelOperation, env: NodeJS.Pr
       cwd: launch.cwd, env: dockEnv, mode: settings.dockMode, side: settings.dockSide,
       width: Math.min(65535, launch.width ?? (treeWidth || DEFAULT_WIDTH)),
       height: settings.dockHeight || DEFAULT_HEIGHT,
+      ...(launch.sidebar && { focus: true }),
     };
   }
   const reply = await herdrRequest(`dock.${operation}`, params, { env });
