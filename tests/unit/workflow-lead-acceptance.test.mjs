@@ -203,7 +203,7 @@ test('a blocker escalation holds just its ticket and dependent; an independent t
   const working = await f.call('hud_read', { job: flow });
   assert.equal(working.state, 'working');
   assert.deepEqual(working.landed, ['sample/03']);
-  assert.deepEqual(working.blocked, [{ ticket: 'sample/02', blockers: ['01'] }]);
+  assert.deepEqual(working.blocked, [{ ticket: 'sample/02', blockers: ['sample/01'] }]);
   assert.deepEqual(working.todo.map(item => item.text), [
     'owner live try remains', 'pending owner try', 'acceptance try is still pending', 'Reopen the synthetic panel.',
   ]);
