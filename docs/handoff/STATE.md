@@ -53,6 +53,13 @@ todos go under Later.
   on the dev box first. Gather: daily laptop OS, where main and workers run, same LAN or remote access. Parked.
 - Advisor Objective paused by the owner (D-2026-11-26-07); PENDING.md keeps the advisor injection scope, gate
   concurrency and `docs/neon-proposal/` notes.
+- After unified-left acceptance (owner 2026-11-27): check whether Gemini models (neon, carbon) cause more drift
+  from the brief/sample than others ("known for hallucination"). Known cases: variant C frames drawn by carbon
+  (oracle jafbaad7f019a595d) invented new page content for C2/C4 instead of the existing HUD pages and dropped the
+  dual-panel sample's sidebar elements; unified-left/03 (neon) shipped far from frame C1. Compare against sol/astra
+  jobs with the same kind of brief; measure drift by the reviews' scope findings and sample mismatches, not by
+  main's verdict. Open owner question kept for then: whether the sidebar/tab visuals return to the dual-panel sample
+  (`docs/design/sidebar-dock/`) and the existing page designs.
 
 ## Next
 
