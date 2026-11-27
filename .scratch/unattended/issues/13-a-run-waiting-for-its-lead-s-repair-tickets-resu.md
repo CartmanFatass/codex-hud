@@ -10,5 +10,6 @@
 - [ ] Synthetic run: lead decides repair, its ticket add returns a queued receipt; when the receipt completes, the run admits the new tickets in the same run (repair round counted once) without main.
 - [ ] A failed receipt hands back to main with the receipt reason.
 - [ ] Main gets no 'no ready tickets' pause notice in the automatic case; the panel shows the run as waiting for ticket edits.
+- [ ] A run started by `hud_tickets run` that supersedes an earlier run of the same feature carries its `repair_rounds`, so the two-round cap holds across manual restarts (today every restarted run reports "repair round 0 of 2"; cold-archive reached its fourth review this way).
 
 ## Comments
