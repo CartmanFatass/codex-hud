@@ -3,21 +3,70 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { batchActive, batchEvents, isBatchId, type Batch } from '../mcp/batch-state.js';
 import { isAutoLandFlakeJob } from '../mcp/flake-admission.js';
-import { readFlakeBlockJobs } from '../mcp/flake-block-index.js';
+import { pruneFlakeBlockJobs, readFlakeBlockJobs } from '../mcp/flake-block-index.js';
 import type { Job } from '../mcp/job-contracts.js';
 import { activeLand, isFlowId, landFile, landNoticeLine, readLand } from '../mcp/land-state.js';
 import { isTicketQueueId, ticketQueueNotice, type TicketQueue } from '../mcp/ticket-queue-state.js';
-import { getJobIndexCache } from '../roles/job-index-cache.js';
+import { getJobIndexCache, type JobIndexCache } from '../roles/job-index-cache.js';
 import { jobCallerPane } from '../roles/job-pane.js';
 import { sharedRoot } from '../roles/projects.js';
-import { writePrivateFile } from '../utils/atomic-fs.js';
+import { readJsonBounded, writePrivateFile } from '../utils/atomic-fs.js';
 import { reportReadHint } from '../utils/report-summary.js';
 import { composedActive, isComposedId, type ComposedRun } from './composed-state.js';
 import { workflowHeaders } from './header-scan.js';
 import { directRecipient, runNoticeRecipient, runVisible } from './scope.js';
 import { noticeEvents } from './store.js';
 
+const MAX_FLAKE_JOB_BYTES = 4 * 1024 * 1024;
+const FOREIGN_NOTICED_PRUNE_MS = 60_000;
+
 const queueScope = (q: TicketQueue) => q.project_root ? q : { ...q, project_root: q.root };
+
+function readFlakeBlockJob(
+  home: string,
+  cache: JobIndexCache,
+  id: string,
+): { status: 'ok'; job: Job } | { status: 'missing' } | { status: 'skip' } {
+  const receipt = cache.readJob<Job>(id);
+  if (receipt.status === 'ok') return { status: 'ok', job: receipt.value };
+  if (receipt.status === 'missing') return { status: 'missing' };
+  if (receipt.status !== 'truncated') return { status: 'skip' };
+  try {
+    const raw = readJsonBounded(join(home, 'jobs', id, 'job.json'), MAX_FLAKE_JOB_BYTES);
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? { status: 'ok', job: raw as Job } : { status: 'skip' };
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ENOENT' ? { status: 'missing' } : { status: 'skip' };
+  }
+}
+
+type FlakeBlockDecision =
+  | { kind: 'prune' }
+  | { kind: 'skip' }
+  | { kind: 'deliver'; marker: string; reason: string };
+
+function inspectFlakeBlock(home: string, cache: JobIndexCache, id: string, pane: string | null, cwd: string): FlakeBlockDecision {
+  if (fs.existsSync(landFile(home, `f${id.slice(1)}`))) return { kind: 'prune' };
+  const loaded = readFlakeBlockJob(home, cache, id);
+  if (loaded.status === 'missing') return { kind: 'prune' };
+  if (loaded.status !== 'ok') return { kind: 'skip' };
+  const job = loaded.job, block = job.auto_land_blocked, main = job.worktree?.main_root;
+  if (job.job !== id || !isAutoLandFlakeJob(job) || !main || typeof block?.reason !== 'string') return { kind: 'prune' };
+  const owner = jobCallerPane(job);
+  const recipient = owner ? owner === pane : main === cwd || main === sharedRoot(cwd);
+  // One claim per persisted refusal, retained with the job. panelDelivery
+  // releases it when typing fails so changes or the next tick can retry.
+  const key = createHash('sha256').update(JSON.stringify([block.at, block.sig, block.reason])).digest('hex').slice(0, 16);
+  const marker = join(home, 'jobs', id, `auto-land-blocked-${key}.noticed`);
+  let noticed: fs.Stats | undefined;
+  try { noticed = fs.lstatSync(marker, { throwIfNoEntry: false }); }
+  catch { return { kind: 'skip' }; }
+  if (noticed) {
+    return recipient || Date.now() - noticed.mtimeMs >= FOREIGN_NOTICED_PRUNE_MS ? { kind: 'prune' } : { kind: 'skip' };
+  }
+  if (!recipient) return { kind: 'skip' };
+  const reason = block.reason.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, ' ').trim();
+  return { kind: 'deliver', marker, reason };
+}
 
 function flakeBlockEvents(home: string, pane: string | null, cwd: string) {
   let ids: string[];
@@ -25,26 +74,26 @@ function flakeBlockEvents(home: string, pane: string | null, cwd: string) {
   catch { return []; } // An unreadable index must not stop other notices.
   if (!ids.length) return [];
   const cache = getJobIndexCache(home);
+  const prunable = new Set<string>();
   // These handbacks can precede any flow. Read indexed receipts without
   // enumerating jobs or opening QA or report bodies.
-  return ids.flatMap(id => {
-    const receipt = cache.readJob<Job>(id);
-    if (receipt.status !== 'ok') return [];
-    const job = receipt.value, block = job.auto_land_blocked, main = job.worktree?.main_root;
-    if (job.job !== id || !isAutoLandFlakeJob(job) || !main || typeof block?.reason !== 'string') return [];
-    const owner = jobCallerPane(job);
-    if (owner ? owner !== pane : main !== cwd && main !== sharedRoot(cwd)) return [];
-    if (fs.existsSync(landFile(home, `f${id.slice(1)}`))) return [];
-    // One claim per persisted refusal, retained with the job. panelDelivery
-    // releases it when typing fails so changes or the next tick can retry.
-    const key = createHash('sha256').update(JSON.stringify([block.at, block.sig, block.reason])).digest('hex').slice(0, 16);
-    const marker = join(home, 'jobs', id, `auto-land-blocked-${key}.noticed`);
-    if (fs.existsSync(marker)) return [];
-    const reason = block.reason.replace(/[\s\x00-\x1f\x7f-\x9f]+/g, ' ').trim();
-    try { writePrivateFile(marker, '', { exclusive: true, mkdir: false }); }
-    catch { return []; } // Another delivery claimed it, or this receipt cannot be claimed now.
-    return [{ line: `${id}: auto-land blocked: ${reason} | ${reportReadHint(id)}`, marker }];
+  const events = ids.flatMap(id => {
+    const decision = inspectFlakeBlock(home, cache, id, pane, cwd);
+    if (decision.kind === 'prune') { prunable.add(id); return []; }
+    if (decision.kind !== 'deliver') return [];
+    try { writePrivateFile(decision.marker, '', { exclusive: true, mkdir: false }); }
+    catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') prunable.add(id);
+      return []; // Another delivery claimed it, or this receipt cannot be claimed now.
+    }
+    return [{ line: `${id}: auto-land blocked: ${decision.reason} | ${reportReadHint(id)}`, marker: decision.marker }];
   });
+  if (prunable.size) {
+    try {
+      pruneFlakeBlockJobs(home, id => prunable.has(id) && inspectFlakeBlock(home, cache, id, pane, cwd).kind === 'prune');
+    } catch { /* Best-effort index cleanup must not fail notice delivery. */ }
+  }
+  return events;
 }
 
 export function taskNoticeSource(home: string, pane: string | null, cwd: string) {

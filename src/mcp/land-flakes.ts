@@ -22,7 +22,7 @@ import { readDirSafe, readFileBounded, readJsonBounded, readJsonFile, writeJsonP
 import { sonicChildren } from '../worker/sonic-jobs.js';
 import { dispatchTicketJob } from './dispatch/orchestrator.js';
 import { flakeDispatchKey, isAutoLandFlakeJob, isRunningListTicket, readFlakesConfig, runningListAdmission } from './flake-admission.js';
-import { indexFlakeBlockJob } from './flake-block-index.js';
+import { indexFlakeBlockJob, withFlakeBlockIndexLock } from './flake-block-index.js';
 import type { Job, JobStatus } from './job-contracts.js';
 import {
   activeLand, isFlowId, landAttempt, landFile, updateLandFlakeCollection,
@@ -788,7 +788,7 @@ export async function settleAutoLandFlakeJob(
 
     const persistBlock = async (reason: string, sig?: string): Promise<FlakeAutoLandResult> => {
       const cleanReason = oneLine(reason).slice(0, 240) || 'auto-land blocked';
-      await withAbstractLock('flake-block-index', home, () => {
+      await withFlakeBlockIndexLock(home, () => {
         let latest: Job;
         try { latest = readJsonFile(jobFile) as Job; }
         catch { return; } // The job disappeared before the block could be persisted.

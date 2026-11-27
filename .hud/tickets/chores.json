@@ -161,7 +161,7 @@
     {
       "number": 59,
       "title": "An indexed flake refusal is delivered even when job.json exceeds 64 KiB",
-      "status": "ready-for-agent",
+      "status": "done",
       "owner_try": false,
       "live_try": "none",
       "approved_removals": [],
@@ -171,22 +171,29 @@
         {
           "id": 1,
           "text": "A valid refusal on a job.json larger than 64 KiB produces exactly one task-client notice, and none once a land flow exists",
-          "done": false
+          "done": true
         },
         {
           "id": 2,
           "text": "No job-directory enumeration is added to the notice tick; noticed or vanished entries are pruned from the index",
-          "done": false
+          "done": true
         },
         {
           "id": 3,
           "text": "Unit test mirrors the existing refusal test with an oversized receipt",
-          "done": false
+          "done": true
         }
       ],
+      "landing": {
+        "at": "2026-11-27T14:02:01.280Z",
+        "job": "jfea6c081defe57b4",
+        "flow": "ffea6c081defe57b4",
+        "replay_base": "7d861ad2978f0634f8cba449f6c956b328c1e80d",
+        "gates": 5
+      },
       "comments": [],
       "created_at": "2026-11-27T13:35:15.922Z",
-      "updated_at": "2026-11-27T13:35:15.922Z"
+      "updated_at": "2026-11-27T14:02:01.280Z"
     },
     {
       "number": 60,

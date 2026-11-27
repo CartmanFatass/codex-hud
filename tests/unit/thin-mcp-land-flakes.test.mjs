@@ -9,6 +9,7 @@ import {
   collectAndRecordLandFlakes, collectGateFlakes, flakeDispatchKey, retryPendingFlakeCollections, settleAutoLandFlakeJob,
 } from '../../dist/mcp/land-flakes.js';
 import { runningListAdmission } from '../../dist/mcp/flake-admission.js';
+import { indexFlakeBlockJob, readFlakeBlockJobs } from '../../dist/mcp/flake-block-index.js';
 import { procStat } from '../../dist/utils/proc.js';
 import { startSessionWatch } from '../../dist/cli/watch.js';
 import { jobChanges, readThinJobRows } from '../../dist/collectors/thin-jobs.js';
@@ -1818,17 +1819,128 @@ test('a pane-less Claude task client receives a flake refusal behind 200 newer j
   assert.equal(fs.existsSync(join(f.home, 'flows', `f${seeded.id.slice(1)}.json`)), false);
 });
 
-test('a quiet task notice drain neither lists nor stats job directories', t => {
+test('an indexed flake refusal on a job.json larger than 64 KiB is delivered once, suppressed by a land flow, and pruned', { timeout: 10_000 }, async t => {
+  const f = await checkout(t, ['true'], { after: [], inHerdr: false });
+  const rpc = taskRpc(f.rpc);
+  await rpc('initialize', { clientInfo: { name: 'claude-code' } });
+  await rpc('server/discover');
+  const scan = async () => (await f.call('hud_roster')).changes ?? [];
+
+  const seeded = seedAutoFlakeJob(f, { id: 'j0000000000000a25', ticket: 'test-flakes/01' });
+  const padded = { ...readJson(seeded.jobFile), stderr_tail: 'x'.repeat(70_000) };
+  fs.writeFileSync(seeded.jobFile, JSON.stringify(padded, null, 2) + '\n');
+  assert.ok(fs.statSync(seeded.jobFile).size > 65_536);
+  fs.writeFileSync(join(seeded.dir, 'qa'), 'not a directory\n');
+  settleDispatchedFlakeJob(f, seeded.id, 'Fixed flake.\nBlockers: none\n');
+  assert.deepEqual(await scan(), []);
+
+  const startLandFn = t.mock.fn();
+  const refusal = await settleAutoLandFlakeJob(f.home, seeded.id, { startLandFn });
+  assert.equal(refusal.action, 'blocked');
+  assert.equal(readJson(seeded.jobFile).auto_land_blocked.reason, 'questions could not be read');
+  assert.ok(fs.statSync(seeded.jobFile).size > 65_536);
+  assert.deepEqual(readFlakeBlockJobs(f.home), [seeded.id]);
+
+  // First drain delivers the refusal once; second drain observes the .noticed claim and prunes the index.
+  const notices = await scan();
+  assert.equal(notices.length, 1);
+  assert.ok(notices[0].includes(`${seeded.id}: auto-land blocked: questions could not be read`), notices[0]);
+  assert.ok(notices[0].includes(`hud_read job=${seeded.id}`), notices[0]);
+  assert.deepEqual(await scan(), []);
+  assert.deepEqual(readFlakeBlockJobs(f.home), []);
+  assert.equal(startLandFn.mock.callCount(), 0);
+  assert.equal(fs.existsSync(join(f.home, 'flows', `f${seeded.id.slice(1)}.json`)), false);
+
+  // A second oversized refusal suppressed by an existing land flow emits no notice and is pruned.
+  const landed = seedAutoFlakeJob(f, { id: 'j0000000000000a26', ticket: 'test-flakes/02' });
+  const paddedLanded = { ...readJson(landed.jobFile), stderr_tail: 'y'.repeat(70_000) };
+  fs.writeFileSync(landed.jobFile, JSON.stringify(paddedLanded, null, 2) + '\n');
+  fs.writeFileSync(join(landed.dir, 'qa'), 'not a directory\n');
+  settleDispatchedFlakeJob(f, landed.id, 'Fixed flake.\nBlockers: none\n');
+  const secondRefusal = await settleAutoLandFlakeJob(f.home, landed.id, { startLandFn });
+  assert.equal(secondRefusal.action, 'blocked');
+  assert.ok(fs.statSync(landed.jobFile).size > 65_536);
+  assert.deepEqual(readFlakeBlockJobs(f.home), [landed.id]);
+
+  fs.mkdirSync(join(f.home, 'flows'), { recursive: true });
+  fs.writeFileSync(join(f.home, 'flows', `f${landed.id.slice(1)}.json`), JSON.stringify({ flow: `f${landed.id.slice(1)}`, state: 'working' }));
+  assert.deepEqual(await scan(), []);
+  assert.deepEqual(readFlakeBlockJobs(f.home), []);
+  assert.equal(fs.readdirSync(landed.dir).some(name => name.endsWith('.noticed')), false);
+});
+
+test('a quiet task notice drain neither lists nor stats job directories, and prunes noticed and vanished entries', t => {
   const home = fs.mkdtempSync(join(tmpdir(), 'hud-flake-notices-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const jobsRoot = join(home, 'jobs');
-  fs.mkdirSync(join(jobsRoot, 'j0000000000000a24'), { recursive: true });
+  const unindexedId = 'j0000000000000a24';
+  const vanishedId = 'j0000000000000a27';
+  const noticedId = 'j0000000000000a28';
+  const foreignId = 'j0000000000000a29';
+  fs.mkdirSync(join(jobsRoot, unindexedId), { recursive: true });
+  fs.mkdirSync(join(jobsRoot, noticedId), { recursive: true });
+  fs.mkdirSync(join(jobsRoot, foreignId), { recursive: true });
+  const now = new Date().toISOString();
+  fs.writeFileSync(join(jobsRoot, noticedId, 'job.json'), JSON.stringify({
+    job: noticedId,
+    role: 'imp',
+    request_key: 'flakes:test:01',
+    cwd: join(home, 'wt-1'),
+    created_at: now,
+    dispatch_exit_code: 0,
+    stderr_tail: 'z'.repeat(70_000),
+    auto_land: true,
+    worktree: { main_root: home, root: join(home, 'wt-1'), branch: 'wt/1', base_head: 'abc' },
+    auto_land_blocked: { reason: 'questions could not be read', at: now },
+  }));
+  fs.writeFileSync(join(jobsRoot, foreignId, 'job.json'), JSON.stringify({
+    job: foreignId,
+    role: 'imp',
+    request_key: 'flakes:test:02',
+    cwd: join(home, 'wt-2'),
+    created_at: now,
+    dispatch_exit_code: 0,
+    stderr_tail: '',
+    herdr_pane: 'w1:p9',
+    auto_land: true,
+    worktree: { main_root: home, root: join(home, 'wt-2'), branch: 'wt/2', base_head: 'abc' },
+    auto_land_blocked: { reason: 'other pane refusal', at: now },
+  }));
+  indexFlakeBlockJob(home, vanishedId);
+  indexFlakeBlockJob(home, noticedId);
+  indexFlakeBlockJob(home, foreignId);
+
   const drain = taskNoticeSource(home, null, home);
+  // First drain claims noticedId (keeping it indexed until a subsequent tick confirms delivery),
+  // prunes vanishedId immediately, and leaves foreignId pending for its pane.
+  const first = drain();
+  assert.equal(first.length, 1);
+  assert.ok(first[0].line.includes(`${noticedId}: auto-land blocked: questions could not be read`));
+  assert.deepEqual(readFlakeBlockJobs(home), [foreignId, noticedId]);
+
+  // Simulate failed delivery releasing the marker: noticedId stays indexed and retries.
+  fs.unlinkSync(first[0].marker);
+  const retry = drain();
+  assert.equal(retry.length, 1);
+  assert.equal(retry[0].marker, first[0].marker);
+
+  // Next tick observes the retained .noticed marker and prunes noticedId, leaving only foreignId.
+  assert.deepEqual(drain(), []);
+  assert.deepEqual(readFlakeBlockJobs(home), [foreignId]);
+
+  // Once the foreign pane notices and prunes its entry, a quiet drain touches neither jobs/ nor any job dir/file.
+  const foreignDrain = taskNoticeSource(home, 'w1:p9', home);
+  assert.equal(foreignDrain().length, 1);
+  assert.deepEqual(foreignDrain(), []);
+  assert.deepEqual(readFlakeBlockJobs(home), []);
+
   const accesses = [];
   const mocks = ['readdirSync', 'opendirSync', 'statSync', 'lstatSync'].map(method => {
     const original = fs[method];
     return t.mock.method(fs, method, (path, ...args) => {
-      if (path === jobsRoot || (typeof path === 'string' && dirname(path) === jobsRoot)) accesses.push({ method, path });
+      if (path === jobsRoot || (typeof path === 'string' && (dirname(path) === jobsRoot || path.startsWith(`${jobsRoot}/`)))) {
+        accesses.push({ method, path });
+      }
       return original(path, ...args);
     });
   });
